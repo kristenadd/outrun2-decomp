@@ -35,7 +35,7 @@ void read_pad(outrun::ps5::PadSample& p){
     const auto* keys=SDL_GetKeyboardState(nullptr);
     const struct {SDL_Scancode key;u64 bit;} bindings[]={
         {SDL_SCANCODE_LEFT,Left},{SDL_SCANCODE_RIGHT,Right},{SDL_SCANCODE_UP,Up},{SDL_SCANCODE_DOWN,Down},
-        {SDL_SCANCODE_SPACE,Cross},{SDL_SCANCODE_RETURN,Options},{SDL_SCANCODE_BACKSPACE,Circle},{SDL_SCANCODE_Q,L1},{SDL_SCANCODE_E,R1}};
+        {SDL_SCANCODE_SPACE,Cross},{SDL_SCANCODE_RETURN,Cross},{SDL_SCANCODE_KP_ENTER,Cross},{SDL_SCANCODE_P,Options},{SDL_SCANCODE_BACKSPACE,Circle},{SDL_SCANCODE_DELETE,Circle},{SDL_SCANCODE_Q,L1},{SDL_SCANCODE_E,R1}};
     for(auto b:bindings)if(keys[b.key])p.buttons|=b.bit;
     if(keys[SDL_SCANCODE_LEFT])p.left_x=0;
     if(keys[SDL_SCANCODE_RIGHT])p.left_x=255;

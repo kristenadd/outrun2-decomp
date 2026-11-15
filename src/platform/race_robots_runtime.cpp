@@ -1,3 +1,4 @@
+#include <map>
 #include "platform/bulk_fallback.hpp"
 #include "platform/race_manager_runtime.hpp"
 #include "platform/race_robots_runtime.hpp"
@@ -201,7 +202,11 @@ bool run(NativeRuntimeContext& c,std::uint32_t work,driving::PcMatrixStack& matr
             auto& w=c.race.car_world;
             driving::PcSoundQueue q{driving::Bytes(w.sound_entries_9563e8.data(),w.sound_entries_9563e8.size()),
                 driving::Bytes(w.sound_state.data(),w.sound_state.size()),std::uint8_t(c.event_state.slots[383].flags)};
-            driving::pc_enqueue_sound(q,k.args[0]);return 0u;}
+            const auto before=q.state.u32(4);driving::pc_enqueue_sound(q,k.args[0]);
+            // Device diagnostics ($OR2_TRACE): the passenger's voice requests.
+            static const bool trace=std::getenv("OR2_TRACE")!=nullptr;
+            if(trace)std::fprintf(stderr,"[pas] voice %u event383=%02x %s\n",unsigned(k.args[0]),unsigned(c.event_state.slots[383].flags),q.state.u32(4)!=before?"queued":"dropped");
+            return 0u;}
         case 0x44c940u:{++r.routed[k.pc];   // 44C940: cache 635F2C/635F30, else the stage record +8
             auto& area=native_race_area_memory(c,nullptr,true);auto& rt=c.game_mode.course_runtime;const std::uint32_t key=k.args[0];
             if(key==std::uint32_t(rt.stage_key_635f2c))return std::uint32_t(rt.stage_value_635f30);
@@ -381,7 +386,12 @@ bool run(NativeRuntimeContext& c,std::uint32_t work,driving::PcMatrixStack& matr
         if(e.address>=PcRobMotionTablesState::Base&&e.address<PcRobMotionTablesState::End&&!r.motion_tables.ready)
             r.last_error+=" (RobMotion tables 4F2470: "+(r.motion_tables.init_calls?r.motion_tables.error:std::string("not run"))+")";}
     catch(const std::exception& e){fault=0xffffffffu;r.last_error=e.what();}
-    if(fault&&first_error.empty())first_error=r.last_error;
+    if(fault&&first_error.empty()){
+        first_error=r.last_error;
+        // Device diagnostics ($OR2_TRACE): a robot's first fault latches it off.
+        static const bool trace=std::getenv("OR2_TRACE")!=nullptr;
+        if(trace)std::fprintf(stderr,"[rob] latched: %s\n",first_error.c_str());
+    }
     matrices.current_offset=offset;matrices.depth=depth;
     return fault==0u;
 }
@@ -456,6 +466,9 @@ bool native_race_robots_invoke(NativeRuntimeContext& c,std::uint32_t callback,dr
     }
     auto& r=c.race.robots;
     if(kind==1)++r.inits;else if(kind==2)++r.controls;else ++r.destroys;
+    {static const bool trace=std::getenv("OR2_TRACE")!=nullptr;static std::map<std::uint32_t,unsigned> seen;
+     if(trace&&(callback==0x4885a0u||callback==0x489a90u||callback==0x48ad60u)&&(seen[callback]++%300u)==0u)
+         std::fprintf(stderr,"[rob] passenger callback %06X call %u slot %u\n",callback,seen[callback],c.event_state.current_slot);}
     const auto slot=c.event_state.current_slot;
     if(slot>=c.event_state.slots.size()){r.last_error="robot callback outside an event slot";++r.skipped;return true;}
     const std::uint32_t work=c.event_state.slots[slot].work_token;

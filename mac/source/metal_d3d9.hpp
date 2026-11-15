@@ -19,6 +19,9 @@ public:
     void begin_frame();
     void end_frame();
     void readback();
+    // One frame of latency: end_frame shows the previous frame while the GPU
+    // renders this one (the game); off, every frame is waited for (tests).
+    void set_pipelined(bool on);
     std::uint64_t gpu_nanoseconds() const;
     std::string device_name() const;
     unsigned presentation_width() const;
@@ -51,6 +54,7 @@ private:
     std::int32_t native_base_{};
     std::vector<bool> buffer_dirty_;
     unsigned msaa_{1};
+    bool pipelined_{};
     bool msaa_live_{};   // the back buffer is the multisampled scene target (begin_frame .. finish_scene)
     bool ui_rect_{},fxaa_{},scene_finished_{},batch_rhw_{};   // batch_rhw_: the batch came from pretransformed vertices
 };

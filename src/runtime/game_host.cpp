@@ -217,6 +217,8 @@ bool menu_effect(void* user,unsigned id){
     if(!pump_audio(s)){s.render_failed=true;return false;}
     if(s.runtime&&s.runtime->pc_sound.mapped(id)){s.runtime->pc_sound.effect_42f0d0(id);return true;}
     if(s.menu_audio.command(id,s.movie_error))return true;
+    {static const bool trace=std::getenv("OR2_TRACE")!=nullptr;
+     if(trace)std::fprintf(stderr,"[trace] menu effect %x not played (mode %u): %s\n",id,s.runtime?unsigned(s.runtime->mode_state.current):0u,s.movie_error.c_str());}
     // Outside the frontend (race / race end modes) 4249F0 (42F0D0) also
     // plays the race SE banks, which the native audio does not load yet:
     // counted and reported, the mode continues.
@@ -417,7 +419,26 @@ std::uint32_t frame_call(void* user,std::uint32_t pc,const std::uint32_t*,std::s
     if(s.frontend_gate_open&&s.runtime)frontend_frame(s);
     {std::lock_guard<std::recursive_mutex> audio_lock(audio_mutex());
      ++s.game_frames;if(s.runtime)s.runtime->pc_sound.tick_42f330();
-     if(!mixer.run&&!s.render_failed&&!pump_audio(s))s.render_failed=true;}
+     if(!mixer.run&&!s.render_failed&&!pump_audio(s))s.render_failed=true;
+     // Device diagnostics ($OR2_TRACE): sound state every 300 frames, and
+     // every frame slower than 50 ms (stderr, the platform's console).
+     static const bool trace=std::getenv("OR2_TRACE")!=nullptr;
+     if(trace&&s.runtime){
+         static auto last=std::chrono::steady_clock::now();
+         const auto now=std::chrono::steady_clock::now();
+         const auto ms=std::chrono::duration_cast<std::chrono::milliseconds>(now-last).count();last=now;
+         if(ms>50)std::fprintf(stderr,"[trace] frame %llu took %lld ms (mode %u)\n",(unsigned long long)s.game_frames,(long long)ms,unsigned(s.runtime->mode_state.current));
+         {const auto& f=s.runtime->event_function36;static std::uint32_t ui=0,title=0;
+          if(f.frontend_ui_missing_pc!=ui||f.title_last_missing_service!=title){ui=f.frontend_ui_missing_pc;title=f.title_last_missing_service;
+              std::fprintf(stderr,"[trace] frame %llu mode %u frontend ui missing %x title missing %x\n",(unsigned long long)s.game_frames,unsigned(s.runtime->mode_state.current),ui,title);}}
+         if(s.game_frames%300u==0u){
+             const auto& ps=s.runtime->pc_sound;
+             std::fprintf(stderr,"[trace] frame %llu mode %u mixer run=%d failed=%d pumps=%llu drops=%llu queued=%zu error='%s' music='%s'\n%s\n",
+                 (unsigned long long)s.game_frames,unsigned(s.runtime->mode_state.current),int(mixer.run),int(mixer.failed),(unsigned long long)mixer.pumps,
+                 (unsigned long long)s.audio_drops,s.audio_output?s.audio_output->queued_frames():std::size_t(0),s.movie_error.c_str(),s.music_error.c_str(),ps.status().c_str());
+             for(const auto& e:ps.errors)std::fprintf(stderr,"[trace] pc sound error: %s\n",e.c_str());
+         }
+     }}
     trace_mark("pc_scene");
     // Widescreen: the PC screen the camera sees becomes 16:9 (its FOV 483C10
     // widens, Hor+); the camera's aspect +B8 (set by 484EE0 at init) follows.

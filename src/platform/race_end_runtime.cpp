@@ -415,8 +415,13 @@ template<class F> bool run_end(NativeRuntimeContext& c,F&& body,driving::PcMatri
             // owner (slots, allocations, lanes, road tables, 7D2D80 block) is
             // dropped and rebuilt empty by the next race, as at boot.
             released(k.pc);c.race_area.reset();return 0u;
-        case 0x4489c0u:case 0x44c3d0u:case 0x4f2210u:
         case 0x4276b0u:released(k.pc);c.pc_sound.unload_all_4276b0();return 0u;
+        // 4489C0 (42EB30 frees), 44C3D0 and 4F2210 (440CD0 releases) free
+        // AREA allocations, dropped with the native owner by 44FD00 above.
+        // None of them unloads the sound banks: run as 4276B0, they emptied
+        // FE.PAK under the frontend (arcade close 4C2C60: the announcer cut
+        // off, then every later car / mode voice unmapped).
+        case 0x4489c0u:case 0x44c3d0u:case 0x4f2210u:
         case 0x42ebf0u:case 0x4489f0u:case 0x429a10u:case 0x47ed40u:case 0x451a00u:
             released(k.pc);return 0u;
         case 0x465fa0u:native_ghost_release_465fa0(c);return 0u;

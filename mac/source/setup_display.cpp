@@ -4,7 +4,11 @@ namespace outrun::mac_runtime {
 void SetupDisplay::show(const platform::SetupScreen& screen){
     if(!window_){
         window_=SDL_CreateWindow("OutRun 2006 Coast 2 Coast",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,
-                                 screen.width(),screen.height(),SDL_WINDOW_ALLOW_HIGHDPI);
+                                 screen.width(),screen.height(),SDL_WINDOW_ALLOW_HIGHDPI
+#ifdef OR2_IOS
+                                 |SDL_WINDOW_FULLSCREEN|SDL_WINDOW_BORDERLESS
+#endif
+                                 );
         if(!window_)return;
         renderer_=SDL_CreateRenderer(window_,-1,SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC);
         if(!renderer_)renderer_=SDL_CreateRenderer(window_,-1,0);

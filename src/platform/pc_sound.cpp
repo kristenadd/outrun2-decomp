@@ -1,5 +1,8 @@
 #include "system/exe_image.hpp"
 #include <cstdio>
+#if defined(__APPLE__)
+#include <execinfo.h>
+#endif
 #include <cstdlib>
 #include <stdexcept>
 #include "platform/pc_sound.hpp"
@@ -57,11 +60,21 @@ double PcSound::now_ms()const{
     return std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-origin).count();
 }
 void PcSound::error(const std::string& e){if(errors.size()<32)errors.push_back(e);}
+namespace {
+// Device diagnostics ($OR2_TRACE): bank loads / unloads and effects not played.
+bool sound_trace(){static const bool on=std::getenv("OR2_TRACE")!=nullptr;return on;}
+}
 
 // ---- banks --------------------------------------------------------------
 std::uint32_t PcSound::request_427700(std::uint32_t arg){
+    const auto r=request_inner_427700(arg);
+    if(sound_trace()){static std::uint32_t la=~0u,lr=~0u,lst=~0u;
+        if(arg!=la||r!=lr||request_state_956110!=lst){std::fprintf(stderr,"[snd %u] request %x -> %u (state %u, slot bank %u)\n",unsigned(tick_98abd8),arg,r,request_state_956110,unsigned(slot_bank_[std::min<std::uint32_t>((arg>>8)&0x3fu,Slots-1)]));la=arg;lr=r;lst=request_state_956110;}}
+    return r;
+}
+std::uint32_t PcSound::request_inner_427700(std::uint32_t arg){
     if(!ready)return 0u;
-    ++stats.requests;
+    ++stats.requests;last_request_arg_=arg;
     const std::uint32_t bank=arg&0xffu,slot=(arg>>8)&0x3fu;
     if(slot>=Slots||bank>=sizeof(kSoundBanks)/sizeof(kSoundBanks[0])){error("427700: request "+std::to_string(arg)+" outside the 12 slots / bank table");return 0u;}
     if(slot_bank_[slot]==bank)return 0u;
@@ -99,7 +112,7 @@ std::int32_t PcSound::load_42f620(std::uint32_t slot,const std::string& name){
     if(st==1u){
         std::vector<std::uint8_t> bytes;std::string e;
         if(!read_file||!read_file(name,bytes,e))error("sound bank "+name+": "+(e.empty()?"no reader":e));
-        else{parse_42f4c0(bytes,slot);++stats.loads;stats.load_bytes+=bytes.size();}
+        else{parse_42f4c0(bytes,slot);++stats.loads;stats.load_bytes+=bytes.size();if(sound_trace())std::fprintf(stderr,"[snd %u] load slot %u %s (request %x)\n",unsigned(tick_98abd8),slot,name.c_str(),last_request_arg_);}
         st=6u;return 0;
     }
     return 1;
@@ -150,11 +163,18 @@ void PcSound::unload_4278d0(std::uint32_t slot){
     slot&=0x7fu;
     if(slot>=Slots){error("4278D0: slot outside the 12 slots");return;}
     ++stats.unloads;
+    if(sound_trace())std::fprintf(stderr,"[snd %u] unload slot %u %s\n",unsigned(tick_98abd8),slot,slot_bank_[slot]!=0xffu?kSoundBanks[slot_bank_[slot]].name:"-");
     stop_slot_42f160(slot);release_42f290(slot);
     slot_bank_[slot]=0xffu;
     for(std::uint32_t id=0;id<Ids;++id)if(slot_[id]==slot){slot_[id]=0xffu;index_[id]=0;}
 }
 void PcSound::unload_all_4276b0(){
+    if(sound_trace()){
+        std::fprintf(stderr,"[snd %u] unload all (4276B0)\n",unsigned(tick_98abd8));
+#if defined(__APPLE__)
+        void* frames[16];const int n=backtrace(frames,16);backtrace_symbols_fd(frames,n,2);
+#endif
+    }
     for(std::uint32_t s=0;s<Slots;++s){
         if(s==5u||s==0xau||s==0xbu)continue;
         if(slot_bank_[s]!=0xffu)unload_4278d0(s);
@@ -234,7 +254,7 @@ void PcSound::effect_42f0d0(std::uint32_t command){
     const std::uint32_t id=command&0x7ffu;
     if(id==0x4a9u)return;                                                   // the "no sound" id
     if(command&0x8000u){
-        if(id<Ids&&se_[id]){stop_4129c0(se_[id],-1);++stats.effect_stops;}
+        if(id<Ids&&se_[id]){stop_4129c0(se_[id],-1);++stats.effect_stops;if(sound_trace())std::fprintf(stderr,"[snd %u] stop effect %u\n",unsigned(tick_98abd8),id);}
         return;
     }
     if(command&0x4000u){play_42f1a0((command&0xfffu)|0x1000u);play_42f1a0(((command+1u)&0xfffu)|0x2000u);return;}
@@ -244,13 +264,26 @@ void PcSound::play_42f1a0(std::uint32_t command){
     const std::uint32_t id=command&0x7ffu;
     if(master_957be4<=1)return;
     if(id>=Ids){error("42F1A0: id outside the sound table");return;}
-    if(slot_[id]>=0xffu||!se_[id]){++stats.unmapped;++unmapped_ids[id];return;}   // "not loaded"
+    if(slot_[id]>=0xffu||!se_[id]){++stats.unmapped;++unmapped_ids[id];if(sound_trace())std::fprintf(stderr,"[snd %u] unmapped effect %u\n",unsigned(tick_98abd8),id);return;}   // "not loaded"
     const auto vol=ftol(log10_or_inf(double(master_957be4)*K62817c)*K6281a8+double((std::int32_t(kSoundIds[id].category)-15)*300));
     const std::int32_t pan=(command&0x1000u)?1000:(command&0x2000u)?-1000:0;
-    if(play_412770(se_[id],(command&0x800u)!=0u,vol,-1,pan,0.0f,0.0f)>=0)++stats.effect_plays;
+    const auto voice=play_412770(se_[id],(command&0x800u)!=0u,vol,-1,pan,0.0f,0.0f);
+    if(voice>=0)++stats.effect_plays;
+    if(sound_trace())std::fprintf(stderr,"[snd %u] effect %u slot %u vol %d voice %d\n",unsigned(tick_98abd8),id,unsigned(slot_[id]),vol,voice);
+#if defined(__APPLE__)
+    if(sound_trace()&&id>=150u&&id<=160u&&std::getenv("OR2_TRACE_STACKS")){void* frames[24];const int n=backtrace(frames,24);backtrace_symbols_fd(frames,n,2);}
+#endif
 }
 void PcSound::clear_all_427630(){
     if(!ready)return;
+    if(sound_trace()){
+        unsigned cut=0;std::string ids;
+        for(std::uint32_t id=0;id<Ids;++id)if(slot_[id]<0xffu&&id!=0x40u&&se_[id])for(const auto& v:se_[id].voices)if(v.playing){++cut;ids+=" "+std::to_string(id);}
+        std::fprintf(stderr,"[snd %u] stop all effects (427630): %u playing:%s\n",unsigned(tick_98abd8),cut,ids.c_str());
+#if defined(__APPLE__)
+        if(cut&&std::getenv("OR2_TRACE_STACKS")){void* frames[16];const int n=backtrace(frames,16);backtrace_symbols_fd(frames,n,2);}
+#endif
+    }
     for(std::uint32_t id=0;id<Ids;++id)if(slot_[id]<0xffu&&id!=0x40u&&se_[id])stop_412880(se_[id],-1);
     for(std::uint32_t ch=0;ch<Channels;++ch)if(channels_[ch].x!=0){channels_[ch].x=0;curves_42fa30(ch);}
 }
@@ -374,6 +407,11 @@ void PcSound::mix_add(double* acc,std::size_t frames){
             const double left=gain*(v.pan>0?std::pow(10.0,-double(v.pan)/2000.0):1.0);
             const double right=gain*(v.pan<0?std::pow(10.0,double(v.pan)/2000.0):1.0);
             const double step=double(v.freq)/48000.0;
+            if(sound_trace()){
+                const auto id=std::size_t(&b-se_.data());
+                if(((id>=150u&&id<=160u)||id==362u)&&id<se_.size()){double peak=0;for(std::size_t f=0,i=std::size_t(v.pos);f<frames&&i<n;++f,i=std::size_t(v.pos+step*double(f)))peak=std::max(peak,std::abs(double(pcm[i])*gain));
+                    std::fprintf(stderr,"[mix %u] id %zu pos %.0f/%zu freq %u gain %.3f peak %.0f\n",unsigned(tick_98abd8),id,v.pos,n,v.freq,gain,peak);}
+            }
             for(std::size_t f=0;f<frames;++f){
                 std::size_t i=std::size_t(v.pos);
                 if(i>=n){

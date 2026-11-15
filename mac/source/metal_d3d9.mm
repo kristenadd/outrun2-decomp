@@ -42,11 +42,21 @@ struct MetalD3D9Device::Impl {
     id<MTLCommandBuffer> command;
     id<MTLRenderCommandEncoder> encoder;
     id<MTLTexture> back,back_depth,dummy2d,dummycube;
+    id<MTLBuffer> readback_staging;   // the back buffer (GPU-private) copied here for the CPU
+    // A D3D9 Clear becomes the clear load action of the next pass on the same
+    // targets (on tile GPUs a pass of its own stores and reloads every target).
+    unsigned clear_flags{};std::uint32_t clear_colour{};float clear_z{1};unsigned clear_stencil{};
     id<MTLTexture> scene_copy;               // FXAA source (port enhancement)
     id<MTLTexture> msaa_colour,msaa_depth;   // multisampled scene targets (port enhancement)
     id<MTLRenderPipelineState> fxaa;
     id<MTLSamplerState> fxaa_sampler;
     id<MTLBuffer> visibility;
+    // Pipelined frames (set_pipelined): the frame the GPU still renders keeps
+    // its own vertex arena, visibility results and readback copy (the spare
+    // set) while the CPU records the next one in the current set.
+    id<MTLBuffer> spare_visibility,spare_staging;
+    std::vector<id<MTLBuffer>> spare_vertex_buffers;
+    id<MTLCommandBuffer> inflight;unsigned inflight_samples{};bool inflight_done{};
     id<MTLBuffer> default_vertex;
     std::map<std::uint32_t,id<MTLBuffer>> buffers;
     std::map<std::uint32_t,id<MTLTexture>> textures,depths;
@@ -70,7 +80,13 @@ struct MetalD3D9Device::Impl {
         }
         if(h<owner.buffer_dirty_.size())owner.buffer_dirty_[h]=false;return b;
     }
-    void finish_encoder(){if(encoder){[encoder endEncoding];encoder=nil;}}
+    void end_encoder(){if(encoder){[encoder endEncoding];encoder=nil;}}
+    // Ends the pass; a clear still pending (no draw followed it) runs as a pass of its own.
+    void finish_encoder(){
+        end_encoder();if(!clear_flags)return;
+        start();const unsigned flags=clear_flags;clear_flags=0;
+        auto e=[command renderCommandEncoderWithDescriptor:pass(flags,clear_colour,clear_z,clear_stencil)];require(e!=nil,"Cannot encode Metal clear");[e endEncoding];
+    }
     void start(){if(!command){command=[queue commandBuffer];require(command!=nil,"Cannot allocate Metal command buffer");samples=0;std::memset(visibility.contents,0,visibility.length);vertex_offset=0;vertex_buffer_index=0;}}
     id<MTLBuffer> upload_vertices(const void* source,NSUInteger bytes,NSUInteger& offset){
         const NSUInteger padded=(bytes+255)&~NSUInteger(255);
@@ -87,12 +103,31 @@ struct MetalD3D9Device::Impl {
     void finish(){
         finish_encoder();if(!command)return;
         [command commit];[command waitUntilCompleted];
-        if(command.status!=MTLCommandBufferStatusCompleted)metal_error(command.error,"D3D9 Metal command");
-        const auto* values=static_cast<const std::uint64_t*>(visibility.contents);
-        for(unsigned i=0;i<samples;++i)owner.pixels_shaded+=values[i];
-        const double elapsed=command.GPUEndTime-command.GPUStartTime;
-        if(elapsed>0)gpu_ns+=std::uint64_t(elapsed*1e9);
+        completed(command,visibility,samples);
         command=nil;samples=0;
+    }
+    // A finished command buffer: its status, GPU time and visibility counts.
+    void completed(id<MTLCommandBuffer> c,id<MTLBuffer> results,unsigned count){
+        if(c.status!=MTLCommandBufferStatusCompleted)metal_error(c.error,"D3D9 Metal command");
+        const auto* values=static_cast<const std::uint64_t*>(results.contents);
+        for(unsigned i=0;i<count;++i)owner.pixels_shaded+=values[i];
+        const double elapsed=c.GPUEndTime-c.GPUStartTime;
+        if(elapsed>0)gpu_ns+=std::uint64_t(elapsed*1e9);
+    }
+    // Copies the readback buffer of a finished frame to the CPU back buffer.
+    void copy_out(id<MTLBuffer> from){
+        auto& destination=owner.colour_target_==owner.BackBuffer?owner.colour_:owner.back_colour_;
+        const std::size_t bytes=std::size_t(back.width)*back.height*4;
+        destination.resize(bytes);
+        if(from&&from.length>=bytes)std::memcpy(destination.data(),from.contents,bytes);
+    }
+    // Waits for the frame in flight (pipelined) and shows it: before the CPU
+    // changes what that frame reads (texture uploads, a resize) or reads back.
+    void drain(){
+        if(!inflight)return;
+        [inflight waitUntilCompleted];
+        if(!inflight_done){completed(inflight,spare_visibility,inflight_samples);copy_out(spare_staging);}
+        inflight=nil;inflight_done=false;
     }
     id<MTLTexture> texture(std::uint32_t handle){
         auto* o=owner.object(handle);if(!o||o->kind!=5)return nil;
@@ -141,15 +176,18 @@ struct MetalD3D9Device::Impl {
         p.visibilityResultBuffer=visibility;return p;
     }
     id<MTLRenderCommandEncoder> render_encoder(){
-        start();if(!encoder){encoder=[command renderCommandEncoderWithDescriptor:pass()];require(encoder!=nil,"Cannot create Metal render encoder");}return encoder;
+        start();
+        if(!encoder){const unsigned flags=clear_flags;clear_flags=0;encoder=[command renderCommandEncoderWithDescriptor:pass(flags,clear_colour,clear_z,clear_stencil)];require(encoder!=nil,"Cannot create Metal render encoder");}
+        return encoder;
     }
     void allocate_back(unsigned w,unsigned h){
         require(w>0&&h>0&&w<=16384&&h<=16384,"Invalid Metal back buffer size");
         auto td=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:w height:h mipmapped:NO];
-        td.storageMode=MTLStorageModeShared;td.usage=MTLTextureUsageShaderRead|MTLTextureUsageRenderTarget;back=[device newTextureWithDescriptor:td];
+        // GPU-private (losslessly compressed on Apple GPUs); readback() copies it out.
+        td.storageMode=MTLStorageModePrivate;td.usage=MTLTextureUsageShaderRead|MTLTextureUsageRenderTarget;back=[device newTextureWithDescriptor:td];
         td.pixelFormat=MTLPixelFormatDepth32Float_Stencil8;td.storageMode=MTLStorageModePrivate;back_depth=[device newTextureWithDescriptor:td];
         require(back&&back_depth,"Cannot allocate Metal back buffers");
-        scene_copy=nil;msaa_colour=msaa_depth=nil;
+        scene_copy=nil;msaa_colour=msaa_depth=nil;readback_staging=spare_staging=nil;
     }
     void ensure_msaa(unsigned samples){
         if(msaa_colour&&msaa_colour.sampleCount==samples&&msaa_colour.width==back.width&&msaa_colour.height==back.height)return;
@@ -220,7 +258,9 @@ MetalD3D9Device::MetalD3D9Device(unsigned w,unsigned h,unsigned scale):PcSoftD3D
         const unsigned char black[]{0,0,0,255};
         [m.dummy2d replaceRegion:MTLRegionMake2D(0,0,1,1) mipmapLevel:0 withBytes:black bytesPerRow:4];
         for(unsigned face=0;face<6;++face)[m.dummycube replaceRegion:MTLRegionMake2D(0,0,1,1) mipmapLevel:0 slice:face withBytes:black bytesPerRow:4 bytesPerImage:4];
-        m.visibility=[m.device newBufferWithLength:65536*8 options:MTLResourceStorageModeShared];require(m.visibility!=nil,"Cannot allocate Metal visibility results");
+        m.visibility=[m.device newBufferWithLength:65536*8 options:MTLResourceStorageModeShared];
+        m.spare_visibility=[m.device newBufferWithLength:65536*8 options:MTLResourceStorageModeShared];
+        require(m.visibility&&m.spare_visibility,"Cannot allocate Metal visibility results");
         const float defaults[]{0,0,0,1};m.default_vertex=[m.device newBufferWithBytes:defaults length:sizeof defaults options:MTLResourceStorageModeShared];require(m.default_vertex!=nil,"Cannot allocate default vertex attributes");
         id<MTLLibrary> fxaa=[m.device newLibraryWithSource:[NSString stringWithUTF8String:FxaaSource] options:options error:&error];
         if(!fxaa)metal_error(error,"FXAA shader compilation");
@@ -231,7 +271,7 @@ MetalD3D9Device::MetalD3D9Device(unsigned w,unsigned h,unsigned scale):PcSoftD3D
         m.fxaa_sampler=[m.device newSamplerStateWithDescriptor:sd];require(m.fxaa_sampler!=nil,"Cannot create FXAA sampler");
     }
 }
-MetalD3D9Device::~MetalD3D9Device(){try{metal_->finish();}catch(const std::exception& e){std::fprintf(stderr,"Metal shutdown: %s\n",e.what());}}
+MetalD3D9Device::~MetalD3D9Device(){try{metal_->drain();metal_->finish();}catch(const std::exception& e){std::fprintf(stderr,"Metal shutdown: %s\n",e.what());}}
 void MetalD3D9Device::begin_frame(){
     metal_->finish();metal_->gpu_ns=0;scene_finished_=false;
     msaa_live_=msaa_>1&&!count_only;
@@ -240,7 +280,7 @@ void MetalD3D9Device::begin_frame(){
 }
 void MetalD3D9Device::resize_back_buffer(unsigned w,unsigned h){
     if(w==presentation_width()&&h==presentation_height())return;
-    @autoreleasepool {metal_->finish();metal_->allocate_back(w,h);}
+    @autoreleasepool {metal_->drain();metal_->finish();metal_->allocate_back(w,h);}
 }
 void MetalD3D9Device::finish_scene(){
     if(scene_finished_||count_only||colour_target_!=BackBuffer)return;
@@ -267,21 +307,53 @@ void MetalD3D9Device::finish_scene(){
 }
 void MetalD3D9Device::end_frame(){
     if(msaa_live_){const auto target=colour_target_;colour_target_=BackBuffer;finish_scene();colour_target_=target;}   // no 2D layer this frame
-    metal_->finish();readback();
+    if(!pipelined_){readback();return;}   // the scene and its copy-out in one command buffer, one wait
+    // Pipelined: this frame goes to the GPU with its copy-out, and the CPU
+    // shows the previous one (normally finished while this one was recorded)
+    // instead of waiting: one frame of latency, the CPU and GPU in parallel.
+    auto& m=*metal_;m.finish_encoder();
+    const auto w=presentation_width(),h=presentation_height();const std::size_t row=std::size_t(w)*4;
+    if(!m.readback_staging||m.readback_staging.length<row*h){
+        m.readback_staging=[m.device newBufferWithLength:row*h options:MTLResourceStorageModeShared];require(m.readback_staging!=nil,"Cannot allocate the readback buffer");}
+    m.start();auto blit=[m.command blitCommandEncoder];require(blit!=nil,"Cannot encode the readback");
+    [blit copyFromTexture:m.back sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0,0,0) sourceSize:MTLSizeMake(w,h,1)
+         toBuffer:m.readback_staging destinationOffset:0 destinationBytesPerRow:row destinationBytesPerImage:row*h];
+    [blit endEncoding];
+    id<MTLCommandBuffer> frame=m.command;const unsigned samples=m.samples;m.command=nil;m.samples=0;
+    [frame commit];
+    bool done=false;
+    if(m.inflight)m.drain();
+    else{   // the first frame: shown at once (and again next frame, while the pipeline fills)
+        [frame waitUntilCompleted];m.completed(frame,m.visibility,samples);m.copy_out(m.readback_staging);done=true;
+    }
+    m.inflight=frame;m.inflight_samples=samples;m.inflight_done=done;
+    std::swap(m.visibility,m.spare_visibility);std::swap(m.readback_staging,m.spare_staging);std::swap(m.vertex_buffers,m.spare_vertex_buffers);
+}
+void MetalD3D9Device::set_pipelined(bool on){
+    if(!on&&pipelined_)@autoreleasepool {metal_->drain();}
+    pipelined_=on;
 }
 void MetalD3D9Device::readback(){
-    metal_->finish();
+    metal_->drain();metal_->finish_encoder();
     auto& destination=colour_target_==BackBuffer?colour_:back_colour_;
     const auto w=presentation_width(),h=presentation_height();
     destination.resize(std::size_t(w)*h*4);
-    [metal_->back getBytes:destination.data() bytesPerRow:std::size_t(w)*4 fromRegion:MTLRegionMake2D(0,0,w,h) mipmapLevel:0];
+    auto& m=*metal_;const std::size_t row=std::size_t(w)*4;
+    if(!m.readback_staging||m.readback_staging.length<row*h){
+        m.readback_staging=[m.device newBufferWithLength:row*h options:MTLResourceStorageModeShared];require(m.readback_staging!=nil,"Cannot allocate the readback buffer");}
+    m.start();auto blit=[m.command blitCommandEncoder];require(blit!=nil,"Cannot encode the readback");
+    [blit copyFromTexture:m.back sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0,0,0) sourceSize:MTLSizeMake(w,h,1)
+         toBuffer:m.readback_staging destinationOffset:0 destinationBytesPerRow:row destinationBytesPerImage:row*h];
+    [blit endEncoding];m.finish();
+    std::memcpy(destination.data(),m.readback_staging.contents,row*h);
 }
 unsigned MetalD3D9Device::presentation_width()const{return unsigned(metal_->back.width);}
 unsigned MetalD3D9Device::presentation_height()const{return unsigned(metal_->back.height);}
 std::uint64_t MetalD3D9Device::gpu_nanoseconds()const{return metal_->gpu_ns;}
 std::string MetalD3D9Device::device_name()const{return metal_->device.name.UTF8String;}
-void MetalD3D9Device::set_render_target(std::uint32_t i,std::uint32_t h){metal_->finish_encoder();PcSoftD3D9Device::set_render_target(i,h);}
-void MetalD3D9Device::set_depth_stencil_surface(std::uint32_t h){metal_->finish_encoder();PcSoftD3D9Device::set_depth_stencil_surface(h);}
+// The pass ends only when a target really changes (the PC sets the same one again and again).
+void MetalD3D9Device::set_render_target(std::uint32_t i,std::uint32_t h){if(h!=colour_target_)metal_->finish_encoder();PcSoftD3D9Device::set_render_target(i,h);}
+void MetalD3D9Device::set_depth_stencil_surface(std::uint32_t h){if(h!=depth_target_)metal_->finish_encoder();PcSoftD3D9Device::set_depth_stencil_surface(h);}
 void MetalD3D9Device::release(std::uint32_t h){
     PcSoftD3D9Device::release(h);
     // Most releases only drop a reference (set_stream_source, set_texture): nothing was destroyed.
@@ -296,14 +368,16 @@ std::uint8_t* MetalD3D9Device::lock(std::uint32_t h,std::uint32_t offset,std::ui
     if(p){if(buffer_dirty_.size()<=h)buffer_dirty_.resize(h+1);buffer_dirty_[h]=true;}return p;
 }
 void MetalD3D9Device::unlock_rect(std::uint32_t h){
-    metal_->finish();PcSoftD3D9Device::unlock_rect(h);auto* s=object(h);if(!s||!s->parent)return;
+    metal_->drain();metal_->finish();PcSoftD3D9Device::unlock_rect(h);auto* s=object(h);if(!s||!s->parent)return;
     auto found=metal_->textures.find(s->parent);if(found==metal_->textures.end())return;
     const auto* parent=object(s->parent);const auto& data=parent->rgba[s->face][s->level];
     [found->second replaceRegion:MTLRegionMake2D(0,0,s->width,s->height) mipmapLevel:s->level slice:s->face withBytes:data.data() bytesPerRow:std::size_t(s->width)*4 bytesPerImage:data.size()];
 }
 void MetalD3D9Device::clear(std::uint32_t flags,std::uint32_t c,float z,std::uint32_t s){
-    if(count_only)return;auto& m=*metal_;m.finish_encoder();m.start();
-    auto e=[m.command renderCommandEncoderWithDescriptor:m.pass(flags,c,z,s)];require(e!=nil,"Cannot encode Metal clear");[e endEncoding];
+    if(count_only)return;auto& m=*metal_;
+    // Ends the pass; the clear opens the next one (merged with a clear already waiting).
+    m.end_encoder();m.clear_flags|=flags&7u;
+    if(flags&1u)m.clear_colour=c;if(flags&2u)m.clear_z=z;if(flags&4u)m.clear_stencil=s;
 }
 void MetalD3D9Device::raster(const Vertex* v,unsigned n){
     if(n<3)return;

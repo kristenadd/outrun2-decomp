@@ -351,6 +351,11 @@ bool mac_renderer_initialize(MacRenderer& renderer,const char* frontend_path,std
             scale=unsigned(parsed);
         }
         impl->device=std::make_unique<RendererImpl::Device>(640u,480u,scale);
+#ifndef OR2_MAC_OPENGL
+        // The CPU records the next frame while the GPU renders this one (one
+        // frame of latency); OR2_METAL_SYNC=1 waits for every frame instead.
+        impl->device->set_pipelined(std::getenv("OR2_METAL_SYNC")==nullptr);
+#endif
         std::printf("Metal GPU: %s; 3D resolution %ux%u\n",impl->device->device_name().c_str(),impl->device->presentation_width(),impl->device->presentation_height());
     }
     catch(const std::exception& e){error=e.what();delete impl;return false;}

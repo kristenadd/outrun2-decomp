@@ -27,7 +27,13 @@ bool SdlDisplay::open(unsigned w,unsigned h,std::string& error){
 #else
     const int window_width=int(w),window_height=int(h);
 #endif
-    window_=SDL_CreateWindow("OutRun 2006 macOS",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,window_width,window_height,SDL_WINDOW_SHOWN|SDL_WINDOW_RESIZABLE|SDL_WINDOW_ALLOW_HIGHDPI);
+#ifdef OR2_IOS
+    // iOS: the whole screen (the logical size below keeps the game's aspect).
+    constexpr Uint32 window_flags=SDL_WINDOW_SHOWN|SDL_WINDOW_FULLSCREEN|SDL_WINDOW_BORDERLESS|SDL_WINDOW_ALLOW_HIGHDPI;
+#else
+    constexpr Uint32 window_flags=SDL_WINDOW_SHOWN|SDL_WINDOW_RESIZABLE|SDL_WINDOW_ALLOW_HIGHDPI;
+#endif
+    window_=SDL_CreateWindow("OutRun 2006 macOS",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,window_width,window_height,window_flags);
     if(!window_){error=SDL_GetError();return false;}
     SDL_SetHint(SDL_HINT_RENDER_DRIVER,"metal");
     renderer_=SDL_CreateRenderer(window_,-1,SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC);

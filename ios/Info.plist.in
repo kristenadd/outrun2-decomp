@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleDevelopmentRegion</key><string>en</string>
+<key>CFBundleExecutable</key><string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
+<key>CFBundleIdentifier</key><string>${MACOSX_BUNDLE_GUI_IDENTIFIER}</string>
+<key>CFBundleName</key><string>OutRun</string>
+<key>CFBundleDisplayName</key><string>OutRun 2006</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+<key>CFBundleVersion</key><string>0.2</string>
+<key>CFBundleShortVersionString</key><string>0.2</string>
+<key>CFBundleSupportedPlatforms</key><array><string>${OR2_IOS_PLATFORM_NAME}</string></array>
+<key>MinimumOSVersion</key><string>16.0</string>
+<key>LSRequiresIPhoneOS</key><true/>
+<key>UIDeviceFamily</key><array><integer>1</integer><integer>2</integer></array>
+<key>UIRequiredDeviceCapabilities</key><array><string>arm64</string><string>metal</string></array>
+<key>CFBundleIcons</key><dict><key>CFBundlePrimaryIcon</key><dict>
+  <key>CFBundleIconFiles</key><array><string>AppIcon60x60</string></array></dict></dict>
+<key>CFBundleIcons~ipad</key><dict><key>CFBundlePrimaryIcon</key><dict>
+  <key>CFBundleIconFiles</key><array><string>AppIcon60x60</string><string>AppIcon76x76</string><string>AppIcon83.5x83.5</string></array></dict></dict>
+<!-- UIScene life cycle (required by the iOS 27 SDK): one window scene, no
+     scene delegate; ios/source/ios_scene.mm puts SDL's windows in it. -->
+<key>UIApplicationSceneManifest</key><dict>
+  <key>UIApplicationSupportsMultipleScenes</key><false/>
+  <key>UISceneConfigurations</key><dict>
+    <key>UIWindowSceneSessionRoleApplication</key><array><dict>
+      <key>UISceneConfigurationName</key><string>Default</string></dict></array></dict></dict>
+<!-- A launch screen gives the native screen size (no legacy letterbox). -->
+<key>UILaunchScreen</key><dict/>
+<key>UIRequiresFullScreen</key><true/>
+<key>UIStatusBarHidden</key><true/>
+<key>UIViewControllerBasedStatusBarAppearance</key><false/>
+<key>UISupportedInterfaceOrientations</key><array>
+  <string>UIInterfaceOrientationLandscapeRight</string><string>UIInterfaceOrientationLandscapeLeft</string></array>
+<key>UISupportedInterfaceOrientations~ipad</key><array>
+  <string>UIInterfaceOrientationLandscapeRight</string><string>UIInterfaceOrientationLandscapeLeft</string></array>
+<key>UIApplicationSupportsIndirectInputEvents</key><true/>
+<!-- 120 Hz on ProMotion iPhones (Options > Settings, FRAME RATE). -->
+<key>CADisableMinimumFrameDurationOnPhone</key><true/>
+<!-- The game files are copied into Documents (Files app, Finder / Apple Devices file sharing). -->
+<key>UIFileSharingEnabled</key><true/>
+<key>LSSupportsOpeningDocumentsInPlace</key><true/>
+<!-- Controller-only game. -->
+<key>GCSupportsControllerUserInteraction</key><true/>
+<key>GCSupportedGameControllers</key><array><dict><key>ProfileName</key><string>ExtendedGamepad</string></dict></array>
+<key>NSLocalNetworkUsageDescription</key><string>OutRun looks for other players on your local network for LAN races.</string>
+<key>LSApplicationCategoryType</key><string>public.app-category.racing-games</string>
+</dict></plist>

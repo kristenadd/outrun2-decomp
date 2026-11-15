@@ -26,6 +26,68 @@
         "OR2_MAC_SDL": "ON",
         "OR2_MAC_MEDIA": "ON"
       }
+    },
+    {
+      "name": "ios-base",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_SYSTEM_NAME": "iOS",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "16.0",
+        "OR2_X87_FAST": "ON",
+        "PKG_CONFIG_EXECUTABLE": "${sourceDir}/build/ios-dependencies/host/bin/pkgconf"
+      }
+    },
+    {
+      "name": "ios-simulator",
+      "displayName": "iOS Simulator ARM64 / Metal",
+      "inherits": "ios-base",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/ios-simulator",
+      "environment": {
+        "PKG_CONFIG_PATH": "${sourceDir}/build/ios-dependencies/iphonesimulator/lib/pkgconfig",
+        "PKG_CONFIG_LIBDIR": "${sourceDir}/build/ios-dependencies/iphonesimulator/lib/pkgconfig"
+      },
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "${sourceDir}/build/ios-dependencies/iphonesimulator",
+        "CMAKE_FIND_ROOT_PATH": "${sourceDir}/build/ios-dependencies/iphonesimulator",
+        "CMAKE_OSX_SYSROOT": "iphonesimulator",
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "ios-device",
+      "displayName": "iOS / iPadOS device (Xcode project, signed)",
+      "inherits": "ios-base",
+      "generator": "Xcode",
+      "binaryDir": "${sourceDir}/build/ios-device",
+      "environment": {
+        "PKG_CONFIG_PATH": "${sourceDir}/build/ios-dependencies/iphoneos/lib/pkgconfig",
+        "PKG_CONFIG_LIBDIR": "${sourceDir}/build/ios-dependencies/iphoneos/lib/pkgconfig"
+      },
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "${sourceDir}/build/ios-dependencies/iphoneos",
+        "CMAKE_FIND_ROOT_PATH": "${sourceDir}/build/ios-dependencies/iphoneos",
+        "CMAKE_OSX_SYSROOT": "iphoneos",
+        "CMAKE_CONFIGURATION_TYPES": "Release"
+      }
+    },
+    {
+      "name": "ios-device-check",
+      "displayName": "iOS device ARM64, unsigned (compile check)",
+      "inherits": "ios-base",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/ios-device-check",
+      "environment": {
+        "PKG_CONFIG_PATH": "${sourceDir}/build/ios-dependencies/iphoneos/lib/pkgconfig",
+        "PKG_CONFIG_LIBDIR": "${sourceDir}/build/ios-dependencies/iphoneos/lib/pkgconfig"
+      },
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "${sourceDir}/build/ios-dependencies/iphoneos",
+        "CMAKE_FIND_ROOT_PATH": "${sourceDir}/build/ios-dependencies/iphoneos",
+        "CMAKE_OSX_SYSROOT": "iphoneos",
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     }
   ],
   "buildPresets": [
@@ -36,6 +98,28 @@
     {
       "name": "mac-full",
       "configurePreset": "mac-full"
+    },
+    {
+      "name": "ios-simulator",
+      "configurePreset": "ios-simulator",
+      "targets": [
+        "OutRunIOS"
+      ]
+    },
+    {
+      "name": "ios-device",
+      "configurePreset": "ios-device",
+      "targets": [
+        "OutRunIOS"
+      ],
+      "configuration": "Release"
+    },
+    {
+      "name": "ios-device-check",
+      "configurePreset": "ios-device-check",
+      "targets": [
+        "OutRunIOS"
+      ]
     }
   ],
   "testPresets": [

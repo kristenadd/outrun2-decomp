@@ -3101,11 +3101,14 @@ void native_game_mode_init(NativeRuntimeContext& context){
         }
     }else ++game.empty_440d90_calls;
 
-    // PC 0x499E0D..0x499E42.  The global effect and timing reset are retained
-    // as explicit, observable boundaries until their owning systems land.
+    // PC 0x499E0D..0x499E26: 4249F0(0x82), the passenger's "Let's go!" (ORC.PAK,
+    // loaded by the START scene owner 49BA80) in every variant but 4 and 6.
+    // The timing reset below is retained as an observable boundary.
     if(game.game_variant!=4u&&game.game_variant!=6u){
         ++game.global_effect_calls;
         game.global_effect_last=0x82u;
+        auto& f=context.event_function36;
+        if(f.frontend_effect)(void)f.frontend_effect(f.frontend_effect_user,0x82u);
     }
     if(game.previous_mode!=17u&&game.previous_mode!=18u)
         ++game.timing_reset_calls;

@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "platform/race_robots.hpp"
 #include "enhancements/frame_rate.hpp"
 #include "platform/race_translated.hpp"
@@ -890,6 +891,10 @@ struct Passenger : Port {
         else{l.motions=convertible?0x5c1150u:0x5c1110u;l.land_voices=0x5c10e8u;l.jump_voices=0x5c1108u;}
         const std::uint32_t kind=m.u32(work+8);
         l.air_voices=kind==9u||kind==10u?0x5c1190u:0x5c119cu;
+        // Device diagnostics ($OR2_TRACE): what the passenger reacts to.
+        {static const bool trace=std::getenv("OR2_TRACE")!=nullptr;static unsigned calls=0;
+         if(trace&&(++calls%120u)==1u)std::fprintf(stderr,"[pas] control %u variant %u kind %u reaction %u air %.2f land %.2f flags %08x slide %08x 46c530 %u\n",
+             calls,variant,kind,m.u32(Reaction),double(m.f32(car+0x2c8)),double(m.f32(car+0x2f8)),m.u32(car+4),m.u32(car+0x248),q(0x46c530u));}
         // OutRun mode: all five rivals of the last stage out of the race.
         std::uint32_t rivals_down=0;
         if(variant==1&&convertible==0u&&m.u32(car+0x5c)==1u&&m.u32(AllRivalsDown)==0u){

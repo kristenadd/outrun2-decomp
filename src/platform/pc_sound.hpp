@@ -35,6 +35,7 @@ public:
     std::uint32_t voice_set_754b0c{4u};   // .data 4 (SPRACE)
     std::int32_t master_957be4{0x41};     // 424600 -> 42EE10(A0010000, 0x40): 0x40+1
     bool mute_95b250{};                   // 42F320 (pause)
+    std::uint32_t last_request_arg_{};    // diagnostics ($OR2_TRACE)
 
     PcSound();
     void boot_424600();                                     // slots empty, master 65
@@ -43,6 +44,7 @@ public:
     // layers pick it up at their next 42F850 tick.
     void master_volume_42efa0(std::uint32_t level){master_957be4=(std::int32_t(std::int16_t(level))>>1)+1;}
     std::uint32_t request_427700(std::uint32_t arg);        // 0 done, 1 busy
+    std::uint32_t request_inner_427700(std::uint32_t arg);
     void unload_4278c0(std::uint32_t arg){unload_4278d0((arg&0xffffu)>>8);}
     void unload_4278d0(std::uint32_t slot);
     void unload_all_4276b0();
