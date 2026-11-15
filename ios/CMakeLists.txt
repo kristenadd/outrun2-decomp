@@ -79,7 +79,12 @@ set_target_properties(OutRunIOS PROPERTIES
     XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Apple Development"
     XCODE_ATTRIBUTE_ENABLE_BITCODE "NO"
     # Xcode: the one scheme to run (the project's test and tool targets get none).
-    XCODE_GENERATE_SCHEME ON)
+    XCODE_GENERATE_SCHEME ON
+    # Run from Xcode at full speed: Metal API / shader validation and GPU frame
+    # capture (Xcode's defaults) check every one of the game's many draws.
+    XCODE_SCHEME_ENABLE_GPU_API_VALIDATION OFF
+    XCODE_SCHEME_ENABLE_GPU_SHADER_VALIDATION OFF
+    XCODE_SCHEME_ENABLE_GPU_FRAME_CAPTURE_MODE Disabled)
 if(NOT CMAKE_GENERATOR STREQUAL "Xcode")
     # Makefile builds (the simulator): ad-hoc signature, as Xcode gives simulator apps.
     add_custom_command(TARGET OutRunIOS POST_BUILD

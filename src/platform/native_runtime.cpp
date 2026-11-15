@@ -3108,7 +3108,7 @@ void native_game_mode_init(NativeRuntimeContext& context){
         ++game.global_effect_calls;
         game.global_effect_last=0x82u;
         auto& f=context.event_function36;
-        if(f.frontend_effect)(void)f.frontend_effect(f.frontend_effect_user,0x82u);
+        if(!f.frontend_effect||!f.frontend_effect(f.frontend_effect_user,0x82u))++game.global_effect_unplayed;
     }
     if(game.previous_mode!=17u&&game.previous_mode!=18u)
         ++game.timing_reset_calls;

@@ -78,6 +78,14 @@ bool map_memory(NativeRuntimeContext& c,NativeRaceRobots& r,bool scene=false){
     put(r.cell_799ca0,slots[6].work_token);m.map(0x799ca0u,r.cell_799ca0.data(),4);
     for(std::uint32_t i=0;i<r.cell_records_799b38.size();++i){
         put(r.cell_records_799b38[i],slots[0x16au+i].work_token);m.map(0x799b38u+(0x16au+i)*0x3cu,r.cell_records_799b38[i].data(),4);}
+    // The passenger's OutRun check (489A90: all five rivals of the last stage out of the
+    // race, from the stage switch on, car +5C == 1) reads the records of events
+    // 0x11A..0x133 (799B38 + id * 0x3C, from 79DD50) and their works +5C / +3F0: the course
+    // objects (OSO) of the traffic owner, one 0x500 slot each at ObjectWorkBase. Unmapped,
+    // its first read latched the passenger off at the end of stage 1 (no comments after it).
+    for(std::uint32_t i=0;i<r.cell_rivals_799b38.size();++i){
+        put(r.cell_rivals_799b38[i],slots[0x11au+i].work_token);m.map(0x799b38u+(0x11au+i)*0x3cu,r.cell_rivals_799b38[i].data(),4);}
+    {auto& t=native_race_traffic(c);m.map(NativeRaceTraffic::ObjectWorkBase,t.object_works.data(),t.object_works.size());}
     m.map(NativeRaceRobots::AutosceneWorkBase,r.autoscene_work.data(),r.autoscene_work.size());
     for(auto& f:r.autoscene_files)m.map(f.base,f.bytes.data(),f.bytes.size());
     if(scene){auto& st=native_race_end(c).state;

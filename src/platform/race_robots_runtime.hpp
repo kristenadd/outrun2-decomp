@@ -66,6 +66,7 @@ struct NativeRaceRobots {
     std::uint32_t autoscene_file_next{AutosceneFileBase};
     std::vector<std::uint32_t> autoscene_handles;            // 44FD80 handle - AutosceneFileHandle -> file base (0: refused)
     std::array<std::array<std::uint8_t,4>,0x16> cell_records_799b38{};
+    std::array<std::array<std::uint8_t,4>,0x1a> cell_rivals_799b38{};   // events 0x11A..0x133 (the passenger's rival check)
     std::array<std::uint8_t,4> cell_799ca0{};
     std::uint32_t autoscene_fault{};                         // first missing service PC / unmapped address
     std::string autoscene_error;

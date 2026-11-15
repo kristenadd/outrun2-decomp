@@ -702,6 +702,7 @@ struct Passenger : Port {
         const std::uint32_t prev=Queue+last*16u;
         if(m.i32(prev+4)>0&&m.i16(prev+8)>=m.i16(entry+8))return;   // a comment of at least this priority still waits
         if(std::uint32_t(std::int32_t(head+1u)%8)==m.u32(QueueTail))return;
+        {static const bool trace=std::getenv("OR2_TRACE")!=nullptr;if(trace)std::fprintf(stderr,"[cmt] queued %u\n",m.u32(entry));}
         const std::uint32_t d=Queue+head*16u;
         m.put32(d,m.u32(entry));m.put32(d+4,m.u32(entry+4));m.put16(d+8,m.u16(entry+8));
         m.put32(Queue+m.u32(QueueHead)*16u+0xc,1);
@@ -804,6 +805,13 @@ struct Passenger : Port {
     // 488D80: the navigator comments, outside the goal and the race start.
     void comments_488d80(){
         const std::uint32_t car=this->car();
+        {static const bool trace=std::getenv("OR2_TRACE")!=nullptr;static unsigned calls=0;static std::uint32_t last_flag=~0u;
+         if(trace){const std::uint32_t flag=q(0x450160u);
+             if((++calls%120u)==1u||flag!=last_flag)
+                 std::fprintf(stderr,"[cmt] gate 44b7b0=%u 44ff10=%u countdown=%d flag450160=%u area=%u into=%d drift=%u drifts=%u queue=%u/%u\n",
+                     q(0x44b7b0u,{m.u32(car+0x5c)})&0xffu,q(0x44ff10u),int(std::int16_t(q(0x49b2d0u))),flag,q(0x44c940u,{q(0x450380u,{8})}),
+                     int(std::int32_t(m.u16(car+0x260))-std::int32_t(m.u16(car+0x25e))),m.u32(DriftFrames),m.u32(Lap),m.u32(QueueHead),m.u32(QueueTail));
+             last_flag=flag;}}
         if((q(0x44b7b0u,{m.u32(car+0x5c)})&0xffu)&&q(0x44ff10u))return;
         if(std::int16_t(q(0x49b2d0u))>0x3c)return;
         area_comments_488bd0(car);

@@ -115,6 +115,7 @@ struct NativeGameModeState {
     std::uint32_t empty_440d90_calls{};
     std::uint32_t global_effect_calls{};
     std::uint32_t global_effect_last{};
+    std::uint32_t global_effect_unplayed{};   // 4249F0(0x82) with no effect service / not played
     std::uint32_t timing_reset_calls{};
     std::uint32_t owner_command_polls{};
     std::uint32_t last_owner_command{0xffffffffu};

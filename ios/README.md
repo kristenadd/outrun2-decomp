@@ -99,7 +99,10 @@ identifier of your own:
 In Xcode, choose the **OutRunIOS** scheme (the only one the project has; do
 not let Xcode autocreate schemes for the test targets) and your device, then
 Run. The device project has a Release configuration only, so Run builds the
-optimised game. Or from the command line:
+optimised game, and the scheme turns off Metal API / shader validation and GPU
+frame capture (Xcode's defaults check every draw and slow the game down a lot).
+Xcode still attaches its debugger on Run: for timing, start the app from its
+icon instead. Or from the command line:
 
     cmake --build --preset ios-device -- -allowProvisioningUpdates
 
