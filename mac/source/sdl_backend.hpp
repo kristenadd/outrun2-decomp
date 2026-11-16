@@ -13,6 +13,10 @@ class SdlDisplay {
 public:
     ~SdlDisplay();
     bool open(unsigned width,unsigned height,std::string& error);
+    // A new canvas (logical) size; SDL keeps its aspect on the window.
+    bool resize(unsigned width,unsigned height,std::string& error);
+    // iOS: the screen's width / height (landscape); 0 on the Mac (resizable window).
+    float screen_aspect()const;
     void clear();
     SDL_Texture* texels(const void* key,platform::MeshPreviewTextureFormat,unsigned w,unsigned h,const std::vector<std::uint8_t>&);
     void quad(const std::array<platform::MeshPreviewVertex,4>&,SDL_Texture*,unsigned,unsigned);

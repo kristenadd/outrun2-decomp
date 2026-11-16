@@ -228,6 +228,11 @@ sample rate.
 - Passenger kept running past stage 1: her rival check's event records
   (`0x11A..0x133`) and the course-object works are now mapped for the robots.
 - Keyboard: Enter selects (was Start).
+- iOS fills the screen: Options ▸ Settings ▸ ASPECT RATIO has **FULL SCREEN**
+  (default on iOS, `fit_screen=1` in options.ini): Hor+ at the device's own
+  aspect. 4:3 / 16:9 still selectable (16:9 letterboxes). The SDL canvas
+  width follows the aspect at runtime (`g_canvas_width`, `renderer_present.inc`).
+  The 2D menus / HUD stay a centred 4:3, as in 16:9.
 - Race-end freeze in OutRun mode (stuck in mode 26 after `race end latched: PC
   47EE70`): traffic cars' destroy callback `470560` went to the ghost handler,
   which faulted for good when a stage change destroyed traffic. The traffic

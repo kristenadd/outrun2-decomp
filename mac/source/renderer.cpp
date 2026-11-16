@@ -167,8 +167,13 @@ bool append_start_loading(platform::FrontendPreviewPack& frontend,
 }
 // ---- frontend quads, shared by the deko3d renderer and the host_nro
 // compositor (same vertices on both) ----
-constexpr std::uint32_t FramebufferWidth=1280u;
+constexpr std::uint32_t FramebufferWidth=1280u;    // the 16:9 canvas (SDL logical size)
 constexpr std::uint32_t FramebufferHeight=720u;
+// The canvas width now shown: 1280 (16:9) on the Mac; on iOS the screen's own
+// aspect unless the 16:9 aspect is chosen (renderer_present.inc), so the
+// screen is filled and SDL letterboxes only a forced 16:9.
+std::uint32_t g_canvas_width=FramebufferWidth;
+float canvas_aspect(){return float(g_canvas_width)/float(FramebufferHeight);}
 constexpr std::uint32_t FrontendTransformIndex=8u;
 constexpr std::uint32_t FrontendVerticesPerDraw=4u;
 // The SPRANI instance pool is drawn by the ported PC 2D renderer (428170 ->
@@ -198,7 +203,7 @@ make_frontend_quad(const platform::FrontendPreviewPack& pack,
     constexpr float scene_width=float(platform::FrontendPreviewSceneWidth);
     constexpr float scene_height=float(platform::FrontendPreviewSceneHeight);
     const float scene_aspect=scene_width/scene_height;
-    constexpr float screen_aspect=float(FramebufferWidth)/float(FramebufferHeight);
+    const float screen_aspect=canvas_aspect();
     float half_x=0.90f,half_y=0.90f;
     if(scene_aspect<screen_aspect)half_x=half_y*scene_aspect/screen_aspect;
     else half_y=half_x*screen_aspect/scene_aspect;
@@ -240,9 +245,9 @@ make_game_ui_quad(const platform::GameUiPack& pack,
                   const platform::GameUiDraw& draw){
     const auto& texture=pack.textures[draw.texture];
     constexpr float scene_width=640.0f,scene_height=480.0f;
-    constexpr float screen_aspect=float(FramebufferWidth)/float(FramebufferHeight);
+    const float screen_aspect=canvas_aspect();
     constexpr float half_y=0.90f;
-    constexpr float half_x=half_y*(scene_width/scene_height)/screen_aspect;
+    const float half_x=half_y*(scene_width/scene_height)/screen_aspect;
     constexpr std::array<float,3> normal{{0.401422f,0.752666f,0.521849f}};
     std::array<platform::MeshPreviewVertex,FrontendVerticesPerDraw> vertices{};
     for(std::size_t i=0;i<vertices.size();++i){
@@ -363,7 +368,16 @@ bool mac_renderer_initialize(MacRenderer& renderer,const char* frontend_path,std
 }
 void mac_renderer_set_video(MacRenderer& renderer,unsigned width,unsigned height,bool widescreen,unsigned msaa,bool fxaa){
     auto* r=static_cast<RendererImpl*>(renderer.impl);if(!r)return;
-    g_widescreen=widescreen;r->video_width=width;r->video_height=height;r->video_msaa=msaa;r->video_fxaa=fxaa;r->video_pending=true;
+    g_widescreen=widescreen;g_aspect=widescreen&&height?float(width)/float(height):4.f/3.f;
+    if(std::fabs(g_aspect-16.f/9.f)<0.01f)g_aspect=16.f/9.f;   // 16:9 widths are rounded to even (854x480)
+    r->video_width=width;r->video_height=height;r->video_msaa=msaa;r->video_fxaa=fxaa;r->video_pending=true;
+}
+float mac_renderer_screen_aspect(MacRenderer& renderer){
+#ifndef OR2_MAC_OPENGL
+    auto* r=static_cast<RendererImpl*>(renderer.impl);return r&&r->display?r->display->screen_aspect():0.f;
+#else
+    (void)renderer;return 0.f;
+#endif
 }
 void mac_renderer_scene_to_frame(MacRenderer& renderer){
 #ifndef OR2_MAC_OPENGL

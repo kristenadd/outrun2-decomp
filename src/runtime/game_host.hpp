@@ -125,6 +125,7 @@ struct GameHost {
     bool render_failed{};
     // Platform state the game follows.
     bool widescreen{};             // 16:9 PC screen (Hor+), else 640x480
+    float aspect{};                // > 0: the PC screen's width / height when widescreen (Hor+ at any aspect)
     bool pc_input_layer{true};     // race controls through the PC DirectInput layer (406FA0)
     std::string save_directory;    // empty: <home>/SaveGame
     // ---- platform hooks of the input sample, in call order ----

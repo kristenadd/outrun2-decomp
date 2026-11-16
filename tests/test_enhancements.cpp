@@ -2,6 +2,7 @@
 // settings helpers and the row steps, with and without a platform backend.
 #include "enhancements/settings_rows.hpp"
 #include "enhancements/video.hpp"
+#include "enhancements/gpu_backend.hpp"
 #include <array>
 #include <cstdio>
 #include <cstdlib>
@@ -30,6 +31,14 @@ int main(){
     check(en::resolution_label({1920,1080})=="1920x1080","label is the size");
     check(en::resolution_at(1080,true)==en::Resolution{1920,1080}&&en::resolution_at(1080,false)==en::Resolution{1440,1080},"width follows the aspect");
     check(en::resolution_at(480,true)==en::Resolution{854,480}&&en::resolution_at(504,true)==en::Resolution{896,504},"16:9 widths rounded to even");
+    check(en::resolution_at(1080,1.5228f)==en::Resolution{1646,1080},"any aspect, even width");
+    {en::VideoSettings v{};check(en::video_aspect(v,1.5f)==4.f/3.f,"4:3");v.widescreen=true;check(en::video_aspect(v,1.5f)==16.f/9.f,"16:9");
+     v.fit_screen=true;check(en::video_aspect(v,1.5f)==1.5f&&en::video_aspect(v,0)==16.f/9.f,"fit: the screen's aspect when known");}
+    {en::VideoSettings v{};check(en::GpuVideoBackend::parse_option("fit_screen","1",v)&&v.fit_screen,"fit_screen key");
+     v.resolution={1440,1080};en::GpuVideoBackend mac("",v);
+     check(!mac.current().fit_screen&&mac.screen_aspect()==0,"no screen aspect: no fit");
+     mac.set_screen_aspect(1.5f);
+     check(mac.current().fit_screen&&mac.current().widescreen&&mac.current().resolution==en::Resolution{1620,1080},"screen known: fit restored at its aspect");}
     en::Antialiasing a{};
     check(en::parse_antialiasing("4",a)&&a==en::Antialiasing::Msaa4x,"legacy MSAA value");
     check(en::parse_antialiasing("fxaa",a)&&a==en::Antialiasing::Fxaa,"FXAA value");

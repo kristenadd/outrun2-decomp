@@ -47,6 +47,20 @@ bool SdlDisplay::open(unsigned w,unsigned h,std::string& error){
     std::fprintf(stdout,"macOS display: SDL driver=%s, Metal D3D9 rasterisation + Metal composition\n",SDL_GetCurrentVideoDriver());
     return true;
 }
+bool SdlDisplay::resize(unsigned w,unsigned h,std::string& error){
+    if(!renderer_||!w||!h)return false;
+    if(SDL_RenderSetLogicalSize(renderer_,int(w),int(h))<0){error=SDL_GetError();return false;}
+    width_=w;height_=h;return true;
+}
+float SdlDisplay::screen_aspect()const{
+#ifdef OR2_IOS
+    int w=0,h=0;
+    if(!renderer_||SDL_GetRendererOutputSize(renderer_,&w,&h)<0||w<=0||h<=0)return 0;
+    return float(std::max(w,h))/float(std::min(w,h));   // the game is landscape only
+#else
+    return 0;
+#endif
+}
 void SdlDisplay::clear(){require_sdl(SDL_SetRenderDrawColor(renderer_,0,0,0,255)==0);require_sdl(SDL_RenderClear(renderer_)==0);}
 SDL_Texture* SdlDisplay::upload(const void* key,const std::uint8_t* pixels,unsigned w,unsigned h,bool update){
     if(!pixels||!w||!h)throw std::runtime_error("invalid display texture");

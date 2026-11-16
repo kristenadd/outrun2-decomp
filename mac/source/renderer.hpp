@@ -16,6 +16,9 @@ namespace outrun::mac_runtime {
 // The PC's 640x480 screen, presented centred 4:3; 16:9 (Options > Settings,
 // Metal only) stretches the 3D scene to the full width and keeps the 2D layer 4:3.
 inline bool g_widescreen=false;
+// The PC screen's width / height when widescreen: 16:9, or the screen's own
+// aspect (FULL SCREEN, iOS), from the 3D resolution of mac_renderer_set_video.
+inline float g_aspect=16.f/9.f;
 
 
 struct MacRendererStats {
@@ -56,6 +59,9 @@ struct MacRenderer { void* impl{}; };
 // Options > Settings enhancement rows (Metal): the 3D resolution (back buffer pixels), 16:9
 // and the antialiasing (MSAA 1 / 2 / 4 samples, or FXAA), applied before the next frame.
 void mac_renderer_set_video(MacRenderer&,unsigned width,unsigned height,bool widescreen,unsigned msaa,bool fxaa);
+// The width / height of the screen the game fills (iOS: the device screen,
+// landscape); 0 where the window has no fixed size (macOS).
+float mac_renderer_screen_aspect(MacRenderer&);
 // The 2D layer starts (PC 42D710): the 3D scene's MSAA resolve or FXAA.
 void mac_renderer_scene_to_frame(MacRenderer&);
 // Borrowed pool must outlive the renderer. Binding copies authored timing into

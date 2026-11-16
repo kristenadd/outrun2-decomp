@@ -22,12 +22,17 @@ struct Resolution {
 
 // The resolution of a height in an aspect: 4:3 or 16:9 width (even).
 Resolution resolution_at(std::uint32_t height,bool widescreen);
+// The resolution of a height at any aspect (width / height): even width.
+Resolution resolution_at(std::uint32_t height,float aspect);
 
 struct VideoSettings {
     bool widescreen{};          // 16:9 (Hor+) instead of the PC's 4:3
     Resolution resolution{};    // resolution_at(one of VideoBackend::heights(), widescreen)
     Antialiasing antialiasing{Antialiasing::Off};
     std::uint32_t frame_rate{60};   // frames shown per second (frame_rate.hpp); the game ticks at 60 Hz
+    // The screen's own aspect (Hor+, widescreen set too) where the platform
+    // knows it (VideoBackend::screen_aspect), e.g. an iPad's 3:2-ish screen.
+    bool fit_screen{};
 };
 
 class VideoBackend {
@@ -39,6 +44,9 @@ public:
     virtual std::vector<std::uint32_t> heights()const=0;
     // Supported modes in menu order (Off, FXAA, MSAA 2x, MSAA 4x); fewer than two: no row.
     virtual std::vector<Antialiasing> antialiasing_modes()const=0;
+    // The screen's width / height when the platform fills a fixed screen (iOS):
+    // the aspect row then offers FULL SCREEN. 0: no such choice.
+    virtual float screen_aspect()const{return 0;}
     // Frames per second offered, smallest first (60, 120); fewer than two: no row.
     virtual std::vector<std::uint32_t> frame_rates()const{return {};}
     virtual VideoSettings current()const=0;
@@ -47,6 +55,10 @@ public:
     // Shown under the options when a change only takes effect after a restart.
     virtual bool needs_restart(const VideoSettings&)const{return false;}
 };
+
+// The aspect (width / height) of the PC screen these settings show: 4:3, 16:9
+// or, with fit_screen, `screen_aspect` (when it is known, > 0).
+float video_aspect(const VideoSettings&,float screen_aspect);
 
 void set_video_backend(VideoBackend*);
 VideoBackend* video_backend();

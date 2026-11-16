@@ -20,6 +20,14 @@ Resolution resolution_at(std::uint32_t height,bool widescreen){
     const std::uint32_t width=widescreen?(height*16u+8u)/9u:height*4u/3u;
     return {(width+1u)&~1u,height};
 }
+Resolution resolution_at(std::uint32_t height,float aspect){
+    const auto width=std::uint32_t(float(height)*aspect+0.5f);
+    return {(width+1u)&~1u,height};
+}
+float video_aspect(const VideoSettings& s,float screen_aspect){
+    if(s.fit_screen&&screen_aspect>0)return screen_aspect;
+    return s.widescreen?16.f/9.f:4.f/3.f;
+}
 std::string resolution_label(const Resolution& r){return std::to_string(r.width)+"x"+std::to_string(r.height);}
 const char* antialiasing_label(Antialiasing a){
     switch(a){

@@ -20,6 +20,13 @@ bool present_frame(RendererImpl& r){
 #ifndef OR2_MAC_OPENGL
         if(r.video_pending){r.video_pending=false;r.device->resize_back_buffer(r.video_width,r.video_height);}
         r.device->set_ui_rect(g_widescreen);r.device->set_fxaa(r.video_fxaa);r.device->set_msaa(r.video_msaa);
+        // The canvas: 16:9 on the Mac; where the screen is fixed (iOS) the
+        // widescreen aspect (16:9 or the screen's), or the screen's aspect for
+        // the 4:3 screen (pillarboxed in it). SDL letterboxes a canvas narrower or wider than the screen.
+        {const float screen=r.display->screen_aspect();
+         const float aspect=screen<=0?16.f/9.f:g_widescreen?g_aspect:screen;
+         const auto width=std::max(FramebufferHeight*4u/3u,(std::uint32_t(float(FramebufferHeight)*aspect+0.5f)+1u)&~1u);
+         if(width!=g_canvas_width&&r.display->resize(width,FramebufferHeight,r.last_error))g_canvas_width=width;}
 #endif
         r.device->begin_frame();
         if(!r.start_loading_visible&&r.scene){
@@ -49,8 +56,8 @@ bool present_frame(RendererImpl& r){
             r.stats.loading_animation_frame=r.loading_frame++;++r.stats.loading_animation_updates;
         }else{
             const auto& pc=*r.device;
-            const auto ow=g_widescreen?FramebufferWidth:FramebufferHeight*4u/3u;
-            const auto ox=(FramebufferWidth-ow)/2u;
+            const auto ow=g_widescreen?g_canvas_width:FramebufferHeight*4u/3u;
+            const auto ox=(g_canvas_width-ow)/2u;
 #ifdef OR2_MAC_OPENGL
             display.pc_frame(pc.back_texture(),int(ox),0,int(ow),int(FramebufferHeight));
 #else
@@ -59,7 +66,7 @@ bool present_frame(RendererImpl& r){
             display.rgba(r.device.get(),pc.rgba().data(),pc.presentation_width(),pc.presentation_height(),int(ox),0,int(ow),int(FramebufferHeight),true);
 #endif
             // The title movie stays 4:3 in a 16:9 frame.
-            constexpr auto mw=FramebufferHeight*4u/3u,mx=(FramebufferWidth-mw)/2u;
+            constexpr auto mw=FramebufferHeight*4u/3u;const auto mx=(g_canvas_width-mw)/2u;
             if(r.movie_visible&&!r.movie_rgba.empty())display.rgba(&r.movie_rgba,r.movie_rgba.data(),r.movie_width,r.movie_height,int(mx),0,int(mw),int(FramebufferHeight));
             if(r.frontend_visible){
                 if(r.frontend_sprites)paint_frontend(r,display,r.stats.frames);

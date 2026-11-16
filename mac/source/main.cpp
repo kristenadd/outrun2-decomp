@@ -94,6 +94,8 @@ u64 dualsense_mapped(){u64 m=0;for(const auto& e:PadMap)m|=e.first;return m;}
 // resolution and antialiasing are also set in Options > Settings (Metal).
 //   render_scale=3      older 3D resolution key: 640x480 times 1..4 (resolution wins)
 //   widescreen=0        16:9 (Hor+) instead of the PC's 4:3
+//   fit_screen=1        iOS only (the default there): Hor+ at the device screen's own
+//                       aspect (ASPECT RATIO > FULL SCREEN); 0 keeps widescreen's 4:3 / 16:9
 //   resolution=WxH      3D resolution: its height (480 .. 2160); the width follows the aspect
 //   antialiasing=off    off, msaa2, msaa4 or fxaa
 //   framerate=60        frames per second, 60 or 120 (the game ticks at 60 Hz); 120 only
@@ -103,6 +105,9 @@ const char* const OptionsDefault=
     "# OutRun 2006 macOS options (edit and restart)\n"
     "reflections=1\nwidescreen=0\nresolution=1920x1440\nantialiasing=off\n";
 void load_options(){
+#ifdef OR2_IOS
+    g_options.video.fit_screen=true;   // fill the device screen unless options.ini says fit_screen=0
+#endif
     const std::string path=rt::home()+"/options.ini";
     std::FILE* f=std::fopen(path.c_str(),"rb");
     if(!f){if(std::FILE* w=std::fopen(path.c_str(),"wb")){std::fputs(OptionsDefault,w);std::fclose(w);}return;}
@@ -243,7 +248,7 @@ int main(int argc,char** argv){
         return p;};
     // The touch pad controls the overlay. Other inputs belong to the game.
     diag.platform_keys=[&diag,&active_renderer](std::uint64_t,std::uint64_t down){
-        diag.widescreen=outrun::mac_runtime::g_widescreen;
+        diag.widescreen=outrun::mac_runtime::g_widescreen;diag.aspect=outrun::mac_runtime::g_aspect;
         if((down&rt::PadMinus)!=0u)g_overlay.on=!g_overlay.on;
         overlay_frame(diag,active_renderer);};
     diag.map_input=[&diag,&pad,&input_adapter,&lifecycle](std::uint64_t held,std::uint64_t,const rt::PadSnapshot&,outrun::platform::NativeInputState& out){
@@ -360,6 +365,10 @@ int main(int argc,char** argv){
      if(outrun::enhancements::display_rate()>60u&&window_hz<100u&&!host_frame_hz)outrun::enhancements::set_display_rate(60u);
      std::fprintf(stderr,"[frame-rate] launch rate %u fps (screen %u Hz)\n",unsigned(outrun::enhancements::display_rate()),window_hz);}
     // The OpenGL validation build keeps the PC's 640x480 4:3 at 60 Hz (no rows).
+#ifdef OR2_IOS
+    // ASPECT RATIO offers FULL SCREEN (the default) at the device screen's aspect.
+    video.set_screen_aspect(outrun::mac_runtime::mac_renderer_screen_aspect(renderer));
+#endif
     video.attach([&renderer](std::uint32_t w,std::uint32_t h,bool wide,unsigned msaa,bool fxaa){outrun::mac_runtime::mac_renderer_set_video(renderer,w,h,wide,msaa,fxaa);});
     outrun::enhancements::set_video_backend(&video);
 #endif

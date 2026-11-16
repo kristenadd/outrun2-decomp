@@ -19,6 +19,11 @@ public:
     // call the FRAME RATE row applies at once; without, at the next launch.
     using RatePush=std::function<void(std::uint32_t frames_per_second)>;
     void set_frame_rates(std::vector<std::uint32_t> rates,RatePush pace={});
+    // The screen's aspect (width / height) where the platform fills a fixed
+    // screen (iOS): adds FULL SCREEN to the aspect row (fit_screen, the 16:9
+    // push with the resolution at this aspect). Called before attach.
+    void set_screen_aspect(float aspect);
+    float screen_aspect()const override{return screen_aspect_;}
     // The renderer once initialized (an empty function detaches it): the
     // settings are applied to it from then on.
     void attach(Push);
@@ -30,13 +35,15 @@ public:
     void apply(const VideoSettings&)override;
     bool needs_restart(const VideoSettings& s)const override{return !pace_&&s.frame_rate!=start_rate_;}
     VideoSettings supported(VideoSettings)const;   // a loaded setting made valid
-    // options.ini keys: widescreen=0/1, resolution=WxH, antialiasing=off/msaa2/msaa4/fxaa, framerate=60/120.
+    // options.ini keys: widescreen=0/1, fit_screen=0/1, resolution=WxH, antialiasing=off/msaa2/msaa4/fxaa, framerate=60/120.
     static bool parse_option(const std::string& key,const std::string& value,VideoSettings&);
 private:
     void push()const;
     std::string path_;
     VideoSettings settings_;
     std::vector<std::uint32_t> rates_{60};
+    float screen_aspect_{};
+    bool saved_fit_{};   // fit_screen loaded from options.ini (kept until the screen is known)
     std::uint32_t start_rate_{60},saved_rate_{60};   // the rate of this launch; the one loaded from options.ini
     Push push_;
     RatePush pace_;

@@ -40,11 +40,13 @@ const char* label(Option o){return o==Option::Aspect?"ASPECT RATIO":o==Option::R
 // The choices of a row and the index of the edited value among them.
 std::vector<std::string> choices(const VideoBackend& b,const VideoSettings& s,Option o,int& index){
     std::vector<std::string> out;index=0;
-    if(o==Option::Aspect){out={"4:3","16:9"};index=s.widescreen?1:0;}
-    else if(o==Option::Resolution){
-        const auto heights=b.heights();
+    if(o==Option::Aspect){
+        out={"4:3","16:9"};index=s.widescreen?1:0;
+        if(b.screen_aspect()>0){out.push_back("FULL SCREEN");if(s.fit_screen)index=2;}   // the screen's own aspect
+    }else if(o==Option::Resolution){
+        const auto heights=b.heights();const float aspect=video_aspect(s,b.screen_aspect());
         for(std::size_t i=0;i<heights.size();++i){
-            out.push_back(resolution_label(resolution_at(heights[i],s.widescreen)));
+            out.push_back(resolution_label(resolution_at(heights[i],aspect)));
             if(heights[i]==s.resolution.height)index=int(i);
         }
     }else if(o==Option::FrameRate){
@@ -60,8 +62,9 @@ std::vector<std::string> choices(const VideoBackend& b,const VideoSettings& s,Op
 bool step(const VideoBackend& b,VideoSettings& s,Option o,bool next){
     int index{};const auto n=int(choices(b,s,o,index).size());
     const int to=index+(next?1:-1);if(to<0||to>=n)return false;
-    if(o==Option::Aspect){s.widescreen=to==1;s.resolution=resolution_at(s.resolution.height,s.widescreen);}   // same height, width of the aspect
-    else if(o==Option::Resolution)s.resolution=resolution_at(b.heights()[std::size_t(to)],s.widescreen);
+    if(o==Option::Aspect){   // same height, width of the aspect
+        s.widescreen=to>=1;s.fit_screen=to==2;s.resolution=resolution_at(s.resolution.height,video_aspect(s,b.screen_aspect()));}
+    else if(o==Option::Resolution)s.resolution=resolution_at(b.heights()[std::size_t(to)],video_aspect(s,b.screen_aspect()));
     else if(o==Option::FrameRate)s.frame_rate=b.frame_rates()[std::size_t(to)];
     else s.antialiasing=b.antialiasing_modes()[std::size_t(to)];
     return true;
@@ -72,7 +75,7 @@ bool SettingsAccess::init(FrontendTitleWidgets& w){
     auto& r=rows();r.options.clear();
     const auto* backend=video_backend();if(!backend||!w.list_)return true;
     r.options=available(*backend);r.edit=backend->current();
-    r.edit.resolution=resolution_at(nearest_height(backend->heights(),r.edit.resolution.height),r.edit.widescreen);
+    r.edit.resolution=resolution_at(nearest_height(backend->heights(),r.edit.resolution.height),video_aspect(r.edit,backend->screen_aspect()));
     const auto* blank=w.text_.get(0);if(!blank){w.missing_=0x4d7440;return false;}
     const auto& font=w.fonts_.fonts[9];const auto layer=w.layers_.scene_ids[2];
     // Only the added rows are text rows in this list: their offset from the list position (48DDA0).

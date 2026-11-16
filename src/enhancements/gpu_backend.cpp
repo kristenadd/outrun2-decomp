@@ -4,7 +4,9 @@
 #include <cstdlib>
 
 namespace outrun::enhancements {
-GpuVideoBackend::GpuVideoBackend(std::string path,const VideoSettings& start):path_(std::move(path)),saved_rate_(start.frame_rate){settings_=supported(start);}
+GpuVideoBackend::GpuVideoBackend(std::string path,const VideoSettings& start):path_(std::move(path)),saved_fit_(start.fit_screen),saved_rate_(start.frame_rate){settings_=supported(start);}
+void GpuVideoBackend::set_screen_aspect(float aspect){
+    screen_aspect_=aspect>0?aspect:0;settings_.fit_screen=saved_fit_;settings_=supported(settings_);}
 void GpuVideoBackend::attach(Push push){push_=std::move(push);this->push();}
 void GpuVideoBackend::set_frame_rates(std::vector<std::uint32_t> rates,RatePush pace){
     rates_=rates.empty()?std::vector<std::uint32_t>{60}:std::move(rates);settings_.frame_rate=saved_rate_;settings_=supported(settings_);
@@ -14,7 +16,9 @@ void GpuVideoBackend::set_frame_rates(std::vector<std::uint32_t> rates,RatePush 
     start_rate_=settings_.frame_rate;set_display_rate(start_rate_);
     if(pace_)pace_(start_rate_);}
 VideoSettings GpuVideoBackend::supported(VideoSettings s)const{
-    s.resolution=resolution_at(nearest_height(heights(),s.resolution.height),s.widescreen);
+    if(screen_aspect_<=0)s.fit_screen=false;
+    if(s.fit_screen)s.widescreen=true;
+    s.resolution=resolution_at(nearest_height(heights(),s.resolution.height),video_aspect(s,screen_aspect_));
     const auto modes=antialiasing_modes();
     if(std::find(modes.begin(),modes.end(),s.antialiasing)==modes.end())s.antialiasing=Antialiasing::Off;
     if(std::find(rates_.begin(),rates_.end(),s.frame_rate)==rates_.end())s.frame_rate=rates_.front();
@@ -28,12 +32,16 @@ void GpuVideoBackend::push()const{
 void GpuVideoBackend::apply(const VideoSettings& s){
     settings_=supported(s);push();
     if(pace_){set_display_rate(settings_.frame_rate);pace_(settings_.frame_rate);}
-    if(!path_.empty())write_options(path_,{{"widescreen",settings_.widescreen?"1":"0"},
+    saved_fit_=settings_.fit_screen;
+    std::vector<std::pair<std::string,std::string>> values{{"widescreen",settings_.widescreen?"1":"0"},
         {"resolution",resolution_key(settings_.resolution)},{"antialiasing",antialiasing_key(settings_.antialiasing)},
-        {"framerate",std::to_string(settings_.frame_rate)}});
+        {"framerate",std::to_string(settings_.frame_rate)}};
+    if(screen_aspect_>0)values.push_back({"fit_screen",settings_.fit_screen?"1":"0"});
+    if(!path_.empty())write_options(path_,values);
 }
 bool GpuVideoBackend::parse_option(const std::string& key,const std::string& value,VideoSettings& s){
     if(key=="widescreen"){s.widescreen=std::strtoul(value.c_str(),nullptr,10)!=0;return true;}
+    if(key=="fit_screen"){s.fit_screen=std::strtoul(value.c_str(),nullptr,10)!=0;return true;}
     if(key=="resolution")return parse_resolution(value,s.resolution);
     if(key=="antialiasing")return parse_antialiasing(value,s.antialiasing);
     if(key=="framerate"){const auto r=std::strtoul(value.c_str(),nullptr,10);if(r!=60&&r!=120)return false;s.frame_rate=std::uint32_t(r);return true;}
