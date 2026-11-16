@@ -100,6 +100,7 @@ private:
     std::uint32_t tick_98abd8{};
     std::array<Channel,Channels> channels_{};
     std::vector<FadeRef> fade_in_,fade_out_;               // 74358C lists (32 each)
+    std::vector<Buffer> tails_;                            // one-shot voices of banks 4276B0 unloaded, playing out
     std::vector<double> scratch_;
 
     double now_ms()const;

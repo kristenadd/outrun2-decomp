@@ -209,6 +209,8 @@ bool pump_audio(GameHost& s){
     return s.audio_output->submit(s.mixed_pcm,s.movie_error);
 }
 namespace {
+bool sound_trace_on(){static const bool on=std::getenv("OR2_TRACE")!=nullptr;return on;}
+unsigned trace_mode(const GameHost& s){return s.runtime?unsigned(s.runtime->mode_state.current):0u;}
 bool menu_effect(void* user,unsigned id){
     auto& s=*static_cast<GameHost*>(user);
     std::lock_guard<std::recursive_mutex> audio_lock(audio_mutex());
@@ -216,7 +218,9 @@ bool menu_effect(void* user,unsigned id){
     // retroactively mixed into samples belonging to the preceding frame.
     if(!pump_audio(s)){s.render_failed=true;return false;}
     if(s.runtime&&s.runtime->pc_sound.mapped(id)){s.runtime->pc_sound.effect_42f0d0(id);return true;}
-    if(s.menu_audio.command(id,s.movie_error))return true;
+    if(s.menu_audio.command(id,s.movie_error)){
+        if(sound_trace_on())std::fprintf(stderr,"[fe %llu] menu effect %x (mode %u)\n",(unsigned long long)s.game_frames,id,trace_mode(s));
+        return true;}
     {static const bool trace=std::getenv("OR2_TRACE")!=nullptr;
      if(trace)std::fprintf(stderr,"[trace] menu effect %x not played (mode %u): %s\n",id,s.runtime?unsigned(s.runtime->mode_state.current):0u,s.movie_error.c_str());}
     // Outside the frontend (race / race end modes) 4249F0 (42F0D0) also
@@ -237,7 +241,9 @@ bool menu_music_play(void* user,unsigned,unsigned track,unsigned loop){
     std::vector<std::uint8_t> bytes;std::string e;
     if(!name){e="music: track "+std::to_string(track)+" outside 771AD8";}
     else if(s.retail&&read_sound_file(s,name,bytes,e)&&s.menu_audio.play_music(std::move(bytes),loop!=0u,e)){
-        ++s.music_starts;s.music_track=track;return true;}
+        ++s.music_starts;s.music_track=track;
+        if(sound_trace_on())std::fprintf(stderr,"[fe %llu] music play %u %s (mode %u)\n",(unsigned long long)s.game_frames,track,name,trace_mode(s));
+        return true;}
     ++s.music_failures;s.music_error=e;return false;
 }
 bool menu_music_stop(void* user,unsigned){
@@ -245,6 +251,7 @@ bool menu_music_stop(void* user,unsigned){
     std::lock_guard<std::recursive_mutex> audio_lock(audio_mutex());
     if(s.audio_open&&!pump_audio(s)){s.render_failed=true;return false;}
     if(s.menu_audio.music().playing())++s.music_stops;
+    if(sound_trace_on())std::fprintf(stderr,"[fe %llu] music stop (mode %u)\n",(unsigned long long)s.game_frames,trace_mode(s));
     s.menu_audio.stop_music();return true;
 }
 // Options > Audio: 42EFA0 (SE master, integer level) and 42FC90 (BGM, float bits).
@@ -1145,7 +1152,10 @@ void attach_pc_scene(GameHost& host,pf::NativeRuntimeContext& context,pf::Retail
     context.race.sound.effect=[&host,&context](std::uint32_t id){
         if(!pump_audio(host)){host.render_failed=true;return false;}
         context.pc_sound.effect_42f0d0(id);return context.pc_sound.mapped(id);};
-    context.race.sound.stop_all=[&host]{host.menu_audio.stop_effects();};
+    context.race.sound.stop_all=[&host]{
+        if(sound_trace_on()&&host.menu_audio.active_voices())
+            std::fprintf(stderr,"[fe %llu] stop all: %zu menu voices cut (mode %u)\n",(unsigned long long)host.game_frames,host.menu_audio.active_voices(),trace_mode(host));
+        host.menu_audio.stop_effects();};
     context.race_effects.bank=[&scene,&retail](std::uint32_t id)->pf::PcPmtResources*{
         if(!scene.bank_loaded(id)){                                    // the START loader requests 0x57 in mode 8
             const auto* record=pf::retail_asset_lookup(retail,id,8u);std::vector<std::uint8_t> pmt;std::string e;

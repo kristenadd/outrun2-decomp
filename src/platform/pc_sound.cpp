@@ -54,7 +54,7 @@ PcSound::PcSound(){
     for(auto& c:channels_){c=Channel{};}
     fade_in_.reserve(32);fade_out_.reserve(32);
 }
-void PcSound::boot_424600(){slot_bank_.fill(0xffu);master_957be4=0x41;}
+void PcSound::boot_424600(){slot_bank_.fill(0xffu);master_957be4=0x41;tails_.clear();}
 double PcSound::now_ms()const{
     static const auto origin=std::chrono::steady_clock::now();
     return std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-origin).count();
@@ -177,7 +177,23 @@ void PcSound::unload_all_4276b0(){
     }
     for(std::uint32_t s=0;s<Slots;++s){
         if(s==5u||s==0xau||s==0xbu)continue;
-        if(slot_bank_[s]!=0xffu)unload_4278d0(s);
+        if(slot_bank_[s]==0xffu)continue;
+        // The START loader (49BA80) unloads every bank once 42DF90 reports the
+        // course loaded. On PC that waits for disk loads, which leaves a menu
+        // voice started on the last frontend frame (the song name after the
+        // music choice, FE.PAK) time to finish; native loads report ready at
+        // once and the unload cut it mid-word. One-shot voices still playing
+        // keep their own samples and play out (427630 leaves them too);
+        // loops stop as before.
+        for(std::uint32_t id=0;id<Ids;++id){
+            if(slot_[id]!=s||!se_[id])continue;
+            for(const auto& v:se_[id].voices){
+                if(!v.playing||v.loop||tails_.size()>=32u)continue;
+                Buffer t;t.pcm=se_[id].pcm;t.rate=se_[id].rate;t.voices.assign(1u,v);tails_.push_back(std::move(t));
+                if(sound_trace())std::fprintf(stderr,"[snd %u] id %u plays out after unload (pos %.0f/%zu)\n",unsigned(tick_98abd8),id,v.pos,se_[id].pcm->size());
+            }
+        }
+        unload_4278d0(s);
     }
     request_state_956110=0u;
 }
@@ -284,6 +300,7 @@ void PcSound::clear_all_427630(){
         if(cut&&std::getenv("OR2_TRACE_STACKS")){void* frames[16];const int n=backtrace(frames,16);backtrace_symbols_fd(frames,n,2);}
 #endif
     }
+    // Not tails_: on PC their banks' voices had finished during the disk load.
     for(std::uint32_t id=0;id<Ids;++id)if(slot_[id]<0xffu&&id!=0x40u&&se_[id])stop_412880(se_[id],-1);
     for(std::uint32_t ch=0;ch<Channels;++ch)if(channels_[ch].x!=0){channels_[ch].x=0;curves_42fa30(ch);}
 }
@@ -428,6 +445,8 @@ void PcSound::mix_add(double* acc,std::size_t frames){
     };
     for(auto& b:se_)mix(b);
     for(auto& b:ics_)mix(b);
+    for(auto& b:tails_)mix(b);
+    tails_.erase(std::remove_if(tails_.begin(),tails_.end(),[](const Buffer& b){return !b.voices[0].playing;}),tails_.end());
     stats.mixed_frames+=frames;
 }
 std::string PcSound::status()const{
