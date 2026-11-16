@@ -197,6 +197,7 @@ std::uint32_t race_stage_level_44c940(RaceManagerWorld&,std::uint32_t key);
 std::int32_t race_extended_time_44dc70(RaceManagerWorld&,RaceManagerServices&,std::int32_t variant,std::int32_t key,std::int32_t difficulty);
 void race_rank_table_44fe80(RaceManagerState&,RaceManagerWorld&,RaceManagerServices&);
 void race_check_goal_4513c0(RaceManagerState&,RaceManagerWorld&,RaceManagerServices&,RaceEventWork e);
+bool race_debug_goal_crossed(RaceManagerState&,RaceManagerWorld&,RaceEventWork e);   // port-only test hook (OR2_DEBUG_RACE_END)
 bool race_check_stage_clear_44ff20(RaceManagerState&,RaceManagerWorld&,RaceManagerServices&,RaceEventWork e);
 void race_check_branch_off_451220(RaceManagerState&,RaceManagerWorld&,RaceManagerServices&,RaceEventWork e);
 void race_check_branch_off_4512c0(RaceManagerState&,RaceManagerWorld&,RaceManagerServices&,RaceEventWork w);

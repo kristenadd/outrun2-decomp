@@ -16,6 +16,7 @@
 #include "driving/pc_wall_rebound.hpp"
 #include "driving/pc_wrecker.hpp"
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <sstream>
 #include <stdexcept>
@@ -354,6 +355,17 @@ void race_time_table_44c020(std::uint32_t preset,std::uint8_t* dst){
     const unsigned row=preset==1u?1u:preset==2u?2u:preset==3u?3u:0u;   // jump table 44C068: 0/1/5/6, >3 -> 0
     std::memcpy(dst,kTimeTable5a2a20[row],0x1c2u);
 }
+// Test hook OR2_DEBUG_RACE_END=<seconds> (port-only, off when unset): once the race clock
+// (7D39DC, the frames counted from GO) passes <seconds>, the player car crosses the goal as
+// 4513C0 records it, so the race ends through the game's own goal path (450170 over state 1,
+// modes 19 / 33, ending, results, name entry) without driving the route.
+static void debug_race_end(RaceManagerState& st,RaceManagerWorld& w){
+    static const double seconds=[]{const char* e=std::getenv("OR2_DEBUG_RACE_END");return e&&*e?std::strtod(e,nullptr):-1.0;}();
+    if(seconds<0.0||double(st.total_frames_7d39dc)<seconds*60.0)return;
+    if(!race_debug_goal_crossed(st,w,w.work(8)))return;
+    if(std::getenv("OR2_TRACE"))std::fprintf(stderr,"[dbg] OR2_DEBUG_RACE_END: goal forced at race frame %u (variant %d, course key %u, stage clears %u)\n",
+        st.total_frames_7d39dc,w.variant_780258,driving::Bytes(w.work(8),0x10f0).u32(0x68),st.stage_clear_count_7d3950);
+}
 bool native_race_manager_invoke(NativeRuntimeContext& c,std::uint32_t callback,driving::PcMatrixStack& matrices,PcSceneRenderer* renderer){
     unsigned kind=0;
     switch(callback){case 0x450790u:kind=1;break;case 0x4515b0u:kind=2;break;case 0x44fe10u:kind=3;break;default:return false;}
@@ -367,7 +379,7 @@ bool native_race_manager_invoke(NativeRuntimeContext& c,std::uint32_t callback,d
         auto& area=native_race_area_memory(c,renderer,true);
         with_manager(c,area,&matrices,[&](Binding& b,RaceManagerWorld& w){
             if(kind==1){race_manager_init_450790(m.state,w,b);m.initialized=true;}
-            else if(kind==2)race_manager_control_4515b0(m.state,w,b);
+            else if(kind==2){debug_race_end(m.state,w);race_manager_control_4515b0(m.state,w,b);}
             else{race_manager_destroy_44fe10(m.state,b);m.initialized=false;}
         });
     }catch(const ManagerMissing& e){latch(m,e.pc,e.what());}

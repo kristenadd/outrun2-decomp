@@ -1207,11 +1207,13 @@ bool native_race_traffic_car_invoke(NativeRuntimeContext& c,std::uint32_t callba
                         double(ctx.m.f32(work+0x14u)),double(ctx.m.f32(work+0x18u)),double(ctx.m.f32(work+0x1cu)),double(ctx.m.f32(work+0x1c4u)));});});
         return true;
     }
-    if(callback!=0x4ad280u&&callback!=0x4ad310u&&callback!=0x4704a0u&&callback!=0x47e780u)return false;
+    if(callback!=0x4ad280u&&callback!=0x4ad310u&&callback!=0x4704a0u&&callback!=0x47e780u&&callback!=0x470560u)return false;
     const std::uint32_t event=c.event_state.current_slot;
     if(event>=c.event_state.slots.size()||!native_traffic_car_slot(c.event_state.slots[event]))return false;
     const std::uint32_t work=c.event_state.slots[event].work_token;
     auto& t=native_race_traffic(c);
+    if(callback==0x470560u){   // 470560 destroy: [car+10D0] = -1 (as the module's own event services)
+        ++t.car_destroys;run_traffic(c,matrices,[&](PcRaceContext& ctx){ctx.m.put32(work+0x10d0u,0xffffffffu);});return true;}
     if(callback!=0x47e780u){++t.car_inits;run_traffic(c,matrices,[&](PcRaceContext& ctx){traffic_car_init(ctx,callback,work);});}
     else{++t.car_controls;run_traffic(c,matrices,[&](PcRaceContext& ctx){traffic_car_control_47e780(ctx,work);});}
     return true;

@@ -284,6 +284,14 @@ void race_check_goal_4513c0(RaceManagerState& st,RaceManagerWorld& w,RaceManager
     if(rd32(e,0x5c)==0||rd32(e,0x184)!=0)return;
     st.flags_7d39f0|=4u;latch_speed(st,w,e);
 }
+// Port-only test hook (not in the EXE): the goal crossing of 4513C0's offline path above
+// (goal flag + speed latch) without its course tests, for OR2_DEBUG_RACE_END. 450170 then
+// takes its usual goal branch (over state 1, 453080(1), stage flag, 467190).
+bool race_debug_goal_crossed(RaceManagerState& st,RaceManagerWorld& w,RaceEventWork e){
+    if(st.flags_7d39f0&4u)return false;
+    st.flags_7d39f0|=4u;latch_speed(st,w,e);
+    return true;
+}
 
 // ----- 44FF20 stage clear -------------------------------------------------------------
 bool race_check_stage_clear_44ff20(RaceManagerState& st,RaceManagerWorld& w,RaceManagerServices& s,RaceEventWork e){

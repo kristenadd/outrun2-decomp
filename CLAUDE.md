@@ -136,6 +136,14 @@ and leaves (that's the original game's design, not a bug).
 - `OR2_HOST_LIVE=1`: live frame profiler every 300 race frames, with
   GPU time, CPU record time and fence wait.
 - `OR2_METAL_SYNC=1`: turns off pipelined frames (see below).
+- `OR2_DEBUG_RACE_END=<seconds>`: testing only. Once the race clock (from GO)
+  passes `<seconds>`, the player car "crosses the goal" (the goal flag that
+  `4513C0` sets at the goal line), so the race ends through the game's own
+  goal path (`450170`, modes 19 / 33, ending 24, results 25, name entry 26).
+  Tests the race-end screens without driving a route. Logs `[dbg]` under
+  `OR2_TRACE`. It fires on the current stage (not stage 5), so there's no
+  stage change and the results only hold the stages driven. Bugs that need a
+  stage change still need a real race. `OR2_HOST_GOAL_COURSE=10..14` picks the ending.
 - `OR2_IOS_ALLOW_NO_CONTROLLER=1`: skips the iOS controller gate (testing only).
 - `OR2_MAC_SCREENSHOT_DIR` / `OR2_MAC_SCREENSHOT_FRAME`: dump frames (Mac).
   Frontend menus come out **blank white** in these dumps; use the simulator's
@@ -192,24 +200,19 @@ sample rate.
 
 ## Outstanding issues
 
-1. **Race-end freeze in OutRun mode** (shared game code, all platforms): at
-   the end of an OutRun-mode race,
-   `race end latched: PC 47EE70: ghost car callback outside events 9..12`
-   (`src/platform/race_ghosts_runtime.cpp`). The game keeps running but never
-   leaves mode 26. Needs reconstruction of the original race-end/ghost path.
-2. **Passenger reactions during big crashes** (ORC 345–365, air/landing
+1. **Passenger reactions during big crashes** (ORC 345–365, air/landing
    voices): tied to the crash sequence (`car+0x2C8` crash timer, `+0x2F8`
    cooldown, `src/driving/pc_crash*.cpp`). Not yet seen firing in a test;
    unverified whether the port ever enters that sequence.
-3. **Off-road comments** (ORC 110–119, 114/115): triggered by the surface
+2. **Off-road comments** (ORC 110–119, 114/115): triggered by the surface
    under the car (`car+0x248`, bits `0x10F407C`; the port's names call it
    "drift"). Untested.
-4. **Occasional hitches** (60–100 ms frames): likely sound banks loaded
+3. **Occasional hitches** (60–100 ms frames): likely sound banks loaded
    mid-race or Metal pipelines compiled on first use. Not investigated.
-5. **1080p is near the limit on the iPhone 15 Pro Max** (about 16 ms of GPU per
+4. **1080p is near the limit on the iPhone 15 Pro Max** (about 16 ms of GPU per
    frame). Heavier scenes may drop frames; per-pixel shading of the generated
    PC shaders is the cost.
-6. `FE.PAK` effects played after a race unloads it (ids 3, 4, 13, 16, 30)
+5. `FE.PAK` effects played after a race unloads it (ids 3, 4, 13, 16, 30)
    count as "unmapped": minor, not investigated.
 
 ## Done in this fork (for context)
@@ -225,3 +228,7 @@ sample rate.
 - Passenger kept running past stage 1: her rival check's event records
   (`0x11A..0x133`) and the course-object works are now mapped for the robots.
 - Keyboard: Enter selects (was Start).
+- Race-end freeze in OutRun mode (stuck in mode 26 after `race end latched: PC
+  47EE70`): traffic cars' destroy callback `470560` went to the ghost handler,
+  which faulted for good when a stage change destroyed traffic. The traffic
+  module now handles its own `470560`.

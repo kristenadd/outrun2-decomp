@@ -1,4 +1,6 @@
 #include "enhancements/frame_rate.hpp"
+#include <cstdio>
+#include <cstdlib>
 #include "platform/race_end_runtime.hpp"
 #include "platform/bulk_fallback.hpp"
 #include "platform/race_ghosts_runtime.hpp"
@@ -285,7 +287,13 @@ bool native_ghost_car_invoke(NativeRuntimeContext& c,std::uint32_t callback,driv
     if(callback!=0x4ad000u&&callback!=0x4ace40u&&callback!=0x470560u&&callback!=0x4ad1f0u&&callback!=0x4ad080u)return false;
     auto& g=native_race_ghosts(c);
     const std::uint32_t event=c.event_state.current_slot;
-    if(event<9u||event>12u){g.fault=callback;g.error="ghost car callback outside events 9..12";return true;}
+    // 470560 is the destroy of every car work (the traffic / rival cars too): outside the
+    // ghost events it is not this module's call (race_traffic_runtime takes the traffic cars).
+    if((event<9u||event>12u)&&callback==0x470560u&&(event>=c.event_state.slots.size()||!native_ghost_car_slot(c.event_state.slots[event])))return false;
+    if(event<9u||event>12u){
+        g.fault=callback;g.error="ghost car callback outside events 9..12";
+        if(std::getenv("OR2_TRACE"))std::fprintf(stderr,"[ghost] latched: callback %06X in event %u (frame %u)\n",callback,event,c.completed_frames);
+        return true;}
     const std::uint32_t car=NativeGhostRuntime::CarBase+(event-9u)*0x10f0u;
     if(callback==0x4ad000u){++g.car_inits;(void)run_ghost(c,[&](PcRaceContext& ctx){ghost_car_init_4ad000(ctx,car);},&matrices);}
     else if(callback==0x4ace40u){++g.car_controls;(void)run_ghost(c,[&](PcRaceContext& ctx){ghost_car_control_4ace40(ctx,car);},&matrices);}
