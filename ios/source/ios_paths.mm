@@ -47,6 +47,8 @@ std::string application_folder(){
     const std::string found=find_game_folder();
     return found.empty()?documents_folder():found;
 }
+// The game is never inside the iOS application bundle.
+bool inside_application_bundle(const std::string&){return false;}
 bool choose_retail_directory(std::string& path){
     const std::string documents=documents_folder();
     if(documents.empty())return false;

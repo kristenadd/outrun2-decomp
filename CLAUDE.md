@@ -32,7 +32,7 @@ than guessed). Not every bug is a porting bug.
 | `src/system` | files, EXE image loading / cache, first-launch setup screen |
 | `src/input` | DualSense-layout pad adapter shared by Mac, iOS and PS5 |
 | `src/enhancements` | port-only Options ▸ Settings rows (aspect, resolution, AA, frame rate) |
-| `mac/source` | macOS platform: Metal D3D9 device (`metal_d3d9.mm`), SDL display / audio, `main.cpp` |
+| `mac/source` | macOS platform: Metal D3D9 device (`metal_d3d9.mm`), SDL display / audio, `main.cpp`; game folder lookup in `mac_paths.mm` (bundle `Contents/Resources/Game` first, cache then goes to Application Support) |
 | `ios/` | iOS / iPadOS platform (reuses `mac/source`; see below) |
 | `tests/` | CTest suite (many tests need the game files) |
 | `tools/` | EXE tools, x86 translator, audits (`decomp_empty_services.py`) |
@@ -65,7 +65,7 @@ macOS (Apple silicon):
 ```bash
 sh mac/tools/build-dependencies.sh
 cmake --preset mac-full
-cmake --build --preset mac-full      # -> build/macos/mac/OutRunMacGame.app
+cmake --build --preset mac-full      # -> build/macos/mac/OutRun2006 Coast 2 Coast.app (target OutRunMacGame)
 ```
 
 iOS dependencies (SDL2, FFmpeg, Ogg, Vorbis for device and simulator):

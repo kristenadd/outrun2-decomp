@@ -278,7 +278,10 @@ int main(int argc,char** argv){
     // or the first-launch preparation in its own window (nothing of the EXE is
     // in this application).
     {outrun::mac_runtime::SetupDisplay display;
-     const bool ready=outrun::platform::exe_setup_prepare(retail_root,application_cache(),display.platform(),&error);
+     auto setup=display.platform();
+     // Game files inside the application: the prepared image goes to Application Support.
+     setup.cache_in_fallback=outrun::mac::inside_application_bundle(retail_root);
+     const bool ready=outrun::platform::exe_setup_prepare(retail_root,application_cache(),setup,&error);
      display.close();
      if(!ready){
         std::printf("OR2006C2C.EXE: %s\n",error.c_str());

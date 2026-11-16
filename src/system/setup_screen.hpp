@@ -45,6 +45,7 @@ struct SetupPlatform {
     std::function<bool()> keep_running;                // false: the player quits (or the system asks to)
     std::function<void()> wait_for_exit;               // after an error: wait for the player's exit button
     std::string exit_hint;                              // e.g. "Press + to exit."
+    bool cache_in_fallback=false;                       // true: never write into game_dir (e.g. inside a signed app bundle)
 };
 
 // Loads <game_dir>/OR2006C2C.cache (or <fallback_dir>/OR2006C2C.cache), or on
