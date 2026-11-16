@@ -61,6 +61,28 @@ done. At the first launch it checks the EXE and writes `OR2006C2C.cache`
 next to the game files, as on the Mac. Saves and `options.ini` go to the
 app's Application Support folder (kept in device backups).
 
+## Save files
+
+Folder, inside the app's data container:
+`Library/Application Support/OutRun/Saves`. It holds `License1.dat`,
+`common.dat` (same format as the PC game and the Mac port) and `options.ini`.
+
+The folder is not visible in the Files app. Copy saves to or from a
+connected device with `devicectl` (the bundle id is the one you built with).
+Quit the game on the device first, or it may write over the copied files:
+
+```bash
+xcrun devicectl device copy from --device <UDID> --domain-type appDataContainer \
+  --domain-identifier <bundle id> \
+  --source "Library/Application Support/OutRun/Saves/common.dat" --destination common.dat
+xcrun devicectl device copy to --device <UDID> --domain-type appDataContainer \
+  --domain-identifier <bundle id> \
+  --source common.dat --destination "Library/Application Support/OutRun/Saves/common.dat"
+```
+
+Do the same for `License1.dat`. In the simulator the folder is under
+`xcrun simctl get_app_container <device> <bundle id> data`.
+
 ## Build
 
 Dependencies (SDL2, FFmpeg, Ogg, Vorbis, from the same pinned sources as the

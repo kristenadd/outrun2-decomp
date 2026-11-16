@@ -410,7 +410,13 @@ std::uint32_t frame_call(void* user,std::uint32_t pc,const std::uint32_t*,std::s
     // race is loaded and START runs the start camera (4871A0) and the countdown
     // until GAME, which the PC shows over the race scene.
     const bool start_loading=s.runtime&&s.runtime->mode_state.current==13u&&s.runtime->start_mode.stage<65u;
-    if(start_loading&&!p.set_start_loading_scene(0u))s.render_failed=true;
+    // 499CC0: the picture is the course preset's scene of the loading bank 2F
+    // (preset 0..3 -> 2F0002 / 2F0003 / 2F0000 / 2F0001): scenes 2/3 are the OutRun
+    // pyramid maps, 0/1 the continuous ones. Scene 0 for every course showed the
+    // continuous map before OutRun-mode races.
+    static constexpr std::uint32_t LoadingScene[4]{2u,3u,0u,1u};
+    const std::uint32_t preset=s.runtime?s.runtime->start_mode.course_preset:0u;
+    if(start_loading&&!p.set_start_loading_scene(preset<4u?LoadingScene[preset]:0u))s.render_failed=true;
     if(!p.set_start_loading_visible(start_loading))s.render_failed=true;
     if(!s.frontend_gate_open&&s.runtime&&s.runtime->event_function36.state2_ui_finalize_calls!=0u){
         s.frontend_gate_open=true;s.frontend_visible=true;

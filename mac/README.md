@@ -11,6 +11,21 @@ prepared data in the game folder as `OR2006C2C.cache` (in
 read-only; text screen with the steps). Later launches start directly. Saves go to
 `~/Library/Application Support/OutRunMac/Saves`.
 
+## Save files
+
+Folder: `~/Library/Application Support/OutRunMac/Saves`
+
+| File | Contents |
+| --- | --- |
+| `License1.dat` | the player license |
+| `common.dat` | the game's shared save data |
+| `options.ini` | port settings (Options ▸ Settings) |
+| `OutRunMac.log` | log of the last session |
+
+`License1.dat` and `common.dat` use the PC game's format: saves from the
+Windows game's `SaveGame` folder can be copied in, and the other way round.
+Quit the game first, or it may write over the copied files when it saves.
+
 ## Build
 
     sh mac/tools/build-dependencies.sh

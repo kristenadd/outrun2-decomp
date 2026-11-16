@@ -40,6 +40,13 @@ the original executable.** To play, you need your own copy of the game
 The game files are read in place and never modified; `OR2006C2C.cache` can be
 deleted at any time and is rebuilt at the next launch.
 
+Save files (`License1.dat`, `common.dat`, `options.ini`) are kept outside the
+game folder:
+
+- macOS: `~/Library/Application Support/OutRunMac/Saves` ([details](mac/README.md#save-files))
+- iOS / iPadOS: `Library/Application Support/OutRun/Saves` in the app's data
+  container ([details and how to copy them](ios/README.md#save-files))
+
 ## Layout
 
 | Folder | Content |
