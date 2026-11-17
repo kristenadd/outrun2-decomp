@@ -889,6 +889,8 @@ struct Run {
             if(pc==0x465160u){routed(pc);if(!title_ui_resource_construct_465160(bytes.data(),0xa0u))missing(pc,"465160 resource construct");return k.ecx;}
             FrontendUiResources ui{st.frontend_sprites};ui.motion_step=st.frontend_ui_motion_step;
             ui.effect_user=st.frontend_effect_user;ui.effect_4249f0=st.frontend_effect;
+            ui.read_follow=[&](std::uint32_t at,std::uint8_t* out){
+                if(!m().mapped(at,12))return false;for(unsigned q=0;q<12u;++q)out[q]=m().u8(at+q);return true;};
             std::uint32_t value{};
             // A translated caller hands every argument slot: the methods' own counts
             // (465860: 11 stack words, RET 2C; 465310 / 4653C0: 4, RET 10; the others take none).

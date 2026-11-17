@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include "platform/frontend_sprites.hpp"
 #include "driving/pc_common_control.hpp"
 #include "platform/frontend_text.hpp"
@@ -13,6 +14,9 @@ struct FrontendUiResources {
     float motion_step{}; // explicit 449E30 milliseconds * PC float 0.001
     void* effect_user{};
     bool (*effect_4249f0)(void*,std::uint32_t){};
+    // 4656B0 with +9C set: the 12 bytes at the guest pointer +98 (a followed position). Without
+    // a reader the resource is refused (no guest memory here).
+    std::function<bool(std::uint32_t address,std::uint8_t* out12)> read_follow;
     bool input_feedback(driving::Bytes root,std::uint32_t key,std::int32_t argument);
     bool call(std::uint32_t pc,driving::Bytes resource,const std::uint32_t* args,
               std::size_t count,std::uint32_t& result);

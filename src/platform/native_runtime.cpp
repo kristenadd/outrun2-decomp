@@ -4129,9 +4129,11 @@ bool native_start_owned_call(NativeRuntimeContext& context,std::uint32_t pc_entr
         case 0x00427db0u: // the voice set / render mode (versus or not)
             if(count!=0u)return false;
             // 427DB0: 95B210 = 4493C0 (English), 754B0C from 43F860 ([780260]),
-            // the variant 780258 and, for variant 5, the license +208 (535EF0).
+            // the variant 780258 and, for variant 5, [535EF0()+208]: 535EF0 is lea eax,[ecx+4]
+            // on the frontend owner (4035F0), so the owner's +20C (its mode selection, as
+            // frontend_rankings reads it): bits 8..10 = 4 picks Clarissa's voice set (ENGLISHC).
             context.pc_sound.voice_set_427db0(0u,start.frontend_prepare.game_flag_780260!=0u,context.game_mode.game_variant,
-                le32(context.event_function36.frontend_profiles.active.data()+0x208u));
+                context.event_function36.object.size()>=0x210u?le32(context.event_function36.object.data()+0x20cu):0u);
             result=start.render_mode_754b0c=context.pc_sound.voice_set_754b0c;
             return true;
         case 0x004962a0u:case 0x004962d0u:

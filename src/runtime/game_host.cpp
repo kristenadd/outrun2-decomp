@@ -1102,6 +1102,10 @@ void attach_pc_scene(GameHost& host,pf::NativeRuntimeContext& context,pf::Retail
         return pf::native_ghost_car_display(context,scene,callback,work)||pf::native_race_objects_display(context,scene,callback,work)   // + course objects (OSO)
             ||pf::native_race_requests_display(context,scene,callback,work);};   // + the C2C request manager 46C210 (variant 5)
     context.race.robots.renderer=&scene;
+    context.event_function36.frontend_sprites.bind_missing=[&context](std::uint32_t bank){   // START's SPRANI banks (2B: HUD sprites)
+        std::string error;const bool ok=pf::native_sprani_bind_bank(context,bank,error);
+        if(!ok)std::fprintf(stderr,"SPRANI bank %x not bound for the pool: %s\n",unsigned(bank),error.c_str());
+        return ok;};
     scene.autoscene_work_799ca0=context.race.robots.autoscene_work.data();   // 4493E0 / 4B5FD0
     scene.body_view=[&shared](outrun::driving::Bytes& b){
         b=outrun::driving::Bytes(shared.body_82e7f0.data(),shared.body_82e7f0.size());return true;};

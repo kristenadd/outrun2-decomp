@@ -41,6 +41,8 @@ std::uint32_t FrontendSprites::create(std::uint32_t token,std::uint32_t layer,
     std::uint32_t pause_domain){
     const auto bank=token>>16u,index=token&0xffffu;
     if(bank<0x20u||bank>=0x4bu||layer>=Layers||used_[layer]>=Slots)return ~0u;
+    if(index>=banks_[bank-0x20u].size()&&bind_missing&&!bind_tried_[bank-0x20u]){
+        bind_tried_[bank-0x20u]=true;(void)bind_missing(bank);}
     const auto& scenes=banks_[bank-0x20u];if(index>=scenes.size())return ~0u;
     // 4282B0: the cursor always moves one past the slot it examines.
     unsigned slot;

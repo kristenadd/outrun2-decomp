@@ -314,6 +314,17 @@ list. `46C220` (2D: native `requests_2d_481a40`) runs from the HUD display
 digits and request rows (`4BB9E0`) reach the HUD. `505CA0` needed a hand-added
 `RET 14` in `bulk_pops.inc` (the listing missed it).
 
+Two traps found on 2026-11-17 (fixed):
+- SPRANI banks START requests (`2B`: the Heart Attack / Clarissa HUD sprites,
+  heart ring, request banner) are not handed to the sprite pool by the native
+  START, so `428320` / `428460` / the UI resources' creates failed silently.
+  `FrontendSprites::bind_missing` (installed in `game_host`) binds a bank on a
+  create's first miss.
+- The voice set `427DB0` reads `[535EF0()+208]`; `535EF0` is
+  `lea eax,[ecx+4]` on the frontend owner, i.e. the owner's `+20C`, not the
+  license. With the wrong word Clarissa got Holly's `ENGLISHH_` set, whose
+  mission banks (`HAM_MIS_PASS`, `HCARS`) don't exist: no request voices.
+
 **Known issues** (as of 2026-11-17):
 - The race-end results screen calls `46C220` through its own binding
   (`race_end_runtime.cpp`), which still expects a translated `481A40` and

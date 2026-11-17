@@ -1,6 +1,7 @@
 #pragma once
 #include "platform/game_ui_pack.hpp"
 #include <array>
+#include <functional>
 #include <cstdint>
 #include <vector>
 
@@ -49,7 +50,11 @@ public:
     unsigned next(unsigned layer) const {return layer<Layers?next_[layer]:0;}
     bool bank_scene(std::uint32_t token,FrontendSpriteTiming& out) const;
     unsigned used(unsigned layer) const {return layer<Layers?used_[layer]:0;}
+    // Binds a SPRANI bank (20..4A) the native START requested but never handed to the pool
+    // (2B: the Heart Attack / Clarissa HUD sprites); tried once per bank by create.
+    std::function<bool(std::uint32_t bank)> bind_missing;
 private:
+    std::array<bool,0x4b-0x20> bind_tried_{};
     std::array<std::vector<FrontendSpriteTiming>,0x4b-0x20> banks_;
     std::array<FrontendSprite,Count> instances_{};
     std::array<unsigned,Layers> used_{},next_{};

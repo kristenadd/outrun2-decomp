@@ -115,7 +115,11 @@ std::uint32_t FrontendUiResources::sprite_call(std::uint32_t pc,const std::uint3
 }
 bool FrontendUiResources::finalize(driving::Bytes r){
     if(r.size()<0xa0u){missing_pc=0x4656b0u;return false;}
-    if(r.u32(0x9cu)!=0u){missing_pc=0x4656b0u;return false;} // explicit guest follow-pointer boundary
+    if(r.u32(0x9cu)!=0u){                                       // 4656B9: +40 = the 3 words at [+98]
+        std::uint8_t v[12];
+        if(!read_follow||!read_follow(r.u32(0x98u),v)){missing_pc=0x4656b0u;return false;}
+        for(unsigned k=0;k<12u;++k)r.put8(0x40u+k,v[k]);
+    }
     if(r.u32(0x24u)!=0u)return true;
     if(r.u32(8u)==~0u)return true;
     std::array<float,16> matrix{};
