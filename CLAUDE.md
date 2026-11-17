@@ -154,6 +154,83 @@ unmapped address or unported service switches that robot off for the rest of
 the race, silently unless `OR2_TRACE` is set. Check for `[rob] latched` first
 when a race character stops doing something mid-race.
 
+## Driving the Mac game unattended (autoplay)
+
+How the goal-ending fixes were reproduced and checked without the owner
+playing. It works for one run of one known path; it is not proof that the
+owner's own path works (see "How to work with the owner").
+
+**Game files for a dev build.** The owner's game lives inside
+`/Applications/OutRun2006 Coast 2 Coast.app/Contents/Resources/Game`. A fresh
+`build/macos/mac/OutRun2006 Coast 2 Coast.app` has none and stops at the folder
+picker (no output, nothing happens). Link them in once:
+
+```bash
+ln -sfn "/Applications/OutRun2006 Coast 2 Coast.app/Contents/Resources/Game" \
+  "build/macos/mac/OutRun2006 Coast 2 Coast.app/Contents/Resources/Game"
+```
+
+The saves, cache, `options.ini` and `autoplay.txt` are all in
+`~/Library/Application Support/OutRunMac/Saves` (the `home()` of the runner).
+
+**`autoplay.txt`** (read once at start, `Autoplay::load` in `game_host.cpp`):
+
+- `script=<from>-<to>:<BUTTONS>,…`: buttons held from input frame `from` to
+  `to` (a single frame `n:A` works too). Several `script=` lines are joined.
+  A press is the first frame of a range, so for repeated presses use separate
+  short ranges (`560-563:A,600-603:A,…`); one long range is a single press.
+- Button names (Switch layout, combined with `+`): `A` (select), `B` (back),
+  `X`, `Y`, `L`, `R`, `ZL`, `ZR`, `PLUS` (Start), `MINUS`, `LS`, `RS`,
+  `LEFT`, `UP`, `RIGHT`, `DOWN`.
+- `frames=N`: at frame N it holds L+R+Plus, the exit combination.
+- `trace=1`: writes `trace.txt` next to it, one line per frame (mode, child, start state).
+- Autoplay presses are added to the real pad, so a person touching the window
+  changes the run.
+- **Delete `autoplay.txt` afterwards**, or the owner's next launch replays it.
+
+The **OutRun 2SP** path from launch (title → Start → Right ×2 → A for the defaults):
+
+```text
+script=400-403:PLUS,460-463:RIGHT,500-503:RIGHT,560-563:A,600-603:A,…,1060-1063:A
+```
+
+Stop the A presses before the race starts (it started at about frame 1030):
+later presses skip screens (the ending's credits included). Pressing A blindly
+from the title went into a mission mode (variant 6), which never reaches the
+ending.
+
+**Getting to the ending fast:** `OR2_DEBUG_RACE_END=4` finishes the stage 4 s
+after GO; `OR2_HOST_GOAL_COURSE=10` (10..14 = goals A..E) picks a real goal
+ending. Without it, the forced goal on stage 1 ends with an ending that has no
+scene (a black screen). `OR2_HOST_TRACE=1` prints `[flow] mode a -> b` lines
+with the frame number (2SP: 16 race → 19 → 33 → 24 ending → 25 map → 26 name
+entry); `grep "\[flow\]"` gives the timeline.
+
+```bash
+OR2_HOST_GOAL_COURSE=10 OR2_DEBUG_RACE_END=4 OR2_HOST_TRACE=1 timeout 60 \
+  "build/macos/mac/OutRun2006 Coast 2 Coast.app/Contents/MacOS/OutRun2006 Coast 2 Coast" > run.log 2>&1
+```
+
+With that setup, mode 24 ran from about frame 2000 to 3200, i.e. about 33 s
+to 55 s after launch.
+
+**Seeing the screen:** the `OR2_MAC_SCREENSHOT_DIR` dumps come out white for
+much of the game, the ending included. Plain `screencapture -x -t jpg
+<file>` of the desktop works (the shell has screen-recording access). Take one
+every 1 to 2 s in a loop while the game runs in the background, then
+`sips -Z 700` and `sips -c <h> <w> --cropOffset <y> <x>` to shrink and crop
+before reading. Tell the owner first, because a game window will open over their work.
+
+**Widescreen runs:** set `widescreen=1` in `options.ini` for the run, and
+copy the file back afterwards (back it up first).
+
+**Temporary tracing:** a guarded `fprintf` behind a throwaway env var (for
+example `[end]` lines of the ending's state, autoscene frame and SPRANI status
+every 30 frames) answered the timing question quickly. Two cautions: calling a
+service from a trace can latch a fault (`4B5FC0` before the autoscene exists
+latched the race end), so only read state that exists; and remove the
+tracing before committing.
+
 ## Testing
 
 ```bash
