@@ -163,7 +163,8 @@ bool native_sprite2d_event(NativeRuntimeContext& c,std::uint32_t callback){
     if(callback!=0x427e30u&&(callback!=0x427f70u||(c.mode_state.current!=16u&&!native_race_end_mode_active(c.mode_state.current))))return false;
     auto& o=native_sprite2d(c);auto& pool=c.event_function36.frontend_sprites;
     if(callback==0x427e30u){SpraniGlobals g{};sprani_init_427e30(pool,g);o.state.id_7551b4=g.current_7551b4;++o.inits_398;o.last_init_mode=c.mode_state.current;}
-    else{pool.tick(sprani_clock_427f70(1u,std::int32_t(c.frame_state.update_index_8a8cdc),0,c.event_function36.title_pause_flag_95b214));++o.controls_398;}
+    else{pool.tick(sprani_clock_427f70(1u,std::int32_t(c.frame_state.update_index_8a8cdc),0,c.event_function36.title_pause_flag_95b214));++o.controls_398;
+        c.event_function36.frontend_sprites_ticked_398=true;}
     return true;
 }
 void native_sprite2d_set_frontend(NativeRuntimeContext& c,const std::vector<FrontendGlyph>& glyphs,const std::vector<FrontendListImage>& images,

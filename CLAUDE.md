@@ -237,3 +237,8 @@ sample rate.
   47EE70`): traffic cars' destroy callback `470560` went to the ghost handler,
   which faulted for good when a stage change destroyed traffic. The traffic
   module now handles its own `470560`.
+- Goal ending (mode 24, staff roll): the scene stays in its 320x240 window
+  (the car reflection cube's target switch reset the viewport), centred in the
+  4:3 area with a 4:3 camera in widescreen; race-end modes no longer tick the
+  SPRANI pool twice (credits and fade ran at double speed); full-screen flat
+  fades cover the whole widescreen canvas (Metal `screen_fade`).

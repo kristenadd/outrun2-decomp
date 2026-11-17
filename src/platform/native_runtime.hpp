@@ -546,6 +546,10 @@ struct NativeEventFunction36State {
     // future native rand/srand consumers must share this state, not reseed it.
     std::uint32_t pc_crt_random_state{1u};
     FrontendSprites frontend_sprites;
+    // Event 398's 427F70 ticked the pool since the frontend update last ran: that
+    // update then leaves the pool alone, so it advances once per frame (race-end modes
+    // run both, which played the ending's credits and fade-out at double speed).
+    bool frontend_sprites_ticked_398{};
     std::uint32_t frontend_ui_missing_pc{};
     float frontend_ui_motion_step{}; // native frame interval, PC UI seconds
     // PC 7D38F0 (450230/450240) is owned by the race manager: read through

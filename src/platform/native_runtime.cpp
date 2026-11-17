@@ -4306,8 +4306,10 @@ bool native_runtime_event_function36_invoke(
             state.title_event_state=&c.event_state;
             state.runtime=&c;
             state.title_game_flag_780248=&c.start_mode.game_flag_780248;
-            // In GAME the pool is ticked by event 398's 427F70 (sprite_2d_runtime).
-            if(c.mode_state.current!=16u)state.frontend_sprites.tick({true,true,state.title_pause_flag_95b214!=0u});
+            // In GAME, and wherever else event 398 runs (the race-end modes), the pool is
+            // ticked by its 427F70 (sprite_2d_runtime); once per frame either way.
+            if(c.mode_state.current!=16u&&!state.frontend_sprites_ticked_398)state.frontend_sprites.tick({true,true,state.title_pause_flag_95b214!=0u});
+            state.frontend_sprites_ticked_398=false;
             native_frontend_menu_update(c);
             driving::PcRuntimeOwnerServices445be0 services{};
             services.user=&state;

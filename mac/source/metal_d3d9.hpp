@@ -35,6 +35,7 @@ public:
     // 2D layer came). The setters apply between frames.
     void resize_back_buffer(unsigned width,unsigned height);
     void set_ui_rect(bool on){ui_rect_=on;}
+    void set_scene_in_ui_rect(bool on)override{scene_in_ui_rect_=on;}
     void set_fxaa(bool on){fxaa_=on;}
     void set_msaa(unsigned samples){msaa_=samples==2||samples==4?samples:1;}   // 1, 2 or 4
     void finish_scene();
@@ -43,6 +44,10 @@ private:
     bool shade_cached_vertex(std::uint32_t,std::int32_t,const platform::pc_shader::V4*,Vertex&);
     void raster(const Vertex*,unsigned) override;
     void flush();
+    // The pretransformed batch covers the whole 640x480 screen in one flat colour
+    // (no texture, or one colour over the texels it samples): a screen fade, which
+    // the UI rectangle would shrink to a 4:3 box over the wide 3D scene.
+    bool screen_fade();
     struct Impl;
     std::unique_ptr<Impl> metal_;
     std::vector<Vertex> batch_;
@@ -57,5 +62,6 @@ private:
     bool pipelined_{};
     bool msaa_live_{};   // the back buffer is the multisampled scene target (begin_frame .. finish_scene)
     bool ui_rect_{},fxaa_{},scene_finished_{},batch_rhw_{};   // batch_rhw_: the batch came from pretransformed vertices
+    bool scene_in_ui_rect_{};   // 3D draws too go in the 4:3 rectangle (set_scene_in_ui_rect)
 };
 }

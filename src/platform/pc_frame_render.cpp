@@ -94,11 +94,14 @@ void frame_render_449050(PcFlushContext& c,PcFrameState& s,const PcFrameInputs& 
     if(!s.device_ready_7d2614&&enhancements::display_ticks())++g.w(0x89edb8);   // 40ED60 (port: not on display-only frames)
     frame_begin_448db0(c,s,in);
     std::uint32_t saved_viewport[6]{};
-    if(in.game_mode_78026c==0x18u){
+    // Mode 24 (the goal ending): the 3D scene in a 320x240 window at the left, the staff roll beside it.
+    const bool ending=in.game_mode_78026c==0x18u;
+    const std::uint32_t ending_viewport[6]{0,ftol(X(in.screen_740c98)*X(120.0f)),ftol(X(in.screen_740c94)*X(320.0f)),
+                                           ftol(X(in.screen_740c98)*X(240.0f)),0,kOne};
+    if(ending){
         c.device.get_viewport(saved_viewport);
-        const std::uint32_t v[6]{0,ftol(X(in.screen_740c98)*X(120.0f)),ftol(X(in.screen_740c94)*X(320.0f)),
-                                 ftol(X(in.screen_740c98)*X(240.0f)),0,kOne};
-        c.device.set_viewport(v);
+        c.device.set_viewport(ending_viewport);
+        c.device.set_scene_in_ui_rect(true);   // port: the window lines up with the 4:3 staff roll in widescreen
     }
     std::int32_t environment=-1;
     for(std::uint32_t layer=0;layer<9u;++layer){
@@ -115,7 +118,13 @@ void frame_render_449050(PcFlushContext& c,PcFrameState& s,const PcFrameInputs& 
         }
         course_pre_40bd80(c,s,in,sv.events.slots[387].flags,sv.leaf,layer);
         switch(layer){
-        case 0:sv.leaf(0x414340,0);break;
+        case 0:
+            sv.leaf(0x414340,0);
+            // Port: the car reflection cube's render-target switches (414340 / 413FC0) reset
+            // the viewport to the whole back buffer (the D3D9 SetRenderTarget rule), which
+            // filled the screen with the ending's scene; it goes back in its window.
+            if(ending)c.device.set_viewport(ending_viewport);
+            break;
         case 1:case 4:break;
         case 2:event_shadow_display_4400c0(sv.events,sv.scene,sv.display);break;
         default:event_display_43fb40(sv.events,1u<<layer,0,0x199,sv.sun_light,sv.scene,sv.display);break;
@@ -124,7 +133,7 @@ void frame_render_449050(PcFlushContext& c,PcFrameState& s,const PcFrameInputs& 
         if(layer==6u&&in.glare_95af09){sv.leaf(0x414e50,0);sv.leaf(0x414f00,0);}
         if(s.layers[layer].callback)sv.leaf(s.layers[layer].callback,0);
     }
-    if(in.game_mode_78026c==0x18u)c.device.set_viewport(saved_viewport);
+    if(ending){c.device.set_viewport(saved_viewport);c.device.set_scene_in_ui_rect(false);}
     frame_end_448e40(c,s);
     sv.leaf(0x42d710,0x15);
     const auto& player=sv.events.slots[8];

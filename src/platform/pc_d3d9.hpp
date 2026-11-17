@@ -112,6 +112,10 @@ public:
         (void)flags;(void)colour;(void)z;(void)stencil;}
     virtual void get_viewport(std::uint32_t out[6]){for(unsigned k=0;k<6;++k)out[k]=viewport_[k];} // 48
     virtual void set_viewport(const std::uint32_t v[6]){for(unsigned k=0;k<6;++k)viewport_[k]=v[k];} // 47
+    // Port: the 3D draws' viewport is placed in the centred 4:3 rectangle that a
+    // widescreen device keeps for the 2D layer (the goal ending's window beside
+    // the staff roll). No effect on devices without that rectangle.
+    virtual void set_scene_in_ui_rect(bool on){(void)on;}
     // ---- 2D sprite renderer (42D710 family, pc_sprite_2d.hpp): begin ----
     // DrawPrimitiveUP (83): `count` primitives read from `stride`-byte vertex
     // records at `data` (the PC's user-memory vertex array).

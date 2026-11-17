@@ -435,6 +435,31 @@ void MetalD3D9Device::draw_primitive_up(std::uint32_t t,std::uint32_t n,const vo
     const auto cull=render[RS_CULLMODE];render[RS_CULLMODE]=CULL_NONE;
     flush();render[RS_CULLMODE]=cull;
 }
+bool MetalD3D9Device::screen_fade(){
+    // Clip space after raster(): the batch spans the viewport edge to edge.
+    if(batch_.empty()||soft_viewport_.x>0||soft_viewport_.y>0||soft_viewport_.w<float(back_width_)||soft_viewport_.h<float(back_height_))return false;
+    float x0=2,x1=-2,y0=2,y1=-2,u0=2,u1=-1,v0=2,v1=-1;
+    for(const auto& v:batch_){
+        const float x=v.pos[0]/v.pos[3],y=v.pos[1]/v.pos[3];
+        x0=std::min(x0,x);x1=std::max(x1,x);y0=std::min(y0,y);y1=std::max(y1,y);
+        u0=std::min(u0,v.t[0].x);u1=std::max(u1,v.t[0].x);v0=std::min(v0,v.t[0].y);v1=std::max(v1,v.t[0].y);
+    }
+    constexpr float edge=0.98f;   // the PC's half-texel offset keeps the corners just inside +-1
+    if(!(x0<=-edge&&x1>=edge&&y0<=-edge&&y1>=edge))return false;
+    if(!textures[0])return true;
+    // A textured fade samples one flat patch of a sprite sheet (the ending's 512x256
+    // sheet); 4:3 artwork drawn full screen samples a detailed picture.
+    const auto* o=object(textures[0]);std::uint32_t w=0,h=0;
+    if(!o||o->rgba.empty()||o->rgba[0].empty()||!texture_level_size(textures[0],0,w,h)||!w||!h)return false;
+    const auto& px=o->rgba[0][0];if(px.size()<std::size_t(w)*h*4)return false;
+    auto texel=[](float t,std::uint32_t n){return std::uint32_t(std::clamp(t*float(n),0.f,float(n-1)));};
+    const std::uint32_t tx0=texel(u0,w),tx1=texel(u1,w),ty0=texel(v0,h),ty1=texel(v1,h);
+    if(std::size_t(tx1-tx0+1)*(ty1-ty0+1)>65536u)return false;   // a large region is a picture, not a fade
+    const std::uint8_t* first=&px[(std::size_t(ty0)*w+tx0)*4];
+    for(std::uint32_t y=ty0;y<=ty1;++y)for(std::uint32_t x=tx0;x<=tx1;++x)
+        if(std::memcmp(&px[(std::size_t(y)*w+x)*4],first,4)!=0)return false;
+    return true;
+}
 void MetalD3D9Device::flush(){
     if((batch_.empty()&&!native_vertices_)||count_only)return;
     @autoreleasepool {
@@ -543,7 +568,7 @@ void MetalD3D9Device::flush(){
         // UI rectangle, pretransformed (2D) draws keep a centred 4:3 area.
         const bool back=colour_target_==BackBuffer;
         double sx=back?double(presentation_width())/back_width_:1,sy=back?double(presentation_height())/back_height_:1,ox=0;
-        if(back&&ui_rect_&&batch_rhw_&&!native_vertices_){const double w=double(presentation_height())*4/3;ox=std::floor((presentation_width()-w)/2);sx=w/back_width_;}
+        if(back&&ui_rect_&&(scene_in_ui_rect_||(batch_rhw_&&!native_vertices_&&!screen_fade()))){const double w=double(presentation_height())*4/3;ox=std::floor((presentation_width()-w)/2);sx=w/back_width_;}
         MTLViewport viewport{ox+soft_viewport_.x*sx,soft_viewport_.y*sy,soft_viewport_.w*sx,soft_viewport_.h*sy,soft_viewport_.min_z,soft_viewport_.max_z};[e setViewport:viewport];
         const unsigned left=unsigned(std::max(0.f,soft_viewport_.x)),top=unsigned(std::max(0.f,soft_viewport_.y));
         require(left<width_&&top<height_&&soft_viewport_.w>0&&soft_viewport_.h>0,"Metal viewport outside target");
