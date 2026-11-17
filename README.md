@@ -16,8 +16,8 @@ https://github.com/emoose/OutRun2006Tweaks
 # OutRun 2006 Coast 2 Coast: native port
 
 A native port of the PC version of OutRun 2006 Coast 2 Coast (Sumo Digital /
-Sega, 2006) to Nintendo Switch, macOS (Apple silicon), PS5 (homebrew) and
-Xbox One / Series (Developer Mode). The game code is a reconstruction of the
+Sega, 2006) to Nintendo Switch, macOS (Apple silicon), iOS / iPadOS, PS5
+(homebrew) and Xbox One / Series (Developer Mode). The game code is a reconstruction of the
 PC executable in C++ (part of it still translated from x86 by `tools/x86tr`,
 the rest written by hand); the platform layer (graphics, audio, input,
 files, network) is native to each system.
@@ -76,9 +76,10 @@ copy its `textures` folder next to the game files in the app's files.
 | `src/system` | files, clocks, EXE image loading and checking, first-launch setup screen |
 | `src/ports` | in-memory extraction of the Steam `OR2006C2C.EXE` (see its `README.md`) |
 | `src/runtime` | the shared game runner (`game_host`) used by every platform |
-| `src/input` | pad and lifecycle adapter shared by the Mac and PS5 builds |
+| `src/input` | pad and lifecycle adapter shared by the Mac, iOS and PS5 builds |
 | `src/enhancements` | port additions kept apart from the reconstructed game: extra Options > Settings rows (aspect ratio, resolution, anti-aliasing, frame rate); each platform lists what it supports (`enhancements_*.cpp` in its `source/`) |
 | `switch/`, `mac/`, `ps5/`, `xbox/` | one folder per platform, same layout in each |
+| `ios/` | iOS / iPadOS: reuses the Mac platform code (`mac/source`); `ios/source` holds only the iOS parts (folders, scene life cycle, controller notice) |
 | `tests/` | unit and regression tests (CTest) |
 | `tools/` | EXE image tools, leak check, x86 translator, decompilation tracking, generators, PS5 build and package scripts |
 | `images/` | screenshots |
@@ -102,6 +103,7 @@ backgrounds, the Xbox package logos and the Mac application icon.
 | --- | --- | --- |
 | Nintendo Switch | `make -C switch` | `switch/README.md` |
 | macOS | `cmake --preset mac-full` | `mac/README.md` |
+| iOS / iPadOS | `sh ios/tools/build-dependencies.sh`, then `cmake --preset ios-device` (or `ios-simulator`) | `ios/README.md` |
 | PS5 | `Build-PS5.ps1` (Windows + WSL; makes the `.pkg`) | `ps5/README.md` |
 | Xbox | `cmake` with `-DOR2_XBOX=ON` (Visual Studio 2026, UWP) | `xbox/README.md` |
 
@@ -135,7 +137,7 @@ it is not redistributed here.
 
 OutRun is a trademark of Sega. This project is not affiliated with or endorsed by Sega or Sumo Digital.
 
-This source code is be freely available for use, modification, and redistribution, subject to the licenses of the original projects it is based on.
+This source code is freely available for use, modification, and redistribution, subject to the licenses of the original projects it is based on.
 
 Feel free to reuse any part of this project in your own work. Please give proper credit where due.
 

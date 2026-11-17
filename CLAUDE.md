@@ -277,20 +277,11 @@ sample rate.
 
 ## Outstanding issues
 
-1. **Passenger reactions during big crashes** (ORC 345–365, air/landing
-   voices): tied to the crash sequence (`car+0x2C8` crash timer, `+0x2F8`
-   cooldown, `src/driving/pc_crash*.cpp`). Not yet seen firing in a test;
-   unverified whether the port ever enters that sequence.
-2. **Off-road comments** (ORC 110–119, 114/115): triggered by the surface
-   under the car (`car+0x248`, bits `0x10F407C`; the port's names call it
-   "drift"). Untested.
-3. **Occasional hitches** (60–100 ms frames): likely sound banks loaded
-   mid-race or Metal pipelines compiled on first use. Not investigated.
-4. **1080p is near the limit on the iPhone 15 Pro Max** (about 16 ms of GPU per
-   frame). Heavier scenes may drop frames; per-pixel shading of the generated
-   PC shaders is the cost.
-5. `FE.PAK` effects played after a race unloads it (ids 3, 4, 13, 16, 30)
-   count as "unmapped": minor, not investigated.
+None known. The owner confirmed on 2026-11-16 that the earlier list is
+resolved: passenger reactions in big crashes (ORC 345–365), off-road comments
+(ORC 110–119), occasional 60–100 ms hitches, 1080p frame time on the iPhone 15
+Pro Max, and `FE.PAK` effects counted as unmapped after a race. Don't chase
+them again unless the owner reports one.
 
 ## Done in this fork (for context)
 
