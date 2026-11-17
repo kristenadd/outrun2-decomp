@@ -1099,7 +1099,8 @@ void attach_pc_scene(GameHost& host,pf::NativeRuntimeContext& context,pf::Retail
     scene.robot_display=[&context,&scene](std::uint32_t callback,std::uint32_t work){ProfileScope prof(profile_key(ProfileDisplay,0,callback));   // race robots ROB01/ROB03
         return pf::native_race_robots_display(context,callback,work,scene.matrices());};
     scene.ghost_display=[&context,&scene](std::uint32_t callback,std::uint32_t work){ProfileScope prof(profile_key(ProfileDisplay,0,callback));   // Time Attack ghost cars
-        return pf::native_ghost_car_display(context,scene,callback,work)||pf::native_race_objects_display(context,scene,callback,work);};   // + course objects (OSO)
+        return pf::native_ghost_car_display(context,scene,callback,work)||pf::native_race_objects_display(context,scene,callback,work)   // + course objects (OSO)
+            ||pf::native_race_requests_display(context,scene,callback,work);};   // + the C2C request manager 46C210 (variant 5)
     context.race.robots.renderer=&scene;
     scene.autoscene_work_799ca0=context.race.robots.autoscene_work.data();   // 4493E0 / 4B5FD0
     scene.body_view=[&shared](outrun::driving::Bytes& b){

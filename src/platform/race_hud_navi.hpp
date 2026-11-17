@@ -98,6 +98,8 @@ bool navi_sprite_428ac0(NaviPubServices&,std::uint32_t token,const std::array<fl
                         float s,float angle,std::uint32_t mode);
 // One recorded 429530 / 429580 / 4289B0 submission executed as this module's own draws.
 void navi_emit_draw(NaviPubServices&,const RaceHudDraw&);
+// 4BB9E0(row, value): a request row (2C003D + row) and its value (the C2C manager's 481A40).
+bool navi_request_row_4bb9e0(NaviPubServices&,std::uint32_t row,std::int32_t value);
 // Pieces exposed for the oracle.
 bool navi_digits_4ba9d0(NaviPubServices&,std::uint32_t style,std::int32_t x,std::int32_t y,
                         const std::string& text,std::uint32_t layer,float alpha);

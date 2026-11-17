@@ -255,6 +255,7 @@ bool native_get_road_ofs_4a4010(NativeRuntimeContext& c,PcRaceMemory& mem,drivin
 }
 
 namespace {
+const TranslatedModule* requests_clock_module();   // below: the request manager's chained leaves
 struct Run {
     NativeRuntimeContext& c;
     NativeRaceTraffic& t;
@@ -627,6 +628,25 @@ struct Run {
             FrontendSpriteTiming s{};
             if(!c.event_function36.frontend_sprites.bank_scene(a[0],s))return 0xffffffffu;
             m().putf(a[1],float(std::int16_t(s.width))*0.5f);m().putf(a[2],float(std::int16_t(s.height))*0.5f);return 0u;}
+        // 50ECC0 (ECX = a request display object, its +14 2D draw): with o = [obj+4] (the manager),
+        // e = [o+80], r = [e+58], [o+7660] set and [r] == [obj+8]: by [r+4] (jump table 50ED4C)
+        // 0 -> 50E460(e), 1..4 -> 50E4E0(e), 5 / 6 -> 50E9A0(e) (thiscall on obj). 49A650 first.
+        case 0x50ecc0u:{
+            if(!ctx)break;
+            routed(pc);
+            const std::uint32_t obj=k.ecx,o=m().u32(obj+4u);
+            if(!o)return 0u;
+            const std::uint32_t e=m().u32(o+0x80u);if(!e)return 0u;
+            const std::uint32_t r=m().u32(e+0x58u);if(!r||!m().u32(o+0x7660u))return 0u;
+            if(m().u32(r)!=m().u32(obj+8u))return 0u;
+            const std::uint32_t kind=m().u32(m().u32(e+0x58u)+4u);
+            if(kind>6u)return 0u;
+            PcRaceCall q{};q.pc=kind==0u?0x50e460u:kind<=4u?0x50e4e0u:0x50e9a0u;q.ecx=obj;q.argc=1;q.args[0]=e;
+            (void)bulk_call(m(),ctx->service,q,&matrices,&c.event_function36.pc_crt_random_state,requests_clock_module());
+            return 0u;}
+        case 0x4bb9e0u:{   // 4BB9E0(row, value): a request row, replayed by the NAVI display in order
+            if(!heart||!heart->display||!heart->draws)missing(pc,"request row outside a display");
+            routed(pc);RaceHudDraw d;d.pc=pc;d.args[0]=a[0];d.args[1]=a[1];heart->draws->push_back(d);return 0u;}
         case 0x4295d0u:case 0x4bc990u:{   // 3D sprite / NAVI digits: replayed by the NAVI display in order
             if(!heart||!heart->display||!heart->draws)missing(pc,"Heart Attack 2D submission outside its display");
             routed(pc);RaceHudDraw d;d.pc=pc;
@@ -690,6 +710,57 @@ struct Run {
         // 409F90(car+B0), 40A7D0(&p, &p), 40A170(camera+140), 449940(cam+B0, cam+B4, &p, &p),
         // 40A010, on the frame's stack (the translated code's matrices).
         case 0x409f90u:routed(pc);driving::pc_matrix_push_load(matrices,m().bytes(a[0],0x40));return 0u;
+        // The request manager's display (481810 and its objects): the matrix stack, vector leaves
+        // (x87 single results, as in the PC: fld / fadd / fstp), the D3D transform and 410670.
+        case 0x409ef0u:routed(pc);driving::pc_matrix_push(matrices);return 0u;
+        case 0x409f30u:routed(pc);driving::pc_matrix_push_unit(matrices);return 0u;
+        case 0x40a820u:case 0x40a840u:{routed(pc);
+            const driving::CourseProbe v{m().f32(a[0]),m().f32(a[0]+4u),m().f32(a[0]+8u)};
+            const auto p=pc==0x40a820u?driving::pc_matrix_vector(matrices,v):driving::pc_matrix_inverse_point(matrices,v);
+            m().putf(a[1],p.x);m().putf(a[1]+4u,p.y);m().putf(a[1]+8u,p.z);return 0u;}
+        case 0x40ef10u:{routed(pc);   // 40EF10(a, b): a += b
+            for(std::uint32_t i=0;i<12u;i+=4u)m().putf(a[0]+i,driving::x87_float(driving::X87(m().f32(a[0]+i))+driving::X87(m().f32(a[1]+i))));
+            return 0u;}
+        case 0x40ef40u:case 0x40efa0u:{routed(pc);   // 40EF40(o, a, b): o = a + b; 40EFA0: o = a - b
+            float r[3];
+            for(std::uint32_t i=0;i<3u;++i){const driving::X87 x(m().f32(a[1]+i*4u)),y(m().f32(a[2]+i*4u));r[i]=driving::x87_float(pc==0x40ef40u?x+y:x-y);}
+            for(std::uint32_t i=0;i<3u;++i)m().putf(a[0]+i*4u,r[i]);
+            return 0u;}
+        case 0x40f050u:{routed(pc);   // 40F050(o, a, s): o = a * s
+            float s0;std::memcpy(&s0,&a[2],4);float r[3];
+            for(std::uint32_t i=0;i<3u;++i)r[i]=driving::x87_float(driving::X87(s0)*driving::X87(m().f32(a[1]+i*4u)));
+            for(std::uint32_t i=0;i<3u;++i)m().putf(a[0]+i*4u,r[i]);
+            return 0u;}
+        case 0x40f180u:{routed(pc);   // 40F180(o, a, s, b, t): o = a*s + b*t. x: both products on the
+            // stack; y: b*t through a float local; z: both through float locals (40F19F / 40F1B0 / 40F1BF).
+            float s0,t0;std::memcpy(&s0,&a[2],4);std::memcpy(&t0,&a[4],4);
+            using driving::X87;using driving::x87_float;
+            const X87 ax=X87(s0)*X87(m().f32(a[1])),ay=X87(s0)*X87(m().f32(a[1]+4u));
+            const float az=x87_float(X87(s0)*X87(m().f32(a[1]+8u)));
+            const X87 bx=X87(t0)*X87(m().f32(a[3]));
+            const float by=x87_float(X87(t0)*X87(m().f32(a[3]+4u)));
+            const float bz=x87_float(X87(t0)*X87(m().f32(a[3]+8u)));
+            m().putf(a[0],x87_float(bx+ax));
+            m().putf(a[0]+4u,x87_float(X87(by)+ay));
+            m().putf(a[0]+8u,x87_float(X87(bz)+X87(az)));
+            return 0u;}
+        // Render leaves of a translated display (the request manager's objects): queued with the
+        // current matrix for the AREA's draw-list executor, as the course objects' draw_leaf does.
+        case 0x4044a0u:case 0x4044c0u:case 0x4044e0u:case 0x4044f0u:case 0x404540u:case 0x4052b0u:
+        case 0x4052c0u:case 0x405350u:case 0x405360u:case 0x4056d0u:case 0x409df0u:{
+            if(!ctx||!ctx->draws)break;
+            routed(pc);
+            PcVehicleDrawCall d{};d.pc=pc;d.argc=6;for(unsigned i=0;i<6u;++i)d.args[i]=a[i];
+            const auto cur=matrices.current();for(unsigned q=0;q<64u;++q)d.matrix[q]=cur.u8(q);
+            ctx->draws->push_back(d);return 0u;}
+        case 0x4493c0u:routed(pc);return native_race_end(c).language_7d2698;   // mov eax,[7D2698]: the language index
+        case 0x409e00u:case 0x410670u:{
+            if(!renderer)missing(pc,"render state outside a display");
+            routed(pc);auto& fl=renderer->flush_context();
+            if(pc==0x410670u){fl.g.w(0x89ede0)=0;fl.g.w(0x89ede8)=0;return 0u;}
+            static constexpr std::uint32_t States[10]={2,3,0x10,0x11,0x12,0x13,0x100,0x101,0x102,0x103};   // 409E74
+            float mtx[16];const auto cur=matrices.current();for(unsigned q=0;q<16;++q)mtx[q]=cur.f32(q*4);
+            renderer->device().set_transform(a[0]<10u?States[a[0]]:2u,mtx);return 0u;}
         case 0x40a170u:routed(pc);driving::pc_matrix_load(matrices,m().bytes(a[0],0x40));return 0u;
         case 0x40a010u:routed(pc);driving::pc_matrix_pop(matrices);return 0u;
         case 0x40a7d0u:{routed(pc);
@@ -720,6 +791,10 @@ struct Run {
         // 4EFD20(rows, lane): as the AREA's (race_objects_copy_4efd20): lane 0 into 84BD08 (START's
         // table68), other lanes into 6A5DC4; both and the request manager's rows are mapped here.
         case 0x4efd20u:routed(pc);race_objects_copy_4efd20(m(),a[0],a[1]);if(a[1]!=0u)native_race_area(c).light_words_written=true;return 0u;
+        case 0x505ca0u:{   // 505CA0(segment, object, lift, sx, sy): the road marker, drawn on the renderer
+            if(!renderer)missing(pc,"road marker outside a display");
+            routed(pc);float lift,sx,sy;std::memcpy(&lift,&a[2],4);std::memcpy(&sx,&a[3],4);std::memcpy(&sy,&a[4],4);
+            native_road_marker_505ca0(c,*renderer,std::int32_t(a[0]),a[1],lift,sx,sy);return 0u;}
         case 0x470240u:if(!ctx)break;routed(pc);return traffic_place_pose_470240(*ctx,a[0],std::int32_t(a[1]),a[2],a[3],a[4]);
         // 4FDF20 (ECX = the request manager): [+760C] = [6280C0] (4.0), 428460(2C00B2, 6, 3, 0, F0),
         // 424940(4D), 424940(16C).
@@ -733,7 +808,7 @@ struct Run {
         case 0x4fbbb0u:if(!ctx)break;routed(pc);return traffic_request_car_4fbbb0(*ctx,k.ecx,a[0],a[1]);   // the request manager's cars
         case 0x4ef870u:routed(pc);m().put32(0x84cc18u,a[0]);return 0u;   // 4EF870(v): [84CC18] = v (the appear override 4F... reads)
         case 0x48b140u:routed(pc);return c.start_mode.course_choice_655b59&0xffu;   // 48B140: movzx [655B59] (as START)
-        case 0x49a650u:routed(pc);return 0u;   // ret (the empty callback / virtual)
+        case 0x49a650u:case 0x41bd40u:routed(pc);return 0u;   // ret (the empty callback / virtual; 41BD40: the request objects' +10)
         // 4F12A0(path, loader, async, required) / 4F1A90(category, loader) / 4F1BA0(category, loader)
         // on the request manager's guest loaders (+A0: the stage's Req_*.bin; loader +0 category
         // index, +4 relocated blob, +8 phase 1 -> 3, +C handle): the file read at once from the
@@ -956,6 +1031,51 @@ bool native_race_score(NativeRuntimeContext& c,driving::PcMatrixStack& matrices,
         unsigned(pc),unsigned(arg),unsigned(c.mode_state.current),unsigned(c.game_mode.game_variant),unsigned(t.last_routed_pc));
     return false;
 }
+namespace {
+// 481A40 (ECX = 7F9460, 46C220): the request manager's 2D display. The objects of the list
+// [+78] (their +14), the grade row of every course driven (4BB9E0, rows 0..4), the score
+// banner (by [+74]: 460064 / 2C006D / 460063, frame [+5800] / 37 up to 99), the score digits
+// ("%4d", 4BC990 at 206, 1B2), then 4FDC10 / 4FDF90 and, with [+154], 4FE440; 4FC800.
+// While [+7604] or [+7628]: 4FE0D0 / 4FE360 / 4FC800 only; mode 14: 4FC800 only.
+void requests_2d_481a40(NativeRuntimeContext& c,PcRaceContext& ctx,driving::PcMatrixStack& matrices){
+    auto& m=ctx.m;constexpr std::uint32_t B=NativeRaceTraffic::RequestsBase;
+    auto call=[&](std::uint32_t pc,std::initializer_list<std::uint32_t> args,std::uint32_t ecx)->std::uint32_t{
+        PcRaceCall k{};k.pc=pc;k.ecx=ecx;for(auto v:args)k.args[k.argc++]=v;
+        if(bulk_translated(pc))return bulk_call(m,ctx.service,k,&matrices,&c.event_function36.pc_crt_random_state,requests_clock_module());
+        return ctx.service(k);};
+    if(m.u32(B+0x7604u)||m.u32(B+0x7628u)){call(0x4fe0d0u,{},B);call(0x4fe360u,{},B);call(0x4fc800u,{},B);return;}
+    if(m.u32(0x78026cu)==0x14u){call(0x4fc800u,{},B);return;}
+    if(const std::uint32_t list=m.u32(B+0x78u)){                       // 481A6F
+        std::uint32_t node=m.u32(list+0xcu);m.put32(list+0x14u,node);
+        std::uint32_t obj=node?m.u32(node):0u;
+        while(obj){
+            call(m.u32(m.u32(obj)+0x14u),{},obj);
+            const std::uint32_t l=m.u32(B+0x78u);node=m.u32(l+0x14u);if(!node)break;
+            node=m.u32(node+4u);m.put32(l+0x14u,node);if(!node)break;
+            obj=m.u32(node);
+        }
+    }
+    if(m.i32(B+0x16cu)>=0)                                              // 481AA5
+        for(std::int32_t i=0;i<=m.i32(B+0x16cu);++i)
+            if(i<5){const std::uint32_t course=m.u32(B+0x100u+std::uint32_t(i)*4u);
+                call(0x4bb9e0u,{std::uint32_t(i),m.u32(course*0x74u+B+0x3a24u)},0u);}
+    const std::int32_t score=m.i32(B+0x5800u);                          // 481AEA: / 37 (magic DD67C8A7)
+    std::int32_t q=std::int32_t((std::int64_t(score)*std::int64_t(std::int32_t(0xdd67c8a7u)))>>32)+score;
+    q>>=5;q+=std::int32_t(std::uint32_t(q)>>31);if(q>0x63)q=0x63;
+    switch(m.u32(B+0x74u)){
+    case 0u:call(0x429530u,{0x460064u,0u,0u,0u,std::uint32_t(q)},0u);break;
+    case 1u:call(0x429530u,{0x2c006du,0u,0u,0u,std::uint32_t(q)},0u);break;
+    case 2u:call(0x429530u,{0x460063u,0u,0u,0u,std::uint32_t(q)},0u);break;
+    default:break;
+    }
+    char text[16];std::snprintf(text,sizeof text,"%4d",score);           // 5802DD(buf, "%4d" 5B4A28, score)
+    constexpr std::uint32_t Scratch=NativeRaceTraffic::RequestsHeapBase+NativeRaceTraffic::RequestsHeapSize-0x100u;
+    for(unsigned i=0;i<16u;++i){m.put8(Scratch+i,std::uint8_t(text[i]));if(!text[i])break;}
+    call(0x4bc990u,{0xau,0x206u,0x1b2u,Scratch},0u);
+    call(0x4fdc10u,{},B);call(0x4fdf90u,{},B);
+    if(m.u32(B+0x154u)){call(0x4fe440u,{},B);call(0x4fc800u,{},B);}
+}
+}
 bool native_race_traffic_heart(NativeRuntimeContext& c,driving::PcMatrixStack& matrices,std::uint32_t pc,NativeHeartBinding& heart){
     auto& t=native_race_traffic(c);
     if(t.heart_latched){++t.heart_skipped;return false;}
@@ -968,7 +1088,8 @@ bool native_race_traffic_heart(NativeRuntimeContext& c,driving::PcMatrixStack& m
         if(heart.renderer)t.memory.map(0x899b98u,heart.renderer->environment().lights_899b98.data(),heart.renderer->environment().lights_899b98.size());
         PcRaceContext ctx{t.memory,matrices,[&](const PcRaceCall& k){return run(k);},heart.display?heart.models:nullptr};
         run.ctx=&ctx;
-        traffic_control_part(ctx,pc,0,0);
+        if(pc==0x46c220u)requests_2d_481a40(c,ctx,matrices);   // 46C220 = mov ecx,7F9460; jmp 481A40
+        else traffic_control_part(ctx,pc,0,0);
         racers_out(c,t);ints_out(c,t);
         return true;
     }catch(const TrafficUnported& e){t.heart_fault=e.pc;t.heart_error=e.what();}
@@ -1040,6 +1161,34 @@ bool native_race_objects_display(NativeRuntimeContext& c,PcSceneRenderer& r,std:
     ++t.object_displays;
     try{(void)native_race_draw_list_execute(c,r,draws);}
     catch(const std::exception& e){++t.object_draw_faults;if(t.object_error.empty())t.object_error=std::string("object draw list: ")+e.what();}
+    return true;
+}
+bool native_race_requests_display(NativeRuntimeContext& c,PcSceneRenderer& r,std::uint32_t callback,std::uint32_t work){
+    if(callback!=0x46c210u)return false;
+    auto& t=native_race_traffic(c);
+    if(t.requests_display_latched)return true;
+    auto& matrices=r.matrices();
+    const auto depth=matrices.depth;
+    std::vector<PcVehicleDrawCall> draws;
+    Run run{c,t,matrices};run.renderer=&r;
+    try{
+        map_memory(c,t);racers_in(c,t);
+        t.memory.map(0x899b98u,r.environment().lights_899b98.data(),r.environment().lights_899b98.size());
+        PcRaceContext ctx{t.memory,matrices,[&](const PcRaceCall& k){return run(k);},&draws};
+        run.ctx=&ctx;
+        PcRaceCall k{};k.pc=0x46c210u;k.argc=1;k.args[0]=work;
+        (void)bulk_call(ctx.m,ctx.service,k,&matrices,&c.event_function36.pc_crt_random_state,requests_clock_module());
+        racers_out(c,t);ints_out(c,t);
+        ++t.requests_displays;
+        try{(void)native_race_draw_list_execute(c,r,draws);}
+        catch(const std::exception& e){if(t.requests_display_error.empty())t.requests_display_error=std::string("draw list: ")+e.what();}
+        return true;
+    }catch(const TrafficUnported& e){t.requests_display_fault=e.pc;t.requests_display_error=e.what();}
+    catch(const PcRaceUnmapped& e){t.requests_display_fault=e.address;t.requests_display_error=std::string("unmapped PC address: ")+e.what();}
+    catch(const std::exception& e){t.requests_display_fault=0x46c210u;t.requests_display_error=e.what();}
+    while(matrices.depth>depth)driving::pc_matrix_pop(matrices);
+    t.requests_display_latched=true;
+    std::fprintf(stderr,"request manager display latched: %s (last service %x)\n",t.requests_display_error.c_str(),unsigned(t.last_routed_pc));
     return true;
 }
 bool native_race_traffic_cs_diff(NativeRuntimeContext& c,driving::PcMatrixStack& matrices,std::uint32_t a,std::uint32_t b,std::int32_t& out){

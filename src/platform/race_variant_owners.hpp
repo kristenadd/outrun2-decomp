@@ -15,6 +15,10 @@ class PcSceneRenderer;
 // Event callbacks 495740 / 495790 / 4957A0 and 4B0400 / 4B0780 / 4B07A0; false when
 // not one of them.
 bool native_race_variant_invoke(NativeRuntimeContext&,std::uint32_t callback,driving::PcMatrixStack&);
+// 505CA0(segment, object, lift, sx, sy) (thiscall 7F9460): a road marker on the course run at
+// the segment (and the branch's run), drawn at once on the renderer.
+void native_road_marker_505ca0(NativeRuntimeContext&,PcSceneRenderer&,std::int32_t segment,std::uint32_t object,
+                               float lift,float sx,float sy);
 // Race manager stage end 495610 (variant 8 route gate set).
 void native_race_variant8_stage_end_495610(NativeRuntimeContext&);
 // Variant 8 goal 4956C0 (race end 49D175): the multi-stage drift record (448230).

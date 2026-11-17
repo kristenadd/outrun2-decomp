@@ -4,7 +4,7 @@ It is not finished yet, so bugs are to be expected.
 Some menus are incorrect, and some visual effects, performance-related aspects,
 game behaviors, and functionality are not final yet.
 **Clarissa mode is a work in progress:** it loads and races, but parts of it
-(its on-screen requests, some mission items) are not ported yet.
+(some mission items and the end-of-run results) are not ported yet.
 Some early enhancements have already been added, including:
 - multiple anti-aliasing methods
 - multiple resolution options

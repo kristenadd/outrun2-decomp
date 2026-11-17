@@ -1835,7 +1835,11 @@ bool navi_pub_display_4beb00_impl(NaviPubServices& s){
         return !n.faulted()&&!s.missing;};
     if(md==0xdu){m.put32(0x842c10,0);if(!s.heart||!s.heart(s.heart_user,0x46ed20u))return n.fail(0x46ed20);return !s.missing;}
     const auto var=n.variant();
-    if(var!=6u&&var!=9u&&var!=2u&&var!=1u&&var!=0u&&var!=7u&&var!=3u&&var!=4u)return n.fail(var<=9u?0x4beb3f:0x4bedb8);
+    if(var!=6u&&var!=9u&&var!=2u&&var!=1u&&var!=0u&&var!=7u&&var!=3u&&var!=4u&&var!=5u)return n.fail(var<=9u?0x4beb3f:0x4bedb8);
+    if(var==5u&&md==0x14u){                                                     // 4BECD2: the request manager's 2D display only
+        if(!s.heart||!s.heart(s.heart_user,0x46c220u))return n.fail(0x46c220);
+        return tail(true);
+    }
     if(var==1u&&m.u32(0x8446ec)){n.draw(0x429530,{0x2c002f,0,0,3,0});if(!score_4bd480(n,car))return false;}   // 4BEB46
     if(md!=16u)return tail(true);                                               // 4BEDF0 protected test: mode != 16
     if(var==0u||var==7u){                                                       // 4BEBF0
@@ -1853,6 +1857,11 @@ bool navi_pub_display_4beb00_impl(NaviPubServices& s){
         n.draw(0x429530,{0x2c0030,0,0,1,0});
         if(!requests_4bcd50(n))return false;
         if(!s.heart||!s.heart(s.heart_user,0x462cd0u))return n.fail(0x462cd0);
+        if(!clock_4bd900(n))return false;
+    }else if(var==5u){                                                          // 4BEC9B Clarissa (the C2C request manager)
+        n.draw(0x429530,{0x2c0030,0,0,1,0});
+        if(!s.heart||!s.heart(s.heart_user,0x46c220u))return n.fail(0x46c220);
+        if(m.u32(0x7f94c0)&&m.u32(0x7f94c8)==1u)goal_ahead_4bb970(n,car);       // 46C500
         if(!clock_4bd900(n))return false;
     }else if(var==3u||var==4u){                                                 // 4BEC3D LAN races
         // 456D50: [7DE784] (CommRace: a player has finished) hides the 2C004C panel
@@ -1966,6 +1975,8 @@ bool navi_sprite_428ac0(NaviPubServices& s,std::uint32_t token,const std::array<
     return true;
 }
 void navi_emit_draw(NaviPubServices& s,const RaceHudDraw& d){if(s.m){N n(s,*s.m);n.emit(d);}}
+bool navi_request_row_4bb9e0(NaviPubServices& s,std::uint32_t row,std::int32_t value){
+    if(!s.m)return false;N n(s,*s.m);return request_row_4bb9e0(n,row,value)&&!n.faulted();}
 bool navi_quest_object_45c470(NaviPubServices& s,std::uint32_t stage,std::uint32_t& path){
     if(!s.m){s.missing=0x45c470;return false;}
     N n(s,*s.m);

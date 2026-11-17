@@ -374,7 +374,9 @@ void road_place_4fb090(NativeRuntimeContext& c,std::int16_t segment,std::uint32_
 // the stage has one there (44F0F0, hint 44DDC0).
 void road_marker_505ca0(NativeRuntimeContext& c,PcSceneRenderer& r,std::int32_t segment,std::uint32_t object,
                         float lift,float sx,float sy){
-    if(c.start_mode.manager_state_7f94c0)throw std::runtime_error("505CA0: the LAN offset [7F9460+190] is not ported");
+    // 505CB0: while the request manager runs (55A930), its +190 lifts the markers further.
+    float offset=0.0f;
+    if(c.start_mode.manager_state_7f94c0)std::memcpy(&offset,native_race_traffic(c).requests_7f9460.data()+0x190u,4);
     const std::int32_t player=player_segment(c);
     if(player>=segment+2||player<=segment-50)return;
     auto& m=native_race_area_memory(c,&r,false);
@@ -391,6 +393,7 @@ void road_marker_505ca0(NativeRuntimeContext& c,PcSceneRenderer& r,std::int32_t 
     };
     road_place_4fb090(c,std::int16_t(segment),0u,-1,pos,angles);
     pos.y=pos.y+lift+4.0f;                                                               // [6280C0]
+    pos.y=pos.y+offset;                                                                  // 505D3B (into 40A290's y)
     render_queue_mode_4052b0(q);
     driving::pc_matrix_push(st);                                                         // 409EF0
     draw();
@@ -400,6 +403,7 @@ void road_marker_505ca0(NativeRuntimeContext& c,PcSceneRenderer& r,std::int32_t 
         const auto hint=driving::road_stage_window_44ddc0(std::int32_t(stage),std::uint16_t(segment),rolling);
         road_place_4fb090(c,std::int16_t(segment),0u,hint,pos,angles);
         pos.y=pos.y+lift+4.0f;
+        pos.y=pos.y+offset;                                                              // 505E16
         driving::pc_matrix_identity(st);                                                 // 40A020
         draw();
     }
@@ -407,6 +411,8 @@ void road_marker_505ca0(NativeRuntimeContext& c,PcSceneRenderer& r,std::int32_t 
     render_queue_flush_4052c0(r.flush_context(),q);
 }
 }
+void native_road_marker_505ca0(NativeRuntimeContext& c,PcSceneRenderer& r,std::int32_t segment,std::uint32_t object,
+                               float lift,float sx,float sy){road_marker_505ca0(c,r,segment,object,lift,sx,sy);}
 bool native_race_variant_invoke(NativeRuntimeContext& c,std::uint32_t callback,driving::PcMatrixStack& matrices){
     switch(callback){
     case 0x495740u:variant8_init_495740(c);return true;

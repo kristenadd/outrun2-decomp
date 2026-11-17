@@ -306,8 +306,18 @@ Memory layout notes that cost time:
   (`map_memory`), or the manager's own writes (road Mu `+764C`) go astray.
 - `5217E0` keeps statics at `85B338` / `85B33C` (the cell list covers them).
 
+Displays: `46C210` (3D: `481810`, its objects and the road markers
+`505CA0`) runs through `native_race_requests_display`, hooked with the ghost /
+course-object displays; render leaves are queued and run by the AREA's draw
+list. `46C220` (2D: native `requests_2d_481a40`) runs from the HUD display
+`4BEB00`'s variant-5 branch (`4BEC9B`) through `heart_run`, so its sprites,
+digits and request rows (`4BB9E0`) reach the HUD. `505CA0` needed a hand-added
+`RET 14` in `bulk_pops.inc` (the listing missed it).
+
 **Known issues** (as of 2026-11-17):
-- The mission HUD (`46C210` display) is not ported: no on-screen requests.
+- The race-end results screen calls `46C220` through its own binding
+  (`race_end_runtime.cpp`), which still expects a translated `481A40` and
+  lacks `4BB9E0` / `50ECC0`: expect it to latch at the end of a run.
 - Request-car kinds 4 / 5 (`4AE0F0` → `4AE18B` item draw) are not ported and
   fault the car draw if they appear.
 - Drifting on turns (owner, iPad): fixed on 2026-11-17, **not yet confirmed

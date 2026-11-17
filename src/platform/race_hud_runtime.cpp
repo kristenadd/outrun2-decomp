@@ -168,6 +168,7 @@ void rebuild(NativeRuntimeContext& c,NativeRaceHudRuntime& o){
     map_word(m,0x7f2428u,&c.race.car_world.heart_mode_7f2428,4);
     map_word(m,0x7f8abcu,&c.race.car_world.nos_speed_7f8abc,4);
     map_word(m,0x7f94c0u,&c.start_mode.manager_state_7f94c0,4);
+    map_word(m,0x7f94c8u,&c.start_mode.frontend_prepare.event_config_7f94c4[1],4);   // 46C500's forced-course flag
     map_word(m,0x7f95a8u,&rt.force_mode_7f95a8,4);
     map_word(m,0x7f1994u,&o.voice.tail_7f1994,4);map_word(m,0x7f1998u,o.voice.entries_7f1998.data(),sizeof(o.voice.entries_7f1998));
     map_word(m,0x7f1c64u,&o.voice.head_7f1c64,4);map_word(m,0x7f8b40u,&o.voice.last_7f8b40,4);
@@ -197,7 +198,7 @@ bool heart_run(void* user,std::uint32_t pc){
     if(pc==0x46ed20u&&h.c->race.car_world.heart_mode_7f2428!=9u)return true;   // 46ED20 draws only in state 9 (45C440)
     std::vector<RaceHudDraw> draws;std::vector<PcVehicleDrawCall> models;
     NativeHeartBinding b{user,heart_map,&draws};
-    b.display=pc==0x462cd0u||pc==0x46ed20u;b.models=&models;b.renderer=h.renderer;
+    b.display=pc==0x462cd0u||pc==0x46ed20u||pc==0x46c220u;b.models=&models;b.renderer=h.renderer;   // 46C220: the request manager's 2D display
     const bool ok=native_race_traffic_heart(*h.c,*h.st,pc,b);
     rebuild(*h.c,o);
     auto& pool=h.c->event_function36.frontend_sprites;
@@ -213,6 +214,8 @@ bool heart_run(void* user,std::uint32_t pc){
             std::uint32_t mn;std::memcpy(&mn,&d.matrix[3],4);
             if(!navi_sprite3d_4295d0(*h.navi,d.args[0],{d.matrix[0],d.matrix[1],d.matrix[2]},std::int32_t(d.args[1]),std::int32_t(d.args[2]),
                                      bf(d.args[3]),bf(d.args[4]),bf(d.args[5]),d.args[6],bf(mn)))note(o,0x4295d0u);
+        }else if(d.pc==0x4bb9e0u){
+            if(!navi_request_row_4bb9e0(*h.navi,d.args[0],std::int32_t(d.args[1])))note(o,0x4bb9e0u);
         }else if(d.pc==0x4bc990u){
             char text[17]{};std::memcpy(text,&d.args[3],16);
             if(!navi_digits_4ba9d0(*h.navi,d.args[0],std::int32_t(d.args[1]),std::int32_t(d.args[2]),text,9,1.0f))note(o,0x4bc990u);

@@ -70,6 +70,8 @@ struct NativeRaceTraffic {
     std::uint32_t object_inits{},object_controls{},object_displays{},object_dests{},object_skipped{},object_fault{},object_draw_faults{};
     std::string object_error;
     bool objects_latched{};
+    // The request manager's display 46C210 (-> 481810, variant 5): latched on its own.
+    std::uint32_t requests_displays{},requests_display_fault{};std::string requests_display_error;bool requests_display_latched{};
     // Heart Attack mission logic (464D20 and the NAVI display callbacks): latched on its own.
     std::uint32_t heart_runs{},heart_skipped{},heart_fault{};
     std::uint32_t score_runs{},score_skipped{},score_fault{};std::string score_error;bool score_latched{};   // 4F2DF0 / 4F2B20
@@ -146,6 +148,9 @@ bool native_race_traffic_object_invoke(NativeRuntimeContext&,std::uint32_t callb
 // renderer; false when `callback` is none of them.
 class PcSceneRenderer;
 bool native_race_objects_display(NativeRuntimeContext&,PcSceneRenderer&,std::uint32_t callback,std::uint32_t work);
+// 46C210(work): the C2C request manager's display (481810: its objects' displays, the
+// request's road markers 505CA0); false for another callback.
+bool native_race_requests_display(NativeRuntimeContext&,PcSceneRenderer&,std::uint32_t callback,std::uint32_t work);
 // The event slot is a traffic / racer car (event function 0x55 callbacks).
 bool native_traffic_car_slot(const driving::PcEventSlot&);
 // Player car services run by the traffic module on the player's work (event 8): 479670.
