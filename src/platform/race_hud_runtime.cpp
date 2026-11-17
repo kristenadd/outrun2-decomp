@@ -1,3 +1,4 @@
+#include "enhancements/frame_rate.hpp"
 #include "platform/pc_network.hpp"
 #include "platform/race_hud_runtime.hpp"
 #include "platform/race_end_runtime.hpp"
@@ -102,6 +103,12 @@ void rebuild(NativeRuntimeContext& c,NativeRaceHudRuntime& o){
     m.map_const(0x780258u,reinterpret_cast<const std::uint8_t*>(&mr[1]),4);
     m.map_const(0x78026cu,reinterpret_cast<const std::uint8_t*>(&mr[2]),4);
     m.map(0x780248u,&c.start_mode.game_flag_780248,1);
+    // [780278] (43FA00): the game ticks of this frame, 0 on a display-only frame. The NAVI
+    // display reads it for the split time (4B9320), the time extend banner timer (4B9630) and
+    // the ghost notice; unmapped, it ended the display there, so the TIME digits after it
+    // were not drawn for the 4 s after a checkpoint.
+    mr[7]=enhancements::display_frames()?c.frame_state.updates_95af48:1u;
+    m.map_const(0x780278u,reinterpret_cast<const std::uint8_t*>(&mr[7]),4);
     // Event records 799B30 (+08 work pointers: 799D18 car, 79F574 camera) and flags 79FB48.
     Bytes rec(o.event_records_799b30.data(),o.event_records_799b30.size());
     for(std::uint32_t id=0;id<410u;++id){
