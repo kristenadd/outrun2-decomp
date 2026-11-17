@@ -30,6 +30,9 @@ namespace outrun::platform {
 // race_traffic_runtime.cpp: an entry of the C2C request manager 7F9460 (variant 5).
 bool native_race_requests_call(NativeRuntimeContext&,driving::PcMatrixStack&,std::uint32_t pc,
                                std::initializer_list<std::uint32_t> args,std::uint32_t& eax,std::uint32_t ecx);
+bool native_race_requests_placements_481650(NativeRuntimeContext&,driving::PcMatrixStack&,
+                                            const std::uint8_t* lane0,std::size_t lane0_bytes,
+                                            std::uint32_t& handle);
 namespace {
 // The request manager outside a race frame (START): over an identity matrix stack.
 bool requests_call(NativeRuntimeContext& c,std::uint32_t pc,std::initializer_list<std::uint32_t> args,std::uint32_t& eax){
@@ -2322,6 +2325,11 @@ bool native_game_load_request_course(NativeRuntimeContext& c){
     const auto& cfg=c.start_mode.frontend_prepare.event_config_7f94c4;
     if(cfg[0]>=16u)return false;
     auto& block=native_race_traffic(c).requests_7f9460;
+    // START calls 46C2F0 every frame while it waits. Once the loader state is at
+    // phase 3, 44D720 returns at once and the selected course stays as it is.
+    // Clearing the course state here first left no primary descriptor, so
+    // 44C2D0 faulted and the START owner (Clarissa mode) stalled on a black screen.
+    if(std::int32_t(le32(block.data()+0x98u))>=3)return true;
     ++game.course_load_calls;
     game.course_load={};game.course_runtime={};
     game.course_work.assign(std::max<std::size_t>(game.course_assets->course_blob.size(),0x10000u),0u);
@@ -2339,7 +2347,6 @@ bool native_game_load_request_course(NativeRuntimeContext& c){
     request.loader_mode=1u;request.required=0u;
     const bool ok=driving::runtime_apply_course_data_44d720(request,driving::course_descriptor_tables_r078(game.course_assets->descriptors),
         game.course_runtime,matrices,driving::course_provider_services_r077(provider));
-    std::fprintf(stderr,"[dbg] reqcourse ok=%d loaded=%d phase=%d sel=%d prim=%x cfg=%u/%u/%u size=%zu\n",int(ok),int(provider.loaded),int(request.loader.phase),int(game.course_runtime.selected_copy_active),le32(game.course_runtime.selected_7d30a8.data()+0x14u),cfg[0],cfg[1],cfg[2],provider.size);
     if(ok&&request.loader.phase<3){const std::uint32_t three=3u;std::memcpy(block.data()+0x98u,&three,4);}
     game.course_bytes=static_cast<std::uint32_t>(provider.size);game.course_provider_loaded=provider.loaded;
     game.course_matrix_ready=game.course_runtime.selected_copy_active&&
@@ -2521,6 +2528,8 @@ void native_start_mode_init(NativeRuntimeContext& context){
     start.scene_owner_object_states={};
     start.scene_owner_object_files={};
     start.scene_owner_object_identities={};
+    start.scene_owner_requests_table_49df6b=0u;
+    start.scene_owner_object_handle_84d6cc=0u;
     start.scene_owner_object_requests=0u;
     start.scene_owner_object_ready=0u;
     start.scene_owner_object_bytes=0u;
@@ -2767,7 +2776,8 @@ void native_start_mode_control(NativeRuntimeContext& context,
         if(result==0u){++start.gate_waits;return;}
         driving::event_close_4401d0(context.event_state,0x17fu);
         // 49DF67 cmp [780258],esi: ESI is 5 in stage 5 (49DD62 / 49DECE), the area's variant-5
-        // 46C380 / 4F03A0 pair (44E940 tests the same variant).
+        // 46C380 / 4F03A0 pair (44E940 tests the same variant): the manager copies the
+        // lane 0 placements into its own table (49DF7A: a non-zero 46C380 waits).
         if(context.game_mode.game_variant==5u){
             if(!call(0x0046c380u,{},result))return;
             if(result!=0u){++start.gate_waits;return;}
@@ -3905,6 +3915,25 @@ bool native_start_owned_call(NativeRuntimeContext& context,std::uint32_t pc_entr
             area.requested.insert(args[0]);area.released.erase(args[0]);result=0u;return true;}
         // START's C2C request manager steps (49DEB0 46C2C0(0), 49DF05.. 46C2F0 / 46C240 / 46C4D0)
         case 0x0046c2f0u:if(count!=0u)return false;result=native_game_load_request_course(context)?1u:0u;return true;
+        // 49DF6B 46C380(&[esp+8]) -> 481650 over START's lane 0 placements (4F10D0's file:
+        // the size word, then the records), then 49DF86 4F03A0(&[esp+8], 0): lane 0's
+        // handle (84D6CC) becomes the manager's table (440CD0 of START's own copy: nothing
+        // reads it after START).
+        case 0x0046c380u:{
+            if(count!=0u||start.scene_owner_object_states[0]!=2u)return false;
+            const auto& raw=start.scene_owner_object_files[0];
+            const std::uint8_t* lane0=raw.size()>4u?raw.data()+4u:nullptr;
+            std::array<std::uint8_t,0x400> stack{};
+            driving::Bytes bytes(stack.data(),stack.size());
+            for(std::size_t i=0;i<16u;++i)bytes.put32(i*4u,(i%5u)==0u?0x3f800000u:0u);
+            driving::PcMatrixStack matrices{bytes,0,0,16};
+            if(!native_race_requests_placements_481650(context,matrices,lane0,lane0?raw.size()-4u:0u,
+                                                       start.scene_owner_requests_table_49df6b))return false;
+            result=0u;return true;}
+        case 0x004f03a0u:{
+            if(count!=1u||args[0]!=0u||start.scene_owner_requests_table_49df6b==0u)return false;
+            start.scene_owner_object_handle_84d6cc=start.scene_owner_requests_table_49df6b;
+            result=0u;return true;}
         case 0x0046c2c0u:case 0x0046c240u:case 0x0046c4d0u:{
             if(count>1u)return false;
             if(count==1u)return requests_call(context,pc_entry,{args[0]},result);

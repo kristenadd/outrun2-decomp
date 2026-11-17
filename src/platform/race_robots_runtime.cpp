@@ -234,8 +234,10 @@ bool run(NativeRuntimeContext& c,std::uint32_t work,driving::PcMatrixStack& matr
             PcRaceMemory nm;auto& hud=native_race_hud(c);nm.map(0x7f2560u,hud.navi.g7f1900.data()+(0x7f2560u-0x7f1900u),0x180u);
             return navi_score_mean_45bf30(nm,k.args[0]);}
         case 0x45c440u:++r.routed[k.pc];return c.race.car_world.heart_mode_7f2428;              // mov eax,[7F2428]
-        case 0x46c520u:++r.routed[k.pc];if(c.start_mode.manager_state_7f94c0){++r.missing[k.pc];throw RobotMissing(k.pc);}return 0u;   // [7F94D4] (no LAN session: 0)
-        case 0x46c530u:++r.routed[k.pc];if(c.start_mode.manager_state_7f94c0){++r.missing[k.pc];throw RobotMissing(k.pc);}return 0u;   // 55A930 ? [7F95C4] : 0
+        case 0x46c520u:++r.routed[k.pc];return c.start_mode.frontend_prepare.event_config_7f94c4[4];   // mov eax,[7F94D4] (46C280 / 4EEB50)
+        case 0x46c530u:++r.routed[k.pc];   // 55A930 ? [7F95C4] : 0 (7F95C4 = the request manager's +164)
+            {if(!c.start_mode.manager_state_7f94c0)return 0u;
+             std::uint32_t v;std::memcpy(&v,native_race_traffic(c).requests_7f9460.data()+0x164u,4);return v;}
         case 0x487810u:{++r.routed[k.pc];PcRaceContext inner{r.memory,matrices,service,nullptr};race_robot_common_init_487810(inner,k.args[0]);return 0u;}
         case 0x487b70u:{++r.routed[k.pc];PcRaceContext inner{r.memory,matrices,service,nullptr};race_robot_motion_connect_487b70(inner,k.args[0],k.args[1],k.args[2]);return 0u;}
         case 0x488450u:{++r.routed[k.pc];PcRaceContext inner{r.memory,matrices,service,nullptr};race_robot_control_488450(inner,k.args[0]);return 0u;}

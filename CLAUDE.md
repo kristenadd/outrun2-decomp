@@ -275,13 +275,67 @@ sample rate.
 - Commit or push only when asked. They push from GitHub Desktop (the CLI's
   saved HTTPS credential lacks write access).
 
+## Clarissa mode (work in progress)
+
+Game variant **5** (`[780258]`). Its missions are run by the C2C **request
+manager**, the object at `7F9460` (`55A930()` = `[7F94C0]` says it is active;
+its config `7F94C4..7F94D4` is `event_config_7f94c4`, copied into the block by
+`native_race_requests_map`). Most of the manager is still the bulk translation
+(`46C1F0` init, `46C200` control → `482140`, `46C210` display), run on the
+traffic module's memory through `native_race_requests_call`
+(`race_traffic_runtime.cpp`); its leaves are answered by the traffic `Run`
+service. Native ports so far: `481650` (lane-0 placement copy, START and the
+area's stage change), `4FC390` (road Mu), `4FBBB0` (request cars, in
+`race_traffic.cpp`), `4FDF20`, and the x87 leaves `449330..4493A0`, `449470`.
+
+**Getting there** (from the title, 2 s between presses): A ×3, Down, A ×5.
+In the race, **R2 / ZR accelerates** (A does not). Autoplay version:
+
+```text
+script=400-403:A,520-523:A,640-643:A,760-763:DOWN,880-883:A,1000-1003:A,1120-1123:A,1240-1243:A,1360-1363:A,1700-7400:ZR
+```
+
+START is mode 13 (about frame 1363); the race (mode 16) starts at about 1527.
+`OR2_BULK_DEBUG=1` names the translated function an exception passed through
+(`[bulk] 46C200 faulted`); the traffic summary line (`race traffic inits=…
+latched=… fault=… missing:`) names the first unported piece.
+
+Memory layout notes that cost time:
+- The manager's block runs to `800AF8`; the traffic module's block starts at
+  `800A00`. In variant 5 the manager's tail is mapped back over traffic's
+  (`map_memory`), or the manager's own writes (road Mu `+764C`) go astray.
+- `5217E0` keeps statics at `85B338` / `85B33C` (the cell list covers them).
+
+**Known issues** (as of 2026-11-17):
+- The mission HUD (`46C210` display) is not ported: no on-screen requests.
+- Request-car kinds 4 / 5 (`4AE0F0` → `4AE18B` item draw) are not ported and
+  fault the car draw if they appear.
+- Drifting on turns (owner, iPad): fixed on 2026-11-17, **not yet confirmed
+  by the owner**. Slip-angle control (`4A3310`) reads `46C470` = `[800AAC]`,
+  the manager's `+764C` (1.0); the port passed a stale 0, which drops the
+  cornering force on any steering. Both road Mu and slip assist now read the
+  manager's block.
+- Stopped request cars (owner): fixed on 2026-11-17, **not yet confirmed by
+  the owner**. Request cars (`+C5C` 0x40000) only drive once released:
+  `46C3B0` = `[800AA0]` (manager `+7640`) in Clarissa mode, `45D820` =
+  `[7F250C]` in Heart Attack. `45D820`, `45B510`, `45AFF0` and `45B810` were
+  answered as constant 0 ("network globals"), so in Heart Attack's "Keep
+  passing cars" request the cars stayed parked. In Clarissa mode a short
+  stop is by design: cars wait for `+7640` and pull away together.
+- Not yet driven to the end of a full Clarissa run (results / grades).
+
+**Heart Attack** (OutRun 2SP, variant 2), from the title, 2 s apart: A,
+Right ×2, A ×3, Right, A ×2. Autoplay:
+`script=400-403:A,520-523:RIGHT,640-643:RIGHT,760-763:A,880-883:A,1000-1003:A,1120-1123:RIGHT,1240-1243:A,1360-1363:A,1700-7400:ZR`
+(race at about frame 1573).
+
 ## Outstanding issues
 
-None known. The owner confirmed on 2026-11-16 that the earlier list is
-resolved: passenger reactions in big crashes (ORC 345–365), off-road comments
-(ORC 110–119), occasional 60–100 ms hitches, 1080p frame time on the iPhone 15
-Pro Max, and `FE.PAK` effects counted as unmapped after a race. Don't chase
-them again unless the owner reports one.
+See the Clarissa mode list above. The owner confirmed on 2026-11-16 that the
+earlier list is resolved: passenger reactions in big crashes (ORC 345–365),
+off-road comments (ORC 110–119), occasional 60–100 ms hitches, 1080p frame
+time on the iPhone 15 Pro Max, and `FE.PAK` effects counted as unmapped after
+a race. Don't chase them again unless the owner reports one.
 
 ## Done in this fork (for context)
 

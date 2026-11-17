@@ -318,6 +318,11 @@ struct NativeStartModeState {
     std::array<std::uint32_t,2> scene_owner_object_states{};
     std::array<std::vector<std::uint8_t>,2> scene_owner_object_files{};
     std::array<CourseWorldSourceIdentity,2> scene_owner_object_identities{};
+    // Variant 5, START 49DF6B..49DF8B: 46C380's table handle ([esp+8], the request
+    // manager's copy of the lane 0 placements) that 4F03A0(&table, 0) makes lane 0's
+    // handle (84D6CC). 0 until then.
+    std::uint32_t scene_owner_requests_table_49df6b{};
+    std::uint32_t scene_owner_object_handle_84d6cc{};
     std::uint32_t scene_owner_object_requests{};
     std::uint32_t scene_owner_object_ready{};
     std::uint32_t scene_owner_object_bytes{};

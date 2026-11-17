@@ -40,7 +40,6 @@ struct RaceCarWorld {
     std::uint8_t slot_7dd138{};
     std::uint32_t clock_7f1938{};
     std::uint8_t gate_8361b4{};
-    float slip_assist_800aac{};              // 46C470
     std::array<std::uint8_t,8*0x78> vibrate_841bd0{};
     std::array<std::uint8_t,0x3c> ghost_83db30{};
     std::uint32_t stage_base_841fa4{};

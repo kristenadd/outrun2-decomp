@@ -201,7 +201,9 @@ void common_service(void* user,std::uint32_t pc){
     case 0x004a0000u:driving::make_force_work_tire_4a0000(e,W,P,f.wheels,m);return;
     case 0x00517410u:driving::action_force2(W.sub(0xf0,0x1f0),e.f32(0xdbc),m);return;
     case 0x004a2fa0u:driving::rear_grip_ctrl(e,W,P,{f.volume(1),f.volume(2),f.old_volume(1),f.old_volume(2)});return;
-    case 0x004a3310u:driving::slip_angle_ctrl(e,W,P,{c.start_mode.manager_state_7f94c0,w.slip_assist_800aac});return;
+    case 0x004a3310u:{   // 46C470: [800AAC] = the request manager's +764C (road Mu factor, 1.0 after 481250)
+        float assist;std::memcpy(&assist,native_race_traffic(c).requests_7f9460.data()+0x764cu,4);
+        driving::slip_angle_ctrl(e,W,P,{c.start_mode.manager_state_7f94c0,assist});return;}
     case 0x004a3950u:driving::cornering_ctrl(e,W,P,m);return;
     case 0x004a7ec0u:{
         advance.transition_allowed=c.race.area_state_7d2e80>9u;                 // 44BE50(0)
@@ -407,7 +409,8 @@ void game_service(void* user,std::uint32_t pc){
         driving::DrivingControlInputs in{};
         in.analog_channel_1=f.volume(1);in.input_inhibited=c.event_function36.title_game_state_780270!=0u;
         in.shift_up=f.pressed(0x80u)!=0u;in.shift_down=f.pressed(0x40u)!=0u;
-        in.road_mu.service_available=c.start_mode.manager_state_7f94c0!=0u;      // offline: constants 1.0 / 0.7
+        in.road_mu.service_available=c.start_mode.manager_state_7f94c0!=0u;      // 55A930; offline: constants 1.0 / 0.7
+        in.road_mu.context=&c;in.road_mu.lookup=native_race_requests_road_mu_4fc390;  // 46C450 -> 4FC390
         in.running_resistance=RaceRunningResistance;in.reaction_blend_parameter=P.f32(0x20a8);
         driving::driving_control(e,W,P,t,in);return;}
     case 0x004a8100u:{
@@ -503,8 +506,12 @@ bool race_player_car_control_4a8330(NativeRuntimeContext& c,driving::PcMatrixSta
     bind_ends(f);bind_stages(f);
     f.parent.route_state=f.variant();f.parent.stage_denominator_base=w.stage_base_841fa4;
     f.parent.world_scale_divisor=0.0166112948f;                                  // 7162C4 = 1/60.2
+    const auto depth=matrices.depth;
     try{driving::game_pl_car_ctrl_4a8330(f.e,f.parent,f.parent_state,{&f,game_service});}
     catch(const std::exception& ex){f.fail(0x4a8330u,ex.what());}
+    // A fault leaves the matrices its pushes made: drop them, or the event stack shared by
+    // the frame's later callbacks fills up (one leaked push per frame).
+    while(matrices.depth>depth)driving::pc_matrix_pop(matrices);
     w.stage_base_841fa4=f.parent_state.stage_denominator_base;
     if(!f.failed&&(f.e.u32(4)&0x800000u)){
         // 4A86B2..4A8703: six wheel words from the snapshot taken after 43CC20.
@@ -553,7 +560,9 @@ bool race_player_car_pas_475720(NativeRuntimeContext& c,driving::PcMatrixStack& 
         default:throw std::logic_error("unknown PasPlCar child");
         }
     },nullptr};
+    const auto depth=matrices.depth;
     try{pas_pl_car_475720(ctx,Car);}catch(const std::exception& ex){f.fail(0x475720u,ex.what());}
+    while(matrices.depth>depth)driving::pc_matrix_pop(matrices);   // as GamePlCar_Ctrl above
     ++w.frames;
     return !f.failed;
 }

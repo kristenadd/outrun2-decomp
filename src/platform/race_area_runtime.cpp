@@ -339,6 +339,24 @@ struct Service {
         case 0x43de50:routed(pc);release_collision_43de50(a[0]);return 0u;
         case 0x44a1a0:routed(pc);native_scene_owner_environment_reset_44a080(c);return 0u;   // 440CD0 x3 then 44A080
         case 0x46c4d0:routed(pc);return resources_481590();
+        // 46C380(&table) (variant 5, 44E590 state E): 481650, the request manager's copy of the
+        // lane 0 placements (4F03E0(0): the payload [84D6CC handle]) into its heap (the native
+        // port START uses); [table] = the copy's handle.
+        case 0x46c380:{
+            routed(pc);const auto& L=object_lane(false,0,pc);
+            std::vector<std::uint8_t> lane0;
+            if(L.handle){
+                const std::uint32_t p=o.memory.u32(L.handle);
+                for(std::uint32_t r=0;r<0xfau&&o.memory.mapped(p+r*0x28u,0x28u);++r)
+                    for(std::uint32_t k=0;k<0x28u;++k)lane0.push_back(o.memory.u8(p+r*0x28u+k));
+            }
+            std::array<std::uint8_t,0x400> stack{};driving::Bytes bytes(stack.data(),stack.size());
+            for(std::size_t i=0;i<16u;++i)bytes.put32(i*4u,(i%5u)==0u?0x3f800000u:0u);
+            driving::PcMatrixStack matrices{bytes,0,0,16};
+            std::uint32_t handle=0;
+            if(!native_race_requests_placements_481650(c,matrices,lane0.empty()?nullptr:lane0.data(),lane0.size(),handle))
+                return missing(pc,"481650 (the request manager is latched)");
+            o.memory.put32(a[0],handle);return 0u;}
         // 4F03A0(&table, lane) (variant 5, after 46C380): 440CD0 of the lane's handle, then the
         // handle = [table] (the request manager's copy of the lane 0 placements, in its heap).
         case 0x4f03a0:{

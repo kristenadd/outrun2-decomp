@@ -38,6 +38,7 @@
 #include <cstddef>
 #include "system/perf.hpp"
 #include "platform/race_translated.hpp"
+#include "recomp/x86rt.hpp"
 #include "platform/pc_network.hpp"
 #include "platform/race_variant_owners.hpp"
 #include <cstdlib>
@@ -101,6 +102,12 @@ void map_memory(NativeRuntimeContext& c,NativeRaceTraffic& t){
         m.map(0x64deecu,reinterpret_cast<std::uint8_t*>(&r.names_64deec),4);m.map(0x64def0u,reinterpret_cast<std::uint8_t*>(&r.names_64def0),4);
         m.map(0x64df64u,reinterpret_cast<std::uint8_t*>(&r.profile_64df64),4);}
     t.state.map(m);
+    // The request manager 7F9460 runs to 800AF8 (481250 / 4FAEB0 write up to +7688;
+    // 46C3B0 reads [800AA0]); the traffic module's own words start at 800AF8. Its block
+    // above begins at 800A00, so the manager's tail is mapped back over it: the manager
+    // code and the native readers of its block (4FC390's +764C) see one copy.
+    if(c.game_mode.game_variant==5u)
+        m.map(0x800a00u,t.requests_7f9460.data()+(0x800a00u-NativeRaceTraffic::RequestsBase),0x800af8u-0x800a00u);
     auto& r=c.mission.racers;
     m.map(0x80fb00u,t.racers_80fb00.data(),t.racers_80fb00.size());
     if(!r.racers_80fb00.empty())m.map(RacersBase,r.racers_80fb00.data(),r.racers_80fb00.size());
@@ -168,7 +175,17 @@ void map_memory(NativeRuntimeContext& c,NativeRaceTraffic& t){
         m.map(0x84d6d8u,vis.data()+(0x84d6d8u-0x84cec8u),vis.size()-(0x84d6d8u-0x84cec8u));}
     if(!t.data_681200.empty())m.map(0x681200u,t.data_681200.data(),t.data_681200.size());
     m.map_const(0x95d860u,c.race_effects.render_95d860.data(),c.race_effects.render_95d860.size());
-    if(c.game_mode.game_variant==2u)native_race_hud_map_heart(c,m);   // Heart Attack: NAVI words, voice, robots (45C450, 46D250..)
+    if(c.game_mode.game_variant==5u&&!m.mapped(0x842110u,4))   // the race clock (4AF500, the request manager)
+        m.map_const(0x842110u,reinterpret_cast<const std::uint8_t*>(&c.race.clock.time_842110),4);
+    // Heart Attack (2) and the request manager (5, 45BD30 / 45BCD0 inline on the voice queue):
+    // NAVI words, voice, robots (45C450, 46D250..)
+    if(c.game_mode.game_variant==2u||c.game_mode.game_variant==5u)native_race_hud_map_heart(c,m);
+    if(c.game_mode.game_variant==5u)   // the race end's miles word (the request manager adds to it)
+        m.map(0x84bcf8u,native_race_end(c).state.miles.data()+(0x84bcf8u-PcRaceEndState::MilesBase),4);
+    if(c.game_mode.game_variant==5u&&!m.mapped(0x7c23e0u,4)){   // the active license 7C23E0 (500150: [7C274E + n*2])
+        auto& license=c.event_function36.frontend_profiles.active;
+        m.map(0x7c23e0u,license.data(),license.size());
+    }
     // the AREA's course road tables (46FC40 streamer): 804480 (6 x 1030), 800DA8 (2 x 1030), 80A670 (12 x 70C)
     {auto& o=native_race_area(c);
         m.map(0x804480u,o.road_primary.data(),o.road_primary.size());
@@ -332,10 +349,14 @@ struct Run {
             driving::PcCourseEndView v{std::nullopt,tables.courses[a[0]].runs.lengths};
             if(tables.courses[a[0]].runs.present)v.header=tables.courses[a[0]].runs.header;
             return driving::pc_course_end_position(v);}
-        // ---- offline network globals (no LAN session: 7F94C0 = 0) ----
-        case 0x45b510u:case 0x45d820u:case 0x45aff0u:case 0x45b810u:
-            if(c.start_mode.manager_state_7f94c0)missing(pc,"network session globals");
-            routed(pc);return 0u;
+        // ---- Heart Attack / NAVI globals: 45B510 = [7F8A50], 45D820 = [7F250C] (the request
+        // cars' release, set by the heart setup), 45AFF0 = [7F24D0], 45B810 = byte [7F8A64].
+        // Read from the NAVI blocks where they are mapped (variants 2 and 5), else 0. ----
+        case 0x45b510u:case 0x45d820u:case 0x45aff0u:case 0x45b810u:{
+            routed(pc);
+            const std::uint32_t at=pc==0x45b510u?0x7f8a50u:pc==0x45d820u?0x7f250cu:pc==0x45aff0u?0x7f24d0u:0x7f8a64u;
+            if(!m().mapped(at,4))return 0u;
+            return pc==0x45b810u?m().u8(at):m().u32(at);}
         // ---- renderer: 414040 = mov eax,[8A89F4] (measured: the 128x128 texture of the loop
         // setup); 406630(token, texture) swaps that texture into a bank's texture slot
         // (PcSceneRenderer::texture_swap_406630; a swap it cannot apply is counted).
@@ -665,7 +686,53 @@ struct Run {
         // 440D10 / 440D30 / 440D50 / 440D70: the heap selection stacks 7B11A8 / 7B1194 of the
         // CRT allocations around them (the request manager's heap is a single block here).
         case 0x440d10u:case 0x440d50u:case 0x440d30u:case 0x440d70u:routed(pc);return 0u;
+        // The request manager's 4FAEB0 (the car's screen point for its markers, 482140):
+        // 409F90(car+B0), 40A7D0(&p, &p), 40A170(camera+140), 449940(cam+B0, cam+B4, &p, &p),
+        // 40A010, on the frame's stack (the translated code's matrices).
+        case 0x409f90u:routed(pc);driving::pc_matrix_push_load(matrices,m().bytes(a[0],0x40));return 0u;
+        case 0x40a170u:routed(pc);driving::pc_matrix_load(matrices,m().bytes(a[0],0x40));return 0u;
+        case 0x40a010u:routed(pc);driving::pc_matrix_pop(matrices);return 0u;
+        case 0x40a7d0u:{routed(pc);
+            const auto p=driving::pc_matrix_point(matrices,{m().f32(a[0]),m().f32(a[0]+4u),m().f32(a[0]+8u)});
+            m().putf(a[1],p.x);m().putf(a[1]+4u,p.y);m().putf(a[1]+8u,p.z);return 0u;}
+        case 0x449940u:{routed(pc);   // as mission_project_495d90; its ST0 result is discarded (4FAF44 fstp st(0))
+            float a0,a1;std::memcpy(&a0,&a[0],4);std::memcpy(&a1,&a[1],4);
+            const auto t=driving::pc_matrix_point(matrices,{m().f32(a[2]),m().f32(a[2]+4u),m().f32(a[2]+8u)});
+            driving::CourseProbe v{0.0f,0.0f,0.0f};
+            if(!(1.1920928955078125e-07f>std::fabs(t.z))){const float w=1.0f/(0.0f-t.z);const float wx=w*a0;const float wy=w*a1;v={wx*t.x,t.y*wy,t.z};}
+            m().putf(a[3],v.x);m().putf(a[3]+4u,v.y);m().putf(a[3]+8u,v.z);return 0u;}
         case 0x43f940u:routed(pc);c.game_mode.game_variant=a[0];return 0u;   // 43F940: [780258] = variant (46C2D0: 5)
+        case 0x45bcd0u:if(c.game_mode.game_variant!=5u)break;routed(pc);native_race_hud_voice_pump_45bcd0(c);return 0u;   // the NAVI voice queue
+        // Robot commands (race_traffic_heart.inc's rob_*): the robot's work is [79F010 + id*3C]
+        // (events 362..); 487D60 / 487D90 skip the girl (1) while 46C530 is set.
+        case 0x487d60u:case 0x487d90u:case 0x487dd0u:{
+            if(c.game_mode.game_variant!=5u)break;
+            routed(pc);
+            const std::uint32_t w=m().u32(0x79f010u+a[0]*0x3cu);
+            if(pc==0x487dd0u){m().put32(w+0x7cu,0u);return 0u;}
+            std::uint32_t busy=0u;std::memcpy(&busy,t.requests_7f9460.data()+0x164u,4);
+            if(c.start_mode.manager_state_7f94c0&&busy&&a[0]==1u)return 0u;
+            if(pc==0x487d60u){m().put32(w+0x68u,a[1]);m().put32(w+0x78u,2u);}
+            else{m().put32(w+0x70u,a[1]);m().put32(w+0x78u,0u);m().put32(w+0x7cu,1u);}
+            return 0u;}
+        case 0x5217c0u:if(c.game_mode.game_variant!=5u)break;routed(pc);return native_race_hud_voice_45bd30(c,0xe8,0x3c,9);   // 5217C0: 45BD30(E8, 3C, 9)
+        case 0x45bd30u:if(c.game_mode.game_variant!=5u)break;routed(pc);return native_race_hud_voice_45bd30(c,std::int32_t(a[0]),std::int16_t(a[1]),std::int16_t(a[2]));
+        // 4EFD20(rows, lane): as the AREA's (race_objects_copy_4efd20): lane 0 into 84BD08 (START's
+        // table68), other lanes into 6A5DC4; both and the request manager's rows are mapped here.
+        case 0x4efd20u:routed(pc);race_objects_copy_4efd20(m(),a[0],a[1]);if(a[1]!=0u)native_race_area(c).light_words_written=true;return 0u;
+        case 0x470240u:if(!ctx)break;routed(pc);return traffic_place_pose_470240(*ctx,a[0],std::int32_t(a[1]),a[2],a[3],a[4]);
+        // 4FDF20 (ECX = the request manager): [+760C] = [6280C0] (4.0), 428460(2C00B2, 6, 3, 0, F0),
+        // 424940(4D), 424940(16C).
+        case 0x4fdf20u:{
+            routed(pc);{float f;std::memcpy(&f,exe_image_bytes(0x6280c0u,4),4);m().putf(k.ecx+0x760cu,f);}
+            auto sub=[&](std::uint32_t p,std::initializer_list<std::uint32_t> args){
+                PcRaceCall q{};q.pc=p;q.argc=std::uint32_t(args.size());unsigned n=0;for(auto v:args)q.args[n++]=v;return (*this)(q);};
+            (void)sub(0x428460u,{0x2c00b2u,6u,3u,0u,0xf0u});
+            (void)sub(0x424940u,{0x4du});(void)sub(0x424940u,{0x16cu});
+            return 0u;}
+        case 0x4fbbb0u:if(!ctx)break;routed(pc);return traffic_request_car_4fbbb0(*ctx,k.ecx,a[0],a[1]);   // the request manager's cars
+        case 0x4ef870u:routed(pc);m().put32(0x84cc18u,a[0]);return 0u;   // 4EF870(v): [84CC18] = v (the appear override 4F... reads)
+        case 0x48b140u:routed(pc);return c.start_mode.course_choice_655b59&0xffu;   // 48B140: movzx [655B59] (as START)
         case 0x49a650u:routed(pc);return 0u;   // ret (the empty callback / virtual)
         // 4F12A0(path, loader, async, required) / 4F1A90(category, loader) / 4F1BA0(category, loader)
         // on the request manager's guest loaders (+A0: the stage's Req_*.bin; loader +0 category
@@ -748,7 +815,10 @@ struct Run {
             FrontendUiResources ui{st.frontend_sprites};ui.motion_step=st.frontend_ui_motion_step;
             ui.effect_user=st.frontend_effect_user;ui.effect_4249f0=st.frontend_effect;
             std::uint32_t value{};
-            if(!ui.call(pc,bytes,k.args.data(),std::min<std::size_t>(k.argc,k.args.size()),value)||ui.missing_pc)
+            // A translated caller hands every argument slot: the methods' own counts
+            // (465860: 11 stack words, RET 2C; 465310 / 4653C0: 4, RET 10; the others take none).
+            const std::size_t n=pc==0x465860u?11u:(pc==0x465310u||pc==0x4653c0u)?4u:0u;
+            if(!ui.call(pc,bytes,k.args.data(),n,value)||ui.missing_pc)
                 missing(ui.missing_pc?ui.missing_pc:pc,"sprite resource service");
             routed(pc);return value;}
         if(bulk_translated(pc)&&ctx){routed(pc);return bulk_call(m(),ctx->service,k,&matrices,&c.event_function36.pc_crt_random_state);}
@@ -791,12 +861,15 @@ NativeRaceTraffic& native_race_traffic(NativeRuntimeContext& c){
 void native_race_requests_map(NativeRuntimeContext& c,PcRaceMemory& m){
     auto& t=native_race_traffic(c);
     put32(t.requests_7f9460.data()+0x60u,c.start_mode.manager_state_7f94c0);   // +60 = 7F94C0 (55A930)
+    // +64..+74 = 7F94C4..7F94D4: the course config 4EEB50 / 46C280 set (the frontend keeps it as
+    // event_config_7f94c4; 46C500 reads 7F94C8, 46C520 7F94D4, 46C2F0 all five).
+    for(std::uint32_t k=0;k<5u;++k)put32(t.requests_7f9460.data()+0x64u+k*4u,c.start_mode.frontend_prepare.event_config_7f94c4[k]);
     m.map(NativeRaceTraffic::RequestsBase,t.requests_7f9460.data(),t.requests_7f9460.size());
     if(!t.requests_heap)t.requests_heap=std::make_unique<GuestHeap>(NativeRaceTraffic::RequestsHeapBase,NativeRaceTraffic::RequestsHeapSize);
     t.requests_heap->map(m);
     if(t.requests_cells.empty()){
         static constexpr std::pair<std::uint32_t,std::uint32_t> Cells[]{{0x84d900u,0x80u},{0x850b80u,0x20u},{0x854d00u,0x40u},
-            {0x856940u,0x10u},{0x8572a0u,0x28u},{0x85b340u,0x180u}};
+            {0x856940u,0x10u},{0x8572a0u,0x28u},{0x85b338u,0x188u}};   // 85B338 / 85B33C: 5217E0's statics (85B340 its guard bits)
         std::vector<std::uint8_t> data(0x100u);
         std::memcpy(data.data(),exe_image_bytes(0x64f000u,0x100u),0x100u);
         t.requests_cells.emplace_back(0x64f000u,std::move(data));
@@ -1128,6 +1201,49 @@ std::uint32_t requests_stage_script_4829d0(NativeRuntimeContext& c,PcRaceContext
 // The C2C request manager 7F9460 (variant 5): one of its entries (46C2xx..46C5xx, the manager
 // methods 481xxx / 482xxx / 4Fxxxx / 50xxxx with ECX = 7F9460) over the traffic module's memory
 // (its block and heap mapped there). The translated originals until the native port.
+extern const TranslatedFunction network_functions[];
+extern const TranslatedCodeData network_code_data[];
+namespace {
+float exe_f32(std::uint32_t a){float f;std::memcpy(&f,exe_image_bytes(a,4),4);return f;}
+// Leaves that return on the x87 stack (a service can only answer EAX): native, on the
+// translated code's own CPU. cdecl: [esp] = return address, [esp+4].. the arguments.
+// 449470(a): a wrapped into [-pi, pi] (SSE: while a > [6280C8] a -= [5A29DC]; while
+// [5A29D8] > a a += [5A29DC]), returned in ST0 (race_traffic.cpp's wrap_449470).
+void leaf_449470(or2x86::Cpu& c){
+    const std::uint32_t bits=or2x86::ld32(c,c.esp+4u);float a;std::memcpy(&a,&bits,4);
+    const float hi=exe_f32(0x6280c8u),step=exe_f32(0x5a29dcu),lo=exe_f32(0x5a29d8u);
+    if(a>hi){do a=a-step;while(a>hi);}
+    if(lo>a){do a=a+step;while(lo>a);}
+    c.fpu.push(or2x86::xv(a));
+    c.esp+=4u;
+}
+// 449330 atan2([esp+4], [esp+8]) / 449350 atan([esp+4]) (fld1; fpatan) / 449360 fsin /
+// 449370 fcos / 449380 fsqrt / 449390 fabs of [esp+4]; 4493A0 fild ECX.
+or2x86::xv leaf_arg(or2x86::Cpu& c,std::uint32_t k){return or2x86::x87_from_f32(or2x86::ld32(c,c.esp+4u+k*4u));}
+void leaf_ret(or2x86::Cpu& c,or2x86::xv v){c.fpu.push(v);c.esp+=4u;}
+void leaf_449330(or2x86::Cpu& c){leaf_ret(c,or2x86::fpu_atan2(leaf_arg(c,0),leaf_arg(c,1)));}
+void leaf_449350(or2x86::Cpu& c){leaf_ret(c,or2x86::fpu_atan2(leaf_arg(c,0),or2x86::xv(1)));}
+void leaf_449360(or2x86::Cpu& c){leaf_ret(c,or2x86::fpu_sin(leaf_arg(c,0)));}
+void leaf_449370(or2x86::Cpu& c){leaf_ret(c,or2x86::fpu_cos(leaf_arg(c,0)));}
+void leaf_449380(or2x86::Cpu& c){leaf_ret(c,or2x86::x87_sqrt_op(leaf_arg(c,0)));}
+void leaf_449390(or2x86::Cpu& c){const auto v=leaf_arg(c,0);leaf_ret(c,v<0?-v:v);}
+void leaf_4493a0(or2x86::Cpu& c){leaf_ret(c,or2x86::xv(std::int32_t(c.ecx)));}
+// 4AF500 (fld [842110]: the race clock in ST0, read by the manager's 482140 / 4812D5) is in
+// the network translation set: chained on the same CPU (its x87 result stays on the stack).
+const TranslatedModule* requests_clock_module(){
+    static const std::vector<TranslatedFunction> functions=[]{
+        std::vector<TranslatedFunction> v;
+        for(const auto* f=network_functions;f->pc;++f)if(f->pc==0x4af500u)v.push_back(*f);
+        v.push_back(TranslatedFunction{0x449470u,leaf_449470});
+        for(const auto& f:{TranslatedFunction{0x449330u,leaf_449330},TranslatedFunction{0x449350u,leaf_449350},
+                           TranslatedFunction{0x449360u,leaf_449360},TranslatedFunction{0x449370u,leaf_449370},
+                           TranslatedFunction{0x449380u,leaf_449380},TranslatedFunction{0x449390u,leaf_449390},
+                           TranslatedFunction{0x4493a0u,leaf_4493a0}})v.push_back(f);
+        v.push_back(TranslatedFunction{0,nullptr});return v;}();
+    static const TranslatedModule module=[]{TranslatedModule m{functions.data(),nullptr,{}};m.code_data=network_code_data;return m;}();
+    return &module;
+}
+}
 bool native_race_requests_call(NativeRuntimeContext& c,driving::PcMatrixStack& matrices,std::uint32_t pc,
                                std::initializer_list<std::uint32_t> args,std::uint32_t& eax,std::uint32_t ecx){
     auto& t=native_race_traffic(c);
@@ -1147,8 +1263,61 @@ bool native_race_requests_call(NativeRuntimeContext& c,driving::PcMatrixStack& m
         if(!bulk_translated(k.pc))for(const auto& [w,method]:Methods)if(w==k.pc){k.pc=method;k.ecx=NativeRaceTraffic::RequestsBase;break;}
         if(k.pc==0x46c1f0u&&!bulk_translated(k.pc)){k.pc=0x481250u;k.ecx=NativeRaceTraffic::RequestsBase;k.argc=1;k.args[0]=0u;}
         if(!bulk_translated(k.pc))throw TrafficUnported(pc,"request manager entry neither native nor translated");
-        eax=bulk_call(ctx.m,ctx.service,k,&matrices,&c.event_function36.pc_crt_random_state);done=true;});
+        eax=bulk_call(ctx.m,ctx.service,k,&matrices,&c.event_function36.pc_crt_random_state,requests_clock_module());done=true;});
     return ok&&done;
+}
+// 481650 (ECX = 7F9460, [esp+4] = &table), from 46C380:
+//   [+174] = 0; ebp = 4F03E0(0); [+178] = 250 (0xFA);
+//   while [+174] < [+178] and [628180] <= [ebp+4+i*28]: ++[+174];
+//   p = 580253([+178]*28+30); handle = p+([+178]+1)*28: [handle] = p, [handle+4] = 0;
+//   [table] = handle; every record's +4 = [5B4A24]; the first [+174] records copied
+//   from ebp (10 dwords each); then record [+174]'s +4 = [5B0060]; return 0.
+// (440D10 / 440D50 / 440D30 / 440D70 around the allocation: the heap selection, a single
+// block here.)
+bool native_race_requests_placements_481650(NativeRuntimeContext& c,driving::PcMatrixStack& matrices,
+                                            const std::uint8_t* lane0,std::size_t lane0_bytes,
+                                            std::uint32_t& handle){
+    auto& t=native_race_traffic(c);
+    if(t.latched)return false;
+    bool done=false;
+    const bool ok=run_traffic(c,matrices,[&](PcRaceContext& ctx){
+        auto& m=ctx.m;constexpr std::uint32_t B=NativeRaceTraffic::RequestsBase,Record=0x28u;
+        auto exe_f32=[](std::uint32_t a){float f;std::memcpy(&f,exe_image_bytes(a,4),4);return f;};
+        std::uint32_t count=0u;const std::uint32_t capacity=0xfau;
+        m.put32(B+0x174u,0u);m.put32(B+0x178u,capacity);
+        if(lane0){
+            const float threshold=exe_f32(0x628180u);
+            for(;count<capacity;++count){
+                if(std::size_t(count+1u)*Record>lane0_bytes)throw TrafficUnported(0x481684u,"lane 0 placements end before a record below the 481650 threshold");
+                float v;std::memcpy(&v,lane0+count*Record+4u,4);
+                if(threshold>v)break;
+            }
+            m.put32(B+0x174u,count);
+        }
+        const std::uint32_t p=t.requests_heap->alloc(capacity*Record+0x30u);
+        if(!p)throw TrafficUnported(0x580253u,"request manager heap full (481650 placements table)");
+        const std::uint32_t h=p+(capacity+1u)*Record;
+        m.put32(h,p);m.put32(h+4u,0u);
+        const float fill=exe_f32(0x5b4a24u);
+        for(std::uint32_t i=0;i<capacity;++i)m.putf(p+i*Record+4u,fill);
+        for(std::uint32_t i=0;i<count;++i)for(std::uint32_t k=0;k<Record;++k)m.put8(p+i*Record+k,lane0[i*Record+k]);
+        m.putf(p+count*Record+4u,exe_f32(0x5b0060u));
+        handle=h;done=true;});
+    return ok&&done;
+}
+// 4FC390(road, surface) (road unused): k = [ECX+764C];
+//   surface 1 -> 0; 4 / 8 / 10 / 8000 -> k > [5B43C8] ? [5C403C] : [5B005C];
+//   2 / 100 / 400 / 100000 / 200000 / 400000 / 800000 -> k; others -> [62806C].
+float native_race_requests_road_mu_4fc390(void* context,std::uint32_t,std::uint32_t surface){
+    auto& c=*static_cast<NativeRuntimeContext*>(context);
+    auto exe_f32=[](std::uint32_t a){float f;std::memcpy(&f,exe_image_bytes(a,4),4);return f;};
+    float k;std::memcpy(&k,native_race_traffic(c).requests_7f9460.data()+0x764cu,4);
+    switch(surface){
+    case 1u:return 0.0f;
+    case 4u:case 8u:case 0x10u:case 0x8000u:return k>exe_f32(0x5b43c8u)?exe_f32(0x5c403cu):exe_f32(0x5b005cu);   // comiss; jbe
+    case 2u:case 0x100u:case 0x400u:case 0x100000u:case 0x200000u:case 0x400000u:case 0x800000u:return k;
+    default:return exe_f32(0x62806cu);
+    }
 }
 bool native_race_requests_event(NativeRuntimeContext& c,std::uint32_t callback,std::uint32_t work,driving::PcMatrixStack& matrices){
     if(callback!=0x46c1f0u&&callback!=0x46c200u&&callback!=0x46c210u&&callback!=0x46c230u)return false;

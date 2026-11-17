@@ -141,9 +141,9 @@ struct Binding final : RaceManagerServices {
     std::uint32_t pc_55a930()override{routed(0x55a930u);return c.start_mode.manager_state_7f94c0;}   // [7F9460+60]
     std::uint8_t pc_48b350()override{routed(0x48b350u);
         return driving::platform_counter_lt_60_48b350(std::int32_t(c.start_mode.frontend_prepare.output_code_656234))?1u:0u;}
-    std::uint32_t pc_46c500()override{
-        if(c.start_mode.manager_state_7f94c0==0u){routed(0x46c500u);return 0u;}   // 55A930() == 0: no 7F94C8 read
-        fault(0x46c500u,"network session word 7F94C8 not owned");
+    std::uint32_t pc_46c500()override{   // 55A930() && [7F94C8] == 1 (7F94C8: the request manager's forced-course flag)
+        routed(0x46c500u);
+        return c.start_mode.manager_state_7f94c0!=0u&&c.start_mode.frontend_prepare.event_config_7f94c4[1]==1u?1u:0u;
     }
     // The goal side test of 4513C0 (network races and Time Attack with 48B350): the area
     // matrix 7D3190 on the matrix stack, the car's position in its frame.

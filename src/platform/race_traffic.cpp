@@ -3021,6 +3021,89 @@ struct T {
         if(stage==0x1a){const std::int8_t r=std::int8_t(a%9);p8(cnt,std::uint8_t(r));return u32(0x64e1b4u+std::uint32_t(std::int32_t(r))*4u);}
         const std::int8_t r=std::int8_t(a%7);p8(cnt,std::uint8_t(r));return u32(0x64e198u+std::uint32_t(std::int32_t(r))*4u);
     }
+    // 4FBBB0(req, prev) (ECX = the request manager 7F9460; RET 8): open one of the manager's
+    // request cars. req: +0 done flag, +4 type, +8 road offset (u16), +A lane (u8), +B colour key
+    // (u8), +C kind (u8), +10 word. Frame: F(x) = [esp+x] after the four pushes (sub esp,30).
+    std::uint32_t request_car_4fbbb0(std::uint32_t mgr,std::uint32_t req,std::uint32_t prev){
+        Frame F(*this,0x50);
+        const std::uint32_t L14=F(0x14),L18=F(0x18),L24=F(0x24),L30=F(0x30);
+        // 4FBBB3..4FBC0D: the first free event of the traffic range [680AD4]+8.. ([680AD8] ids)
+        std::uint32_t id=prev,i=0;
+        const std::uint32_t count=u32(0x680ad8u);
+        if(std::int32_t(count)>0){
+            for(;i<count;++i){
+                id=u32(0x680ad4u)+i+8u;
+                if(u8(0x79fb48u+id)&3u)continue;
+                if(call(0x440370u,{id})==0u)break;
+            }
+        }
+        if(i==count||id==0x19au)return 0u;
+        // 4FBC1B: the player's road place, moved by [mgr+7634] + req+8 and one lane over
+        const std::uint32_t car=u32(mgr+0x7660u);
+        const std::uint16_t off=u16(req+8u);
+        for(std::uint32_t k=0;k<0x10u;k+=4u)p32(L30+k,u32(car+0x5cu+k));
+        p16(L30+8u,std::uint16_t(u16(mgr+0x7634u)+off));
+        p8(L30+0xau,std::uint8_t(u8(req+0xau)+1u));
+        if(u32(mgr+0x7658u)==1u&&prev!=req){
+            const std::uint32_t last=call(0x4fbb30u,{},0,mgr);
+            if(last)p16(L30+8u,std::uint16_t(std::int32_t(i16(last+0x64u))-u16(prev+8u)+off));
+        }
+        if(!place_pose_470240(L30,0,L24,L18,L14)){p32(req,1u);p32(mgr+0x7638u,u32(mgr+0x7638u)+1u);return 1u;}
+        // 4FBCCC: open it (function 59)
+        call(0x440110u,{id,0x59u});
+        p32(mgr+0x763cu,u32(mgr+0x763cu)+1u);
+        const std::uint32_t w=work(id);
+        std::uint32_t type=u32(req+4u),flag10=0u,model=prev;std::uint8_t colour=0;
+        if(const std::uint32_t o=u32(mgr+0x80u)){
+            const std::uint32_t e=u32(o+0x58u),k=u32(e);
+            if(k==3u&&u32(e+4u)==1u)type=0u;
+            if(k==0x10u&&u32(e+4u)==6u){
+                flag10=1u;
+                if(std::uint32_t(u8(req+0xbu))==std::uint32_t(u16(e+0x78u))+3u)p16(e+0x7au,std::uint16_t(u16(e+0x7au)+1u));
+            }
+        }
+        auto even_odd=[&](std::int32_t v){return std::uint8_t(v%2);};       // and 80000001 / dec / or -2 / inc
+        auto model_2b=[&]{                                                    // 4FBD6A
+            const std::uint32_t o=u32(mgr+0x80u);
+            if(o){const std::uint32_t e=u32(o+0x58u);if(u32(e)==3u&&u32(e+4u)==1u){colour=2;return;}}
+            colour=even_odd(std::int32_t(id));                               // 4FBE36
+        };
+        if(u8(req+0xcu))type=3u;
+        bool done=false;
+        if(type<=4u)switch(type){                                             // jump table 4FBFA4
+        case 0u:case 1u:model=0x2bu;model_2b();done=true;break;
+        case 2u:model=0x1fu;colour=std::uint8_t(std::int8_t(std::uint8_t(id))%3);done=true;break;   // 4FBE21
+        default:                                                              // 4FBDA2
+            if(flag10)model=u32(0x5e0c6cu+(id%3u)*4u);
+            else if(call(0x44dc50u,{u32(u32(mgr+0x7660u)+0x68u)})==0x1au)model=u32(0x5e0c50u+(id%7u)*4u);
+            else model=u32(0x5e0c34u+(id%(u32(0x78024cu)==1u?6u:7u))*4u);
+            break;
+        }
+        if(!done){                                                            // 4FBE13
+            if(model==0x26u)colour=even_odd(std::int8_t(std::uint8_t(id)));  // 4FBE4A
+            else if(model==0x2bu)model_2b();
+            else colour=std::uint8_t(std::int8_t(std::uint8_t(id))%3);       // 4FBE21
+        }
+        // 4FBE5E: SetOthcarWork(w, id, model, colour, pos, angles, speed, place, 0, cs, 1)
+        const std::uint32_t cs=std::uint16_t(u16(u32(mgr+0x7660u)+0x25eu)+off);
+        set_work_46e830(w,id,std::int8_t(model),colour,L24,L18,f32(L14),L30,0,cs,1);
+        p32(w+0xc5cu,u32(w+0xc5cu)|0x40000u);
+        p16(w+0xb70u,std::uint16_t(id*0x25u));
+        p32(w+0x324u,type);
+        p16(w+0xb62u,0x3cu);
+        if(u32(mgr+0x7640u)==0u){
+            p32(w+0xb58u,0x12u);p32(w+0xb5cu,0x12u);pf(w+0x1c4u,0.0f);p32(w+0x1f4u,0u);
+        }else{
+            (void)place_pose_470240(w+0x5cu,0,L24,L18,L14);
+            pf(w+0x1c4u,f32(L14));
+            p32(w+0x1f4u,ftol(X87(f32(L14))*X87(K(0x5a460cu))));
+            p32(w+0xb58u,0u);
+        }
+        p32(w+0xd10u,u8(req+0xbu));p32(w+0xd14u,u8(req+0xcu));p32(w+0xd18u,u32(req+0x10u));
+        if(u8(req+0xcu)==1u)p16(w+0xb66u,0);
+        p32(req,1u);
+        return 1u;
+    }
     // Common tail of 478B90 / 4787E0: open the car `id` (function `fn`) at `place`.
     // F(x) = the caller's PC frame [esp+x].
     void open_traffic(std::uint32_t pl,std::uint32_t id,std::uint32_t fn,std::uint32_t model,std::uint32_t colour,std::uint32_t rec2arg,
@@ -6011,6 +6094,13 @@ void traffic_car_init(PcRaceContext& c,std::uint32_t callback,std::uint32_t car)
 }
 std::uint32_t traffic_appear_rec_4efb90(PcRaceContext& c,std::uint32_t place){T t(c);return t.appear_rec_4efb90(place);}
 std::uint32_t traffic_speed_rec_4f0030(PcRaceContext& c,std::uint32_t place,std::uint32_t rec){T t(c);return t.speed_rec_4f0030(place,rec);}
+std::uint32_t traffic_place_pose_470240(PcRaceContext& c,std::uint32_t place,std::int32_t row,std::uint32_t pos,std::uint32_t ang,std::uint32_t side){
+    T t(c);t.sp=TrafficStackBase+TrafficStackSize/2u;return t.place_pose_470240(place,row,pos,ang,side);
+}
+std::uint32_t traffic_request_car_4fbbb0(PcRaceContext& c,std::uint32_t mgr,std::uint32_t req,std::uint32_t prev){
+    T t(c);t.sp=TrafficStackBase+TrafficStackSize/2u;   // below the frames of nested entries (they start at the top)
+    return t.request_car_4fbbb0(mgr,req,prev);
+}
 std::uint32_t traffic_progress_4a6cf0(PcRaceContext& c,std::uint32_t car){T t(c);return bits(driving::x87_float(t.progress_4a6cf0(car)));}
 void traffic_car_control_47e780(PcRaceContext& c,std::uint32_t car){T t(c);t.control_47e780(car);}
 bool traffic_network_call(PcRaceContext& c,std::uint32_t pc,std::uint32_t ecx,const std::uint32_t* a,std::size_t n,std::uint32_t& eax){

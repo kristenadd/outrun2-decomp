@@ -100,6 +100,16 @@ void native_race_requests_map(NativeRuntimeContext&,PcRaceMemory&);
 // module is latched or the call faulted (latched then).
 bool native_race_requests_call(NativeRuntimeContext&,driving::PcMatrixStack&,std::uint32_t pc,
                                std::initializer_list<std::uint32_t> args,std::uint32_t& eax,std::uint32_t ecx=0);
+// 46C380(&table) -> 481650 (ECX = 7F9460), variant 5: the manager's copy of the lane 0
+// stage-object placements (4F03E0(0): `lane0`, the 0x28-byte records, empty when the
+// lane has no file) into a 250-record table in its heap; `handle` = the table's
+// {records, 0} handle. False when the traffic module is latched or the call faulted.
+bool native_race_requests_placements_481650(NativeRuntimeContext&,driving::PcMatrixStack&,
+                                            const std::uint8_t* lane0,std::size_t lane0_bytes,
+                                            std::uint32_t& handle);
+// 46C450(road, surface) -> 4FC390 (ECX = 7F9460): GetRoadMu's surface Mu while the request
+// manager is active (55A930). `context` is the NativeRuntimeContext.
+float native_race_requests_road_mu_4fc390(void* context,std::uint32_t road,std::uint32_t surface);
 bool native_race_network_call(NativeRuntimeContext&,driving::PcMatrixStack&,std::uint32_t pc,
                               std::initializer_list<std::uint32_t> args,std::uint32_t& eax,
                               std::uint32_t ecx=0,std::uint32_t* scratch=nullptr);

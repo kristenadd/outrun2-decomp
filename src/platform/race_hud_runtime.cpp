@@ -542,14 +542,28 @@ bool native_race_hud_service(NativeRuntimeContext& c,std::uint32_t pc,const std:
     }catch(const std::exception& e){o.last_error=hex(pc)+": "+what(e);note(o,pc);why=o.last_error;}
     return false;
 }
+namespace {
+// [7F95C4]: the request manager's +164 (46C530 reads it while 55A930 / 7F94C0 is set).
+std::uint32_t requests_busy_7f95c4(NativeRuntimeContext& c){
+    if(!c.start_mode.manager_state_7f94c0)return 0u;
+    std::uint32_t v;std::memcpy(&v,native_race_traffic(c).requests_7f9460.data()+0x164u,4);return v;
+}
+NaviVoiceServices voice_services(NativeRuntimeContext& c,NativeRaceHudRuntime& o){
+    NaviVoiceServices v;v.time_842110=c.race.clock.time_842110;v.busy_7f94c0=c.start_mode.manager_state_7f94c0;
+    v.busy_7f95c4=requests_busy_7f95c4(c);v.sounds_424940=&o.pending_sounds;
+    return v;
+}
+}
 std::uint32_t native_race_hud_voice_45bd30(NativeRuntimeContext& c,std::int32_t id,std::int16_t duration,std::int16_t priority){
     auto& o=native_race_hud(c);
-    NaviVoiceServices v;v.time_842110=c.race.clock.time_842110;v.busy_7f94c0=c.start_mode.manager_state_7f94c0;
-    v.busy_7f95c4=0;v.sounds_424940=&o.pending_sounds;   // 7F95C4 is only read when 7F94C0 != 0 (46C530)
-    if(v.busy_7f94c0)note(o,0x46c530u);
-    const auto r=navi_voice_request_45bd30(o.voice,v,id,duration,priority);
+    const auto r=navi_voice_request_45bd30(o.voice,voice_services(c,o),id,duration,priority);
     drain_sounds(c,o);
     return r;
+}
+void native_race_hud_voice_pump_45bcd0(NativeRuntimeContext& c){
+    auto& o=native_race_hud(c);
+    navi_voice_pump_45bcd0(o.voice,voice_services(c,o));
+    drain_sounds(c,o);
 }
 bool native_race_hud_mission_control(NativeRuntimeContext& c,MissionManagerServices& ms){
     auto& o=native_race_hud(c);begin(c,o);
@@ -567,7 +581,7 @@ bool native_race_hud_mission_control(NativeRuntimeContext& c,MissionManagerServi
     r.racers=&m.racers;r.profile=&st.frontend_profiles.active;r.voice=&o.voice;
     r.voice_services.time_842110=c.race.clock.time_842110;
     r.voice_services.busy_7f94c0=c.start_mode.manager_state_7f94c0;
-    r.voice_services.busy_7f95c4=0;                          // 7F95C4 is only read when 7F94C0 != 0 (46C530)
+    r.voice_services.busy_7f95c4=requests_busy_7f95c4(c);    // 46C530
     r.mode_78026c=c.mode_state.current;
     r.race_end_7d38f0=c.race.manager.state.over_state_7d38f0;
     r.pause_8367bc=c.game_mode.start_countdown;

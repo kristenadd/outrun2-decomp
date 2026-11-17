@@ -868,11 +868,18 @@ void heart_item_draw_4ae386(Draw& d,std::uint32_t car){
     d.leaf(0x4044c0u,{});
     d.pop();                                                                     // 40A010
 }
-// 4AE0F0 (ESI = car), offline path (the network draws are refused).
+// 4AE0F0 (ESI = car). While the request manager runs (55A930: Clarissa mode), its cars'
+// kind +D14 (4FBBB0: the request's +C) picks the draw: 2 / 3 none (4AE10F / 4AE118 -> 4AE5D4),
+// 1 the heart item (4AE15D -> 4AE386), 4 / 5 an item draw not ported here, others the car.
 void other_car_draw_4ae0f0(PcRaceContext& c,std::uint32_t car){
     Draw d(c);auto& m=c.m;
-    if(m.u32(0x7f94c0u)!=0u)throw std::runtime_error("4AE0F0: network car draw (55A930) not ported");
-    if(m.u32(0x780258u)==2u&&(m.u32(car+0xc5c)&0x80000u)){heart_item_draw_4ae386(d,car);return;}
+    if(m.u32(0x7f94c0u)!=0u){
+        const std::uint32_t kind=m.u32(car+0xd14);
+        if(kind==2u||kind==3u)return;
+        if(kind==1u){heart_item_draw_4ae386(d,car);return;}
+        if(kind==4u||kind==5u)throw std::runtime_error("4AE0F0: request item draw (kind 4 / 5, 4AE18B) not ported");
+    }
+    else if(m.u32(0x780258u)==2u&&(m.u32(car+0xc5c)&0x80000u)){heart_item_draw_4ae386(d,car);return;}
     std::uint32_t flags=m.u32(car+4);
     float saved=0.f;std::uint32_t was40=0;
     if(flags&4u){
