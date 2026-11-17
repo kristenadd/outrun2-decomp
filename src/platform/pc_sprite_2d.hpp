@@ -55,7 +55,11 @@ struct PcSpriteBank {
 // 32-byte header {0, meta size, texture count, 0, group count, group offset,
 // image count, image offset}, tables, DDS payloads). Textures are created on
 // the device from the DDS payloads (D3DX defaults, as the PMT textures).
-bool pc_sprite_bank_load_xst(PcSpriteBank&,PcD3D9Device&,const std::vector<std::uint8_t>& inflated,std::string& error);
+// Port: `sources` (optional) receives each created texture's index and its
+// DDS bytes inside `inflated` (the button prompt sheets, button_prompts.hpp).
+struct PcSpriteTextureSource { std::uint32_t index{}; const std::uint8_t* data{}; std::size_t size{}; };
+bool pc_sprite_bank_load_xst(PcSpriteBank&,PcD3D9Device&,const std::vector<std::uint8_t>& inflated,std::string& error,
+                             std::vector<PcSpriteTextureSource>* sources=nullptr);
 // ani_*.sz inflated (size word + data): 429AC0 relocation (48BDD0/48BD40)
 // and 429B00 (bank << 16 into each footage frame texture word).
 bool pc_sprite_bank_load_animation(PcSpriteBank&,std::uint32_t bank,const std::vector<std::uint8_t>& inflated,std::string& error);

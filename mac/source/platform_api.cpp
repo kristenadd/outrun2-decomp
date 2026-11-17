@@ -2,6 +2,7 @@
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include "platform_api.hpp"
+#include "platform/button_prompts.hpp"
 #include "mac_paths.hpp"
 #include "system/files.hpp"
 #include <chrono>
@@ -20,6 +21,8 @@ void read_pad(outrun::ps5::PadSample& p){
     p=PadSample{};p.connected=true;
     if(controller&&!SDL_GameControllerGetAttached(controller)){SDL_GameControllerClose(controller);controller=nullptr;}
     if(!controller)for(int i=0;i<SDL_NumJoysticks();++i)if(SDL_IsGameController(i)){controller=SDL_GameControllerOpen(i);if(controller)break;}
+    // Button prompts follow the connected controller (keyboard art without one).
+    outrun::platform::button_prompts_set_style(outrun::platform::button_prompts_style_for_sdl_type(controller?int(SDL_GameControllerGetType(controller)):-1));
     if(controller){
         auto axis=[&](SDL_GameControllerAxis a){const int v=SDL_GameControllerGetAxis(controller,a);return std::uint8_t(v<0?128+v*128/32768:128+v*127/32767);};
         p.left_x=axis(SDL_CONTROLLER_AXIS_LEFTX);p.left_y=axis(SDL_CONTROLLER_AXIS_LEFTY);

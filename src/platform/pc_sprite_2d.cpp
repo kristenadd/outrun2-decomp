@@ -960,7 +960,8 @@ std::size_t dds_bytes(const std::uint8_t* p,std::size_t n){
     return 128+total;
 }
 }
-bool pc_sprite_bank_load_xst(PcSpriteBank& b,PcD3D9Device& device,const std::vector<std::uint8_t>& d,std::string& error){
+bool pc_sprite_bank_load_xst(PcSpriteBank& b,PcD3D9Device& device,const std::vector<std::uint8_t>& d,std::string& error,
+                             std::vector<PcSpriteTextureSource>* sources){
     if(d.size()<40){error="XST too small";return false;}
     const auto meta=rd32(d.data()),pixels=rd32(d.data()+4);
     if(std::uint64_t(meta)+pixels+8u!=d.size()||meta<32){error="XST sections";return false;}
@@ -985,6 +986,7 @@ bool pc_sprite_bank_load_xst(PcSpriteBank& b,PcD3D9Device& device,const std::vec
         q.data=d.data()+pixels_at+offset;q.size=size;
         q.width=q.height=0xffffffffu;q.mip_levels=1;q.usage=0;q.format=0;q.pool=1;q.filter=1;q.mip_filter=1;q.colour_key=0;
         b.textures.push_back(device.create_texture_from_file(q));
+        if(sources)sources->push_back({k,q.data,q.size});
     }
     b.state=2;return true;
 }

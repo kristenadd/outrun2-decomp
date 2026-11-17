@@ -47,6 +47,25 @@ game folder:
 - iOS / iPadOS: `Library/Application Support/OutRun/Saves` in the app's data
   container ([details and how to copy them](ios/README.md#save-files))
 
+## Controller button prompts (optional)
+
+The game shows keyboard keys in its prompts ("ENTER Select", the title's
+PRESS ENTER). With controller art in the game folder, the port shows Xbox,
+PlayStation or Switch buttons instead, following the connected controller
+(keyboard art when none is connected). The art is not part of this
+repository; download it once into your game folder:
+
+```bash
+sh tools/button_prompts/fetch.sh "<game folder>"
+```
+
+Add `xbox`, `playstation` or `switch` to fetch only some styles (about 10 MB
+each). The files go to `textures/load/<Xbox|PlayStation|Switch>/` in the game
+folder, the layout OutRun2006Tweaks uses, so a copy of the pack's `Release`
+folders works too. For iOS / iPadOS, run the script on an empty folder and
+copy its `textures` folder next to the game files in the app's files.
+`OR2_BUTTON_PROMPTS=xbox|playstation|switch|keyboard` forces a style.
+
 ## Layout
 
 | Folder | Content |
@@ -104,6 +123,15 @@ verifies that no byte run of the original executable is compiled into a binary.
 
 Inspired and using tweaks by [OutRun2006Tweaks](https://github.com/emoose/OutRun2006Tweaks)
 by emoose. See `THIRD_PARTY_NOTICES.md`.
+
+Controller button prompts: the texture swap follows OutRun2006Tweaks by emoose
+and [OutRun 2006 C2C Multi Input](https://github.com/hyp36rmax/multi-device-input) by hyp36rmax.
+The prompt art is from [OR2006Sprites](https://github.com/Sonic-TV/OR2006Sprites)
+(maintained by Sonic-TV): button prompt textures by
+[Zoukambada](https://github.com/Zoukambada) (Vitor Kormann), the per-controller
+release set and earlier prompts by [envido32](https://github.com/envido32/OR2006Sprites),
+with contributions by Tenome. The script downloads it from the authors' repository;
+it is not redistributed here.
 
 OutRun is a trademark of Sega. This project is not affiliated with or endorsed by Sega or Sumo Digital.
 

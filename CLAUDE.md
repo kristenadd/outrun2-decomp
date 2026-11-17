@@ -295,6 +295,10 @@ sample rate.
 ## Done in this fork (for context)
 
 - iOS / iPadOS port, including iOS 27 UIScene support and a required game controller.
+- Controller button prompts (`src/platform/button_prompts.cpp`): the six keyboard-prompt
+  sprite sheets are swapped by XXH32 for Xbox / PlayStation / Switch art from
+  `<game>/textures/load/<Style>/` (downloaded by `tools/button_prompts/fetch.sh`, not in
+  git), following the controller at runtime. `[btn]` lines under `OR2_TRACE`.
 - Metal renderer: fewer render passes, clears folded into the next pass,
   GPU-private back buffer, and **pipelined frames** (CPU builds frame N+1 while
   the GPU draws N; one frame of latency). 1080p FXAA went from 26–28 to 60 fps

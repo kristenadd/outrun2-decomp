@@ -117,7 +117,11 @@ void ensure_bank(NativeRuntimeContext& c,NativeSprite2d& o,PcD3D9Device& device,
         const char* path=XstPath639cb8[bank];std::string error;
         if(!path){o.bank_status[bank]="no XST path";return;}
         const auto* bytes=retail_asset_guest_path(*store,path,true,&error);
-        if(bytes&&pc_sprite_bank_load_xst(b,device,*bytes,error))o.bank_status[bank]="xst loaded ("+std::to_string(b.textures.size())+" textures)";
+        std::vector<PcSpriteTextureSource> sources;
+        if(bytes&&pc_sprite_bank_load_xst(b,device,*bytes,error,&sources)){
+            o.bank_status[bank]="xst loaded ("+std::to_string(b.textures.size())+" textures)";
+            for(const auto& t:sources)o.prompts.register_texture(b,device,store->root,path,bank,t.index,t.data,t.size);
+        }
         else{o.bank_status[bank]="xst failed: "+error;b.state=0;}
         return;
     }
@@ -129,8 +133,11 @@ void ensure_bank(NativeRuntimeContext& c,NativeSprite2d& o,PcD3D9Device& device,
     else status="ani failed: "+error;
     error.clear();
     const std::string xst=XstPath639cb8[bank]?XstPath639cb8[bank]:"";std::vector<std::uint8_t> inflated;
-    if(!xst.empty()&&retail_asset_read_relative_inflated(*store,xst,inflated,128u*1024u*1024u,&error)&&pc_sprite_bank_load_xst(b,device,inflated,error))
+    std::vector<PcSpriteTextureSource> sources;
+    if(!xst.empty()&&retail_asset_read_relative_inflated(*store,xst,inflated,128u*1024u*1024u,&error)&&pc_sprite_bank_load_xst(b,device,inflated,error,&sources)){
         status+=", xst loaded ("+std::to_string(b.textures.size())+" textures)";
+        for(const auto& t:sources)o.prompts.register_texture(b,device,store->root,xst,bank,t.index,t.data,t.size);
+    }
     else{status+=", xst failed: "+error;b.state=0;}
     o.bank_status[bank]=status;
 }
@@ -249,6 +256,9 @@ bool native_sprite2d_leaf(NativeRuntimeContext& c,PcSceneRenderer& r,std::uint32
     const auto before=o.state.draws;
     o.state.sprite_95b218=fc.device.sprite()!=nullptr;          // D3DXCreateSprite succeeded on this device
     pc_2d_flush_42d710(o.state,fc,fc.device.sprite(),0,arg,r.frame().layer_7d25f0);
+    // Port: a controller change swaps the prompt sheets here, with every layer
+    // flushed (no queued node refers to the textures being replaced).
+    if(arg>=Pc2dLayerCount)o.prompts.update(o.state.banks.data(),o.state.banks.size(),fc.device);
     o.last_flush_draws=o.state.draws-before;++o.flushes;
     if(o.last_flush_draws)++o.frames_drawn;
     return true;
