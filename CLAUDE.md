@@ -325,6 +325,16 @@ Two traps found on 2026-11-17 (fixed):
   license. With the wrong word Clarissa got Holly's `ENGLISHH_` set, whose
   mission banks (`HAM_MIS_PASS`, `HCARS`) don't exist: no request voices.
 
+Also fixed on 2026-11-17 (owner's report: in "Keep passing cars" the cars
+slowed, had no collision, the request never ended, no more cars came, and
+Quit hung): the traffic module latched on `521350`'s statics at `85B32C..`
+(the manager's cell now starts at `85B324`). Quit from the pause menu (Down
+×2, A) needed `46C270` (`481500`) in the title owner, and the manager's
+teardown needed `44BF10`, `448990`, `4278C0`, `580C38` (operator delete) and
+the scalar deleting destructors (`translated_scalar_deleting_dtor`: 187 in
+the EXE, `RET 4`). `46C2D0` (a new manager) clears traffic latches left by
+the last teardown, or the next START stalls.
+
 **Known issues** (as of 2026-11-17):
 - The race-end results screen calls `46C220` through its own binding
   (`race_end_runtime.cpp`), which still expects a translated `481A40` and
@@ -343,7 +353,48 @@ Two traps found on 2026-11-17 (fixed):
   answered as constant 0 ("network globals"), so in Heart Attack's "Keep
   passing cars" request the cars stayed parked. In Clarissa mode a short
   stop is by design: cars wait for `+7640` and pull away together.
-- Not yet driven to the end of a full Clarissa run (results / grades).
+- Fixed on 2026-11-17, **not yet confirmed by the owner**:
+  - Goal hang: mode 19 does nothing for variant 5 (as the PC); the manager's
+    `4FEA00` ends the race through `43F8C0` (`0x22`; `0x18` without the C2C
+    frontend flag), which the traffic service did not answer. Its start
+    `46C370` needs `[+148]` = `7F95A8`, set at each stage start by the area
+    (`44CF00` -> `46C360`: 1 on the one-exit, final stage). Testing it on
+    stage 1 needs the flag forced (it is 0 there by design).
+  - Per-stage hearts / no reset: the area's `46C4C0` / `46C260` / `46C2C0(1)`
+    (the manager's stage reset) were "void services" counted and skipped, and
+    `46C240` ran the raw translation; now all go through
+    `native_race_requests_call`. The native `4829D0` reads the current course
+    record `[7D3188]` (`44C830`), not START's selection.
+  - The stage-2 request code needed the course queries `43D920`, `43CB40`,
+    `43E7E0` (`EAX` = list; mode, x, &y, z, &polygon, &flags, type),
+    `43F370`, the vector / matrix leaves (`40EEB0` / `40EFD0` return in `ST0`:
+    CPU-level leaves), `449640`, and the course roots `780100..` mapped
+    (`map_course_world_pc`, once the world is ready).
+- The race-end results (`46C220` from `race_end_runtime.cpp`) still expect a
+  translated `481A40` (the native port is `requests_2d_481a40`).
+- Fixed on 2026-11-17, **not yet confirmed by the owner** (stage-3 stretched
+  bubble, then a freeze at the stage change; no beach ball):
+  - A latched manager no longer holds the AREA's stage change: `46C240` /
+    `46C4D0` answer 1 and the stage resets 0 (`latched_answer` in
+    `native_race_requests_call`), so the race goes on without requests.
+  - Request objects' list `85B350` (count, then 250 entries of `2C` at
+    `85B354..85DE4C`, `521A20` / `5219B0` / spawner `521AE0`) is mapped whole
+    (it held 8; the meteors have 10–30).
+  - Lane 0's handle `84D6CC` in variant 5 is START's copy of the placements
+    (`481650` → `4F03A0`, `scene_owner_object_handle_84d6cc`) until a stage
+    change replaces it: without it `4F03E0(0)` was 0 and no request object
+    (beach ball, meteor) ever spawned on stage 1.
+  - `40A7D0` / `40A820` / `40A840` / `40A8A0` are **(out, in)** (D3DX); the
+    traffic service had them reversed (`5053A0` wrote over the car's `+14`).
+  - New pieces: `40A240` (invert), `40A310`, `40A360`, `4536C0` / `4536F0`,
+    native `4F6BD0` (segment / box) and `4AA370` (car touches object), CPU
+    leaves `449800`, `40F140`, `46D110`, `46D180`, `46D220`.
+- Request types seen (the def's `+0`, from the course's `Req_*.bin`; force one
+  for a test by pointing every record's `+58` at a def): `3` keep passing
+  cars, `F` dribble the beach ball (list entries type 8), `13` avoid the
+  meteors (type 9, model `1EE0005`), `14` cut the line, `15` avoid abduction
+  (UFO: runs, its draw not checked). `16` (reverse courses) still latches: its
+  display reaches the D3D device `89BD60` (not mapped for the bulk display).
 
 **Heart Attack** (OutRun 2SP, variant 2), from the title, 2 s apart: A,
 Right ×2, A ×3, Right, A ×2. Autoplay:

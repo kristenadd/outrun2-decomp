@@ -1198,11 +1198,15 @@ std::uint32_t native_stage12_handle_virtual(void* user,std::uint32_t handle,
         const auto owner_call=[](void* user,std::uint32_t pc,std::uint8_t* object,
                                  std::size_t offset,std::uint32_t& value)->bool{
             auto& state=*static_cast<NativeEventFunction36State*>(user);
-            // 4D8C50 in the race state 3 (the pause menu closing): 55A930 = [7F9460+60], the LAN
-            // session manager state (0 offline; 46C270 is only reached with a session).
-            if(pc==0x55a930u){value=state.runtime?state.runtime->start_mode.manager_state_7f94c0:0u;
-                if(value!=0u){state.title_last_missing_service=0x46c270u;return false;}
-                return true;}
+            // 4D8C50 in the race state 3 (the pause menu closing with Retry / Quit): 55A930 =
+            // [7F9460+60], the C2C request manager state; when set, 46C270 (481500: a closing
+            // sound for a running request of kind 15 / 17) on the manager.
+            if(pc==0x55a930u){value=state.runtime?state.runtime->start_mode.manager_state_7f94c0:0u;return true;}
+            if(pc==0x46c270u){
+                if(!state.runtime){state.title_last_missing_service=0x46c270u;return false;}
+                std::uint32_t eax{};
+                if(!requests_call(*state.runtime,0x46c270u,{},eax)){state.title_last_missing_service=0x46c270u;return false;}
+                value=eax;return true;}
             if(state.title_widgets){
                 if(state.title_menu_globals.root_state==3&&state.title_menu_globals.variant==4&&!state.title_manager_resolved){
                     state.title_last_missing_service=0x4d5e40;return false;

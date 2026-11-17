@@ -17,6 +17,18 @@
 #include <string>
 #include <vector>
 namespace outrun::platform {
+bool translated_scalar_deleting_dtor(std::uint32_t pc,std::uint32_t& body){
+    if(pc<ExeImageBase||pc+0x1fu>ExeImageBase+ExeImageSize)return false;
+    const auto* b=exe_image_bytes(pc,0x1f);
+    static constexpr std::uint8_t Head[3]{0x56,0x8b,0xf1},Mid[10]{0xf6,0x44,0x24,0x08,0x01,0x74,0x09,0x56,0xe8,0};
+    static constexpr std::uint8_t Tail[9]{0x83,0xc4,0x04,0x8b,0xc6,0x5e,0xc2,0x04,0x00};
+    // +0 push esi / +1 mov esi,ecx / +3 call body / +8 test / +D je / +F push esi / +10 call free /
+    // +15 add esp,4 / +18 mov eax,esi / +1A pop esi / +1B ret 4
+    if(std::memcmp(b,Head,3)||b[3]!=0xe8u||std::memcmp(b+8,Mid,9)||std::memcmp(b+0x15,Tail,9))return false;
+    std::int32_t rel,frel;std::memcpy(&rel,b+4,4);std::memcpy(&frel,b+0x11,4);
+    if(pc+0x15u+std::uint32_t(frel)!=0x5801a7u)return false;               // the free 5801A7
+    body=pc+8u+std::uint32_t(rel);return true;
+}
 namespace {
 using driving::X87;using driving::x87_float;
 struct Session {
@@ -34,6 +46,7 @@ or2x86::Fn find(const TranslatedModule& mod,std::uint32_t pc){
 }
 std::uint32_t pops(const TranslatedModule& mod,std::uint32_t pc){
     for(const auto* p=mod.pops;p&&p->pc;++p)if(p->pc==pc)return p->bytes;
+    std::uint32_t body;if(translated_scalar_deleting_dtor(pc,body))return 4u;   // RET 4
     return 0u;
 }
 thread_local const TranslatedModule* lookup_module=nullptr;

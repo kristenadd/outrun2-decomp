@@ -116,7 +116,7 @@ bool translated_crt_call(PcRaceMemory& m,GuestHeap& heap,const PcRaceCall& k,std
         eax=heap.alloc(a[0]);
         if(!eax&&k.pc!=0x580253u)throw std::runtime_error("guest heap full (operator new)");
         return true;
-    case 0x580bc2u:case 0x5801a7u:heap.free(a[0]);eax=0;return true; // free / operator delete
+    case 0x580bc2u:case 0x5801a7u:case 0x580c38u:heap.free(a[0]);eax=0;return true; // free / operator delete (580C38: jmp 5801A7)
     case 0x580195u:eax=0;return true;                               // _callnewh: no new handler
     case 0x581b19u:eax=heap.realloc(m,a[0],a[1]);return true;       // realloc
     case 0x580340u:                                                 // memmove / memcpy

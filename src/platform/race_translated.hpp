@@ -67,6 +67,10 @@ std::uint32_t translated_call_registers(PcRaceMemory& m,const PcRaceService& ser
 std::uint32_t translated_call_list(PcRaceMemory& m,const PcRaceService& service,const TranslatedModule& module,
                               std::uint32_t pc,const TranslatedRegisters& registers,const std::vector<std::uint32_t>& args);
 bool translated_has(const TranslatedModule&,std::uint32_t pc);
+// The compiler's scalar deleting destructor at pc (push esi; mov esi,ecx; call body;
+// test [esp+8],1; je; push esi; call 5801A7 (free); add esp,4; mov eax,esi; pop esi; ret 4):
+// true with its destructor body. 187 of them in the EXE, reached through vtables.
+bool translated_scalar_deleting_dtor(std::uint32_t pc,std::uint32_t& body);
 // Helpers for TranslatedModule::special: the stack argument n ([esp+4+4n]) and the return.
 std::uint32_t translated_arg(or2x86::Cpu&,unsigned n);
 void translated_return(or2x86::Cpu&,std::uint32_t eax,std::uint32_t popped_bytes=0);

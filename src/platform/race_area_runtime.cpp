@@ -339,6 +339,22 @@ struct Service {
         case 0x43de50:routed(pc);release_collision_43de50(a[0]);return 0u;
         case 0x44a1a0:routed(pc);native_scene_owner_environment_reset_44a080(c);return 0u;   // 440CD0 x3 then 44A080
         case 0x46c4d0:routed(pc);return resources_481590();
+        // 46C240 (variant 5, 44E590 state 7): the request manager's next stage script (4829D0: the
+        // course appended to its list +100.., +170 / +140), on the native port START uses.
+        // 46C4C0 / 46C260 / 46C2C0(1) (variant 5, 44E590 state 6): the request manager's stage
+        // reset (481540 / 481490 / 482AF0: 46C2C0(1) sets its script loader +A8 back to 1, so the
+        // next 46C240 loads the stage's script). Wrappers: run as their methods.
+        case 0x46c4c0:case 0x46c260:case 0x46c2c0:{
+            if(!ctx)return missing(pc,"request manager stage reset outside a call context");
+            routed(pc);std::uint32_t eax{};
+            const bool ok=pc==0x46c2c0?native_race_requests_call(c,ctx->matrices,pc,{a[0]},eax,0u):native_race_requests_call(c,ctx->matrices,pc,{},eax,0u);
+            if(!ok)return missing(pc,"request manager latched");
+            return eax;}
+        case 0x46c240:{
+            if(!ctx)return missing(pc,"46C240 outside a call context");
+            routed(pc);std::uint32_t eax{};
+            if(!native_race_requests_call(c,ctx->matrices,0x46c240u,{},eax,0u))return missing(pc,"4829D0 (the request manager is latched)");
+            return eax;}
         // 46C380(&table) (variant 5, 44E590 state E): 481650, the request manager's copy of the
         // lane 0 placements (4F03E0(0): the payload [84D6CC handle]) into its heap (the native
         // port START uses); [table] = the copy's handle.

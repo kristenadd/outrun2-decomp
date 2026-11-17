@@ -27,7 +27,10 @@
 #include "driving/pc_crash.hpp"
 #include "driving/pc_wrecker.hpp"
 #include "driving/pc_course_query.hpp"
+#include "driving/pc_car_services_ghost.hpp"
 #include "driving/pc_course_world.hpp"
+#include "driving/pc_ground_collision.hpp"
+#include "driving/pc_collision.hpp"
 #include "driving/pc_wall_geometry.hpp"
 #include "platform/pc_scene_renderer.hpp"
 #include "platform/pc_render_flush.hpp"
@@ -166,6 +169,12 @@ void map_memory(NativeRuntimeContext& c,NativeRaceTraffic& t){
     m.map(NativeRaceTraffic::ObjectWorkBase,t.object_works.data(),t.object_works.size());
     {auto& area=native_race_area(c);
         for(std::uint32_t l=0;l<3;++l){put32(t.cells_84d6c0.data()+l*4u,area.dynamics[l].payload);put32(t.cells_84d6c0.data()+0xcu+l*4u,area.placements[l].handle);}
+        // Variant 5: START's 4F03A0(&table, 0) makes lane 0's handle 84D6CC the request
+        // manager's copy of the placements (481650, in its heap) until a stage change's own
+        // 46C380 / 4F03A0 replaces it; the request objects' spawner (521AE0: the beach balls)
+        // takes its records from there (4F03E0(0)).
+        if(c.game_mode.game_variant==5u&&!area.placements[0].handle&&c.start_mode.scene_owner_object_handle_84d6cc)
+            put32(t.cells_84d6c0.data()+0xcu,c.start_mode.scene_owner_object_handle_84d6cc);
         m.map(0x84d6c0u,t.cells_84d6c0.data(),t.cells_84d6c0.size());
         // the race manager's 4F0DD0 block 84CEC8..84D8F4 around the lane cells: object records
         // (4F0BD0 / 4F0E40), the 84D8E0 frame and 84D8F0; the first record's head 84CEA0 here
@@ -256,6 +265,32 @@ bool native_get_road_ofs_4a4010(NativeRuntimeContext& c,PcRaceMemory& mem,drivin
 
 namespace {
 const TranslatedModule* requests_clock_module();   // below: the request manager's chained leaves
+void map_course_world_pc(PcRaceMemory& m,const CourseWorldRuntime& world);   // below: the course roots 780100..
+// 40A240: D3DXMatrixInverse(cur, NULL, cur) (row-major 4x4, float); a singular matrix stays as is.
+void matrix_invert_current(driving::PcMatrixStack& matrices){
+    std::array<std::uint8_t,0x40> b{};driving::pc_matrix_get(matrices,driving::Bytes(b.data(),b.size()));
+    float m[16],inv[16];std::memcpy(m,b.data(),64);
+    inv[0]=m[5]*m[10]*m[15]-m[5]*m[11]*m[14]-m[9]*m[6]*m[15]+m[9]*m[7]*m[14]+m[13]*m[6]*m[11]-m[13]*m[7]*m[10];
+    inv[4]=-m[4]*m[10]*m[15]+m[4]*m[11]*m[14]+m[8]*m[6]*m[15]-m[8]*m[7]*m[14]-m[12]*m[6]*m[11]+m[12]*m[7]*m[10];
+    inv[8]=m[4]*m[9]*m[15]-m[4]*m[11]*m[13]-m[8]*m[5]*m[15]+m[8]*m[7]*m[13]+m[12]*m[5]*m[11]-m[12]*m[7]*m[9];
+    inv[12]=-m[4]*m[9]*m[14]+m[4]*m[10]*m[13]+m[8]*m[5]*m[14]-m[8]*m[6]*m[13]-m[12]*m[5]*m[10]+m[12]*m[6]*m[9];
+    inv[1]=-m[1]*m[10]*m[15]+m[1]*m[11]*m[14]+m[9]*m[2]*m[15]-m[9]*m[3]*m[14]-m[13]*m[2]*m[11]+m[13]*m[3]*m[10];
+    inv[5]=m[0]*m[10]*m[15]-m[0]*m[11]*m[14]-m[8]*m[2]*m[15]+m[8]*m[3]*m[14]+m[12]*m[2]*m[11]-m[12]*m[3]*m[10];
+    inv[9]=-m[0]*m[9]*m[15]+m[0]*m[11]*m[13]+m[8]*m[1]*m[15]-m[8]*m[3]*m[13]-m[12]*m[1]*m[11]+m[12]*m[3]*m[9];
+    inv[13]=m[0]*m[9]*m[14]-m[0]*m[10]*m[13]-m[8]*m[1]*m[14]+m[8]*m[2]*m[13]+m[12]*m[1]*m[10]-m[12]*m[2]*m[9];
+    inv[2]=m[1]*m[6]*m[15]-m[1]*m[7]*m[14]-m[5]*m[2]*m[15]+m[5]*m[3]*m[14]+m[13]*m[2]*m[7]-m[13]*m[3]*m[6];
+    inv[6]=-m[0]*m[6]*m[15]+m[0]*m[7]*m[14]+m[4]*m[2]*m[15]-m[4]*m[3]*m[14]-m[12]*m[2]*m[7]+m[12]*m[3]*m[6];
+    inv[10]=m[0]*m[5]*m[15]-m[0]*m[7]*m[13]-m[4]*m[1]*m[15]+m[4]*m[3]*m[13]+m[12]*m[1]*m[7]-m[12]*m[3]*m[5];
+    inv[14]=-m[0]*m[5]*m[14]+m[0]*m[6]*m[13]+m[4]*m[1]*m[14]-m[4]*m[2]*m[13]-m[12]*m[1]*m[6]+m[12]*m[2]*m[5];
+    inv[3]=-m[1]*m[6]*m[11]+m[1]*m[7]*m[10]+m[5]*m[2]*m[11]-m[5]*m[3]*m[10]-m[9]*m[2]*m[7]+m[9]*m[3]*m[6];
+    inv[7]=m[0]*m[6]*m[11]-m[0]*m[7]*m[10]-m[4]*m[2]*m[11]+m[4]*m[3]*m[10]+m[8]*m[2]*m[7]-m[8]*m[3]*m[6];
+    inv[11]=-m[0]*m[5]*m[11]+m[0]*m[7]*m[9]+m[4]*m[1]*m[11]-m[4]*m[3]*m[9]-m[8]*m[1]*m[7]+m[8]*m[3]*m[5];
+    inv[15]=m[0]*m[5]*m[10]-m[0]*m[6]*m[9]-m[4]*m[1]*m[10]+m[4]*m[2]*m[9]+m[8]*m[1]*m[6]-m[8]*m[2]*m[5];
+    const float det=m[0]*inv[0]+m[1]*inv[4]+m[2]*inv[8]+m[3]*inv[12];
+    if(det==0.0f)return;
+    const float r=1.0f/det;for(float& v:inv)v*=r;
+    std::memcpy(b.data(),inv,64);driving::pc_matrix_load(matrices,driving::Bytes(b.data(),b.size()));
+}
 struct Run {
     NativeRuntimeContext& c;
     NativeRaceTraffic& t;
@@ -713,11 +748,110 @@ struct Run {
         // The request manager's display (481810 and its objects): the matrix stack, vector leaves
         // (x87 single results, as in the PC: fld / fadd / fstp), the D3D transform and 410670.
         case 0x409ef0u:routed(pc);driving::pc_matrix_push(matrices);return 0u;
+        case 0x40a020u:routed(pc);driving::pc_matrix_identity(matrices);return 0u;
+        case 0x40a0d0u:routed(pc);driving::pc_matrix_get(matrices,m().bytes(a[0],0x40));return 0u;
+        case 0x40a220u:routed(pc);driving::pc_matrix_multiply_current(matrices,m().bytes(a[0],0x40));return 0u;   // cur = left * cur
+        case 0x40a250u:{routed(pc);const auto t=driving::pc_matrix_translation(matrices);
+            m().putf(a[0],t.x);m().putf(a[0]+4u,t.y);m().putf(a[0]+8u,t.z);return 0u;}
+        case 0x40a290u:{routed(pc);float x,y,z;std::memcpy(&x,&a[0],4);std::memcpy(&y,&a[1],4);std::memcpy(&z,&a[2],4);
+            driving::pc_matrix_translate_vector(matrices,{x,y,z});return 0u;}
+        case 0x40a2d0u:routed(pc);driving::pc_matrix_translate_vector(matrices,{m().f32(a[0]),m().f32(a[0]+4u),m().f32(a[0]+8u)});return 0u;
+        case 0x4f6bd0u:{routed(pc);   // 4F6BD0(seg, box): does the segment (x [+0], z [+8]) -> (x [+C], z [+14]) cross the box (x [+C]..[+0], z [+14]..[+8])? (the beach ball)
+            float eps;std::memcpy(&eps,exe_image_bytes(0x5e0ab8u,4),4);
+            auto f=[&](std::uint32_t p){return m().f32(p);};
+            const std::uint32_t s0=a[0],b=a[1];
+            auto cross=[&](float d,float from,float to,float lo,float hi,float o0,float o1,float blo,float bhi)->bool{
+                // t = (to - from) / d in [0, 1]; the other coordinate (1 - t) * o0 + t * o1 within [blo, bhi]
+                (void)lo;(void)hi;
+                const float t=(to-from)/d;if(t<0.0f||1.0f<t)return false;
+                const float v=(1.0f-t)*o0+o1*t;return !(blo>v)&&!(v>bhi);};
+            const float dx=f(s0+0xcu)-f(s0),dz=f(s0+0x14u)-f(s0+8u);
+            const float adx=dx<0.0f?-dx:dx,adz=dz<0.0f?-dz:dz;
+            if(dx<eps&&!(eps>adx)&&cross(dx,f(s0),f(b),0,0,f(s0+8u),f(s0+0x14u),f(b+0x14u),f(b+8u)))return 1u;
+            if(!(-eps>=dx)&&!(eps>adx)&&cross(dx,f(s0),f(b+0xcu),0,0,f(s0+8u),f(s0+0x14u),f(b+0x14u),f(b+8u)))return 1u;
+            if(dz<eps&&!(eps>adz)&&cross(dz,f(s0+8u),f(b+8u),0,0,f(s0),f(s0+0xcu),f(b+0xcu),f(b)))return 1u;
+            if(!(-eps>=dz)&&!(eps>adz)&&cross(dz,f(s0+8u),f(b+0x14u),0,0,f(s0),f(s0+0xcu),f(b+0xcu),f(b)))return 1u;
+            return 0u;}
+        case 0x40a240u:routed(pc);matrix_invert_current(matrices);return 0u;
+        // 4536C0 / 4536F0(mask): the race pad's held / pressed buttons (47F110 = player 0:
+        // [7D6770] / [7D6778] & mask), as the race end answers 4536F0.
+        case 0x4536c0u:routed(pc);return c.race.car_world.switch_7d6770.held&a[0];
+        case 0x4536f0u:routed(pc);return c.race.car_world.switch_7d6770.pressed&a[0];
+        // 4AA370(obj) (the request objects 0x15 / 0x16, 50976C): does a car touch the object?
+        // Cars 0..17 (one for the kinds 570021 + n whose 4AA544 byte is 0): each live car
+        // (79FB50 + i & 3 == 2, work [799D18 + i * 3C]) takes the object point +40 into its frame
+        // (identity, translate +D28, x car +70, inverse); a hit is |z| <= [+90] + half length
+        // (+340 - +34C) and |x| <= [+90] + half width (+338 - +344): sound [+78] in a race
+        // (mode 16, car +4 bit 0 without bit 1), [+80] = i + 8; returns whether any car hit.
+        case 0x4aa370u:{routed(pc);
+            const std::uint32_t o=a[0];
+            const std::uint32_t idx=m().u32(o+0x64u)-0x570021u;
+            const std::uint32_t count=(idx<=0x18u&&*exe_image_bytes(0x4aa544u+idx,1)==0u)?1u:0x18u;
+            auto f=[&](std::uint32_t p){return m().f32(p);};
+            std::uint32_t hit=0u;
+            driving::pc_matrix_push(matrices);
+            for(std::uint32_t i=0;i<count;++i){
+                if((m().u8(0x79fb50u+i)&3u)!=2u)continue;
+                const std::uint32_t car=m().u32(0x799d18u+i*0x3cu);
+                const float hw=(f(car+0x338u)-f(car+0x344u))*0.5f,hl=(f(car+0x340u)-f(car+0x34cu))*0.5f;
+                driving::pc_matrix_identity(matrices);
+                driving::pc_matrix_translate_vector(matrices,{f(car+0xd28u),f(car+0xd2cu),f(car+0xd30u)});
+                driving::pc_matrix_multiply_current(matrices,m().bytes(car+0x70u,0x40));
+                matrix_invert_current(matrices);
+                const auto p=driving::pc_matrix_point(matrices,{f(o+0x40u),f(o+0x44u),f(o+0x48u)});
+                const float rz=f(o+0x90u)+hl;if(0.0f-rz>p.z||p.z>rz)continue;
+                const float rx=f(o+0x90u)+hw;if(p.x>rx||0.0f-rx>p.x)continue;
+                const std::uint32_t flags=m().u32(car+4u);
+                if(m().mapped(0x78026cu,4)&&m().u32(0x78026cu)==0x10u&&(flags&1u)&&!(flags&2u)&&m().u32(o+0x78u)){
+                    PcRaceCall s{};s.pc=0x424940u;s.argc=1;s.args[0]=m().u32(o+0x78u);(void)(*this)(s);}
+                hit=1u;m().put32(o+0x80u,i+8u);
+            }
+            driving::pc_matrix_pop(matrices);
+            return hit;}
+        case 0x40a310u:routed(pc);driving::pc_matrix_translate_vector(matrices,{-m().f32(a[0]),-m().f32(a[0]+4u),-m().f32(a[0]+8u)});return 0u;   // 40A310(v): translate by -v
+        case 0x40a3e0u:case 0x40a410u:case 0x40a440u:{routed(pc);float r;std::memcpy(&r,&a[0],4);
+            if(pc==0x40a3e0u)driving::pc_matrix_rotate_x(matrices,r);else if(pc==0x40a410u)driving::pc_matrix_rotate_y(matrices,r);else driving::pc_matrix_rotate_z(matrices,r);
+            return 0u;}
+        case 0x40a360u:{routed(pc);   // 40A360(sx, sy, sz): D3DXMatrixScaling(&s), cur = s * cur (the beach balls, 50ADA0)
+            std::array<std::uint8_t,0x40> s{};
+            for(unsigned q=0;q<4u;++q){float v=1.0f;if(q<3u)std::memcpy(&v,&a[q],4);std::memcpy(s.data()+q*0x14u,&v,4);}
+            driving::pc_matrix_multiply_current(matrices,driving::Bytes(s.data(),s.size()));return 0u;}
+        case 0x40a8a0u:{routed(pc);   // 40A8A0(out, in): the inverse-rotated vector
+            const auto v=driving::pc_matrix_inverse_vector(matrices,{m().f32(a[1]),m().f32(a[1]+4u),m().f32(a[1]+8u)});
+            m().putf(a[0],v.x);m().putf(a[0]+4u,v.y);m().putf(a[0]+8u,v.z);return 0u;}
         case 0x409f30u:routed(pc);driving::pc_matrix_push_unit(matrices);return 0u;
-        case 0x40a820u:case 0x40a840u:{routed(pc);
-            const driving::CourseProbe v{m().f32(a[0]),m().f32(a[0]+4u),m().f32(a[0]+8u)};
+        case 0x40a820u:case 0x40a840u:{routed(pc);   // (out, in), as D3DX
+            const driving::CourseProbe v{m().f32(a[1]),m().f32(a[1]+4u),m().f32(a[1]+8u)};
             const auto p=pc==0x40a820u?driving::pc_matrix_vector(matrices,v):driving::pc_matrix_inverse_point(matrices,v);
-            m().putf(a[1],p.x);m().putf(a[1]+4u,p.y);m().putf(a[1]+8u,p.z);return 0u;}
+            m().putf(a[0],p.x);m().putf(a[0]+4u,p.y);m().putf(a[0]+8u,p.z);return 0u;}
+        case 0x40ef00u:{routed(pc);   // 40EF00(v): D3DXVec3Normalize(v, v); returns v
+            const auto n=driving::pc_normalize_vector_40ef00({m().f32(a[0]),m().f32(a[0]+4u),m().f32(a[0]+8u)});
+            m().putf(a[0],n.x);m().putf(a[0]+4u,n.y);m().putf(a[0]+8u,n.z);return a[0];}
+        case 0x43f370u:{   // 43F370(p): the course length word under the point (43EB60 mode 0x100), 0 off the course (as race_ghosts_runtime)
+            routed(pc);
+            auto& world=c.start_mode.scene_owner_course_world;
+            if(!world.query_ready())missing(pc,"course world not ready");
+            const auto tables=world.tables();
+            driving::CourseProbe point{m().f32(a[0]),m().f32(a[0]+4u),m().f32(a[0]+8u)};
+            std::uint32_t polygon=a[0];
+            driving::CourseWorldQuery q{tables,matrices,c.event_function36.car_select.race_prediction};
+            const std::uint32_t type=driving::get_y_position_prog(q,0x100u,point,&polygon,nullptr,nullptr);
+            if(polygon==0xffffffffu)return 0u;
+            if(type>3u||!tables.courses[type].runs.present)missing(pc,"course type without a length table");
+            const auto& lengths=tables.courses[type].runs.lengths;
+            if(std::size_t(polygon)*2u+2u>lengths.size())missing(pc,"polygon outside the length table");
+            return std::uint32_t(std::uint16_t(lengths.i16(std::size_t(polygon)*2u)));}
+        case 0x449640u:{routed(pc);   // 449640(out, matrix): its angles (rows normalised in place); NULL: the current matrix
+            std::array<std::uint8_t,0x40> cur{};
+            driving::Bytes mat=a[1]?m().bytes(a[1],0x30):driving::Bytes(cur.data(),cur.size());
+            if(!a[1])driving::pc_matrix_get(matrices,driving::Bytes(cur.data(),cur.size()));
+            const auto r=driving::pc_matrix_angles_449640(mat);
+            m().putf(a[0],r[0]);m().putf(a[0]+4u,r[1]);m().putf(a[0]+8u,r[2]);return a[0];}
+        case 0x40eff0u:{routed(pc);   // 40EFF0(out, a, b): out = a x b (each component rounded to float)
+            using driving::X87;using driving::x87_float;
+            const X87 ax(m().f32(a[1])),ay(m().f32(a[1]+4u)),az(m().f32(a[1]+8u)),bx(m().f32(a[2])),by(m().f32(a[2]+4u)),bz(m().f32(a[2]+8u));
+            const float x=x87_float(bz*ay-az*by),y=x87_float(az*bx-bz*ax),z=x87_float(ax*by-bx*ay);
+            m().putf(a[0],x);m().putf(a[0]+4u,y);m().putf(a[0]+8u,z);return a[0];}
         case 0x40ef10u:{routed(pc);   // 40EF10(a, b): a += b
             for(std::uint32_t i=0;i<12u;i+=4u)m().putf(a[0]+i,driving::x87_float(driving::X87(m().f32(a[0]+i))+driving::X87(m().f32(a[1]+i))));
             return 0u;}
@@ -763,9 +897,9 @@ struct Run {
             renderer->device().set_transform(a[0]<10u?States[a[0]]:2u,mtx);return 0u;}
         case 0x40a170u:routed(pc);driving::pc_matrix_load(matrices,m().bytes(a[0],0x40));return 0u;
         case 0x40a010u:routed(pc);driving::pc_matrix_pop(matrices);return 0u;
-        case 0x40a7d0u:{routed(pc);
-            const auto p=driving::pc_matrix_point(matrices,{m().f32(a[0]),m().f32(a[0]+4u),m().f32(a[0]+8u)});
-            m().putf(a[1],p.x);m().putf(a[1]+4u,p.y);m().putf(a[1]+8u,p.z);return 0u;}
+        case 0x40a7d0u:{routed(pc);   // 40A7D0(out, in): D3DXVec3TransformCoord(out, in, current)
+            const auto p=driving::pc_matrix_point(matrices,{m().f32(a[1]),m().f32(a[1]+4u),m().f32(a[1]+8u)});
+            m().putf(a[0],p.x);m().putf(a[0]+4u,p.y);m().putf(a[0]+8u,p.z);return 0u;}
         case 0x449940u:{routed(pc);   // as mission_project_495d90; its ST0 result is discarded (4FAF44 fstp st(0))
             float a0,a1;std::memcpy(&a0,&a[0],4);std::memcpy(&a1,&a[1],4);
             const auto t=driving::pc_matrix_point(matrices,{m().f32(a[2]),m().f32(a[2]+4u),m().f32(a[2]+8u)});
@@ -806,6 +940,34 @@ struct Run {
             (void)sub(0x424940u,{0x4du});(void)sub(0x424940u,{0x16cu});
             return 0u;}
         case 0x4fbbb0u:if(!ctx)break;routed(pc);return traffic_request_car_4fbbb0(*ctx,k.ecx,a[0],a[1]);   // the request manager's cars
+        // 43E7E0(EAX = list word offset; mode, x, &y, z, &polygon, &flags, type): GetRoadCond on the
+        // type's course: y in (the reference) and out, polygon dword, flags word; all written
+        // even on a miss ({FLT_MAX, -1, 0}). Reached from the translated 43ED20 / 43EEE0.
+        case 0x43e7e0u:{
+            routed(pc);
+            auto& world=c.start_mode.scene_owner_course_world;
+            if(!world.query_ready()||a[6]>=4u)missing(pc,"course world not ready / type outside 0..3");
+            const auto tables=world.tables();
+            float x,z;std::memcpy(&x,&a[1],4);std::memcpy(&z,&a[3],4);
+            const auto r=driving::get_road_cond(tables.courses[a[6]],std::uint16_t(k.eax),a[0],x,m().f32(a[2]),z,tables.tuning);
+            m().putf(a[2],r.y);m().put32(a[4],std::uint32_t(r.polygon));m().put16(a[5],r.flags);
+            return 0u;}
+        case 0x43cb40u:{routed(pc);float x,z;std::memcpy(&x,&a[0],4);std::memcpy(&z,&a[1],4);return driving::calc_collision_area(x,z);}   // 43CB40(x, z): CalcCollisionArea
+        case 0x43d920u:{   // 43D920(&first, &last, selector, hint): the course run at the selector (primary / secondary)
+            routed(pc);
+            auto& world=c.start_mode.scene_owner_course_world;
+            if(!world.query_ready())missing(pc,"course world not ready");
+            std::int32_t first=m().i32(a[0]),last=m().i32(a[1]);
+            const auto r=driving::find_selected_course_run(world.tables(),m().bytes(a[2],0x10),std::int32_t(a[3]),first,last);
+            m().put32(a[0],std::uint32_t(first));m().put32(a[1],std::uint32_t(last));return std::uint32_t(r);}
+        case 0x43f8c0u:   // 43F8C0(mode): request the next mode (4FED0D: the request manager's goal, 0x18 ending / 0x22)
+            routed(pc);if(!native_runtime_request_mode(c,a[0]))missing(pc,"mode "+std::to_string(a[0])+" outside the mode table");return 0u;
+        case 0x4278c0u:routed(pc);c.race.sound_commands.push_back(a[0]);c.pc_sound.unload_4278c0(a[0]);return 0u;   // 4278C0(request): unload a sound bank
+        case 0x448990u:{routed(pc);   // 448990(id): release a resource (as the AREA's: its requested / released sets)
+            auto& o=native_race_area(c);if(a[0]<0x223u){o.released.insert(a[0]);o.requested.erase(a[0]);}return 0u;}
+        case 0x44bf10u:routed(pc);   // 44BF10: [7D33BC] = [7D33C4] = [7D3188] = 0 (the course table, at the manager's destroy)
+            for(std::uint32_t at:{0x7d33bcu,0x7d33c4u,0x7d3188u})if(m().mapped(at,4))m().put32(at,0u);
+            return 0u;
         case 0x4ef870u:routed(pc);m().put32(0x84cc18u,a[0]);return 0u;   // 4EF870(v): [84CC18] = v (the appear override 4F... reads)
         case 0x48b140u:routed(pc);return c.start_mode.course_choice_655b59&0xffu;   // 48B140: movzx [655B59] (as START)
         case 0x49a650u:case 0x41bd40u:routed(pc);return 0u;   // ret (the empty callback / virtual; 41BD40: the request objects' +10)
@@ -899,6 +1061,14 @@ struct Run {
                 missing(ui.missing_pc?ui.missing_pc:pc,"sprite resource service");
             routed(pc);return value;}
         if(bulk_translated(pc)&&ctx){routed(pc);return bulk_call(m(),ctx->service,k,&matrices,&c.event_function36.pc_crt_random_state);}
+        // A scalar deleting destructor (the request manager's objects, through their vtables):
+        // the translated body on ECX, then free when [esp+4] & 1; returns ECX.
+        if(std::uint32_t body;ctx&&translated_scalar_deleting_dtor(pc,body)&&bulk_translated(body)){
+            routed(pc);
+            PcRaceCall q{};q.pc=body;q.ecx=k.ecx;
+            (void)bulk_call(m(),ctx->service,q,&matrices,&c.event_function36.pc_crt_random_state,requests_clock_module());
+            if((a[0]&1u)&&t.requests_heap)t.requests_heap->free(k.ecx);
+            return k.ecx;}
         missing(pc,"traffic service not ported");
     }
 };
@@ -946,7 +1116,8 @@ void native_race_requests_map(NativeRuntimeContext& c,PcRaceMemory& m){
     t.requests_heap->map(m);
     if(t.requests_cells.empty()){
         static constexpr std::pair<std::uint32_t,std::uint32_t> Cells[]{{0x84d900u,0x80u},{0x850b80u,0x20u},{0x854d00u,0x40u},
-            {0x856940u,0x10u},{0x8572a0u,0x28u},{0x85b338u,0x188u}};   // 85B338 / 85B33C: 5217E0's statics (85B340 its guard bits)
+            {0x856940u,0x10u},{0x8572a0u,0x28u},{0x85b324u,0x2b68u}};   // 85B324..85B334: 521350's statics; 85B338 / 85B33C: 5217E0's (85B340 guard bits);
+            // 85B350: the request objects' list (521A20 / 5219B0 / 521AE0): count, then 250 (0xFA) entries of 2C at 85B354..85DE4C
         std::vector<std::uint8_t> data(0x100u);
         std::memcpy(data.data(),exe_image_bytes(0x64f000u,0x100u),0x100u);
         t.requests_cells.emplace_back(0x64f000u,std::move(data));
@@ -1176,6 +1347,7 @@ bool native_race_requests_display(NativeRuntimeContext& c,PcSceneRenderer& r,std
     try{
         map_memory(c,t);racers_in(c,t);
         t.memory.map(0x899b98u,r.environment().lights_899b98.data(),r.environment().lights_899b98.size());
+        if(c.start_mode.scene_owner_course_world.query_ready())map_course_world_pc(t.memory,c.start_mode.scene_owner_course_world);
         PcRaceContext ctx{t.memory,matrices,[&](const PcRaceCall& k){return run(k);},&draws};
         run.ctx=&ctx;
         PcRaceCall k{};k.pc=0x46c210u;k.argc=1;k.args[0]=work;
@@ -1318,18 +1490,23 @@ std::uint32_t requests_stage_script_4829d0(NativeRuntimeContext& c,PcRaceContext
         PcRaceCall k{};k.pc=pc;for(auto v:args)k.args[k.argc++]=v;return ctx.service(k);};
     if(m.i32(B+0xa8u)>=3)return 1u;
     const auto& rt=c.game_mode.course_runtime;
-    auto course_id=[&](const std::array<std::uint8_t,driving::PcCourseRecord44d720Size>& record)->std::uint32_t{
-        std::uint32_t token;std::memcpy(&token,record.data()+0x14u,4);
+    auto course_id_of=[&](std::uint32_t token)->std::uint32_t{
         if(!c.game_mode.course_assets)throw TrafficUnported(0x4829d0u,"no course descriptors");
         const auto tables=driving::course_descriptor_tables_r078(c.game_mode.course_assets->descriptors);
         for(std::size_t i=0;i<tables.primary_count;++i)if(tables.primary[i].token==token&&tables.primary[i].size>=4u){
             std::uint32_t id;std::memcpy(&id,tables.primary[i].data,4);return id;}
         throw TrafficUnported(0x4829d0u,"stage descriptor token not in the course tables");};
+    auto course_id=[&](const std::array<std::uint8_t,driving::PcCourseRecord44d720Size>& record){
+        std::uint32_t token;std::memcpy(&token,record.data()+0x14u,4);return course_id_of(token);};
     if(m.u32(B+0x168u)==0xffffffffu){
-        std::uint32_t key=0xfu;if(rt.selected_copy_active)std::memcpy(&key,rt.selected_7d30a8.data()+4u,4);   // 44C830
+        // 44C830: the current course record [7D3188] (7D30A8 at START, a course table record
+        // after a stage change): its +4 key, 0xF without one; 482A19: [140] = the first word of
+        // its primary descriptor ([rec+14]).
+        const std::uint32_t cur=m.mapped(0x7d3188u,4)?m.u32(0x7d3188u):0u;
+        const std::uint32_t key=cur?m.u32(cur+4u):0xfu;
         m.put32(B+0x13cu,key);
         if(key==0xfu){std::uint32_t k2;std::memcpy(&k2,rt.selected_7d2de0.data()+4u,4);m.put32(B+0x13cu,k2);m.put32(B+0x140u,course_id(rt.selected_7d2de0));}
-        else m.put32(B+0x140u,course_id(rt.selected_7d30a8));
+        else m.put32(B+0x140u,course_id_of(m.u32(cur+0x14u)));
     }else{
         const std::uint32_t v=m.u32(B+0x168u);
         m.put32(B+0x13cu,v);m.put32(B+0x16cu,service(0x44c940u,{v})-1u);
@@ -1379,6 +1556,93 @@ void leaf_449370(or2x86::Cpu& c){leaf_ret(c,or2x86::fpu_cos(leaf_arg(c,0)));}
 void leaf_449380(or2x86::Cpu& c){leaf_ret(c,or2x86::x87_sqrt_op(leaf_arg(c,0)));}
 void leaf_449390(or2x86::Cpu& c){const auto v=leaf_arg(c,0);leaf_ret(c,v<0?-v:v);}
 void leaf_4493a0(or2x86::Cpu& c){leaf_ret(c,or2x86::xv(std::int32_t(c.ecx)));}
+// 40EEB0(v): L = sqrt(x*x + y*y + z*z) on the x87 stack; when L > [6282A8] (a double) v is
+// scaled by 1 / L in place; returns L in ST0.
+void leaf_40eeb0(or2x86::Cpu& c){
+    using driving::X87;
+    const std::uint32_t v=or2x86::ld32(c,c.esp+4u);
+    auto fl=[&](std::uint32_t a){std::uint32_t b=or2x86::ld32(c,a);float f;std::memcpy(&f,&b,4);return X87(f);};
+    auto st=[&](std::uint32_t a,X87 x){const float f=driving::x87_float(x);std::uint32_t b;std::memcpy(&b,&f,4);or2x86::st32(c,a,b);};
+    const X87 x=fl(v),y=fl(v+4u),z=fl(v+8u);
+    const X87 len=driving::x87_sqrt(x*x+y*y+z*z);
+    double eps;std::memcpy(&eps,exe_image_bytes(0x6282a8u,8),8);
+    if(len.v>X87(eps).v){
+        const X87 inv=X87(exe_f32(0x62806cu))/len;
+        st(v,inv*fl(v));st(v+4u,inv*fl(v+4u));st(v+8u,inv*fl(v+8u));
+    }
+    c.fpu.push(len.v);c.esp+=4u;
+}
+// 449800(out, v): out = {-atan2(y, sqrt(z*z + x*x)), atan2(x, z), 0} (the beach balls, 50ADA0):
+// 449330 / 449380 on the x87 stack, the sum of squares in SSE singles.
+void leaf_449800(or2x86::Cpu& c){
+    const std::uint32_t o=or2x86::ld32(c,c.esp+4u),v=or2x86::ld32(c,c.esp+8u);
+    auto f32=[&](std::uint32_t a){const std::uint32_t b=or2x86::ld32(c,a);float f;std::memcpy(&f,&b,4);return f;};
+    auto put=[&](std::uint32_t a,float f){std::uint32_t b;std::memcpy(&b,&f,4);or2x86::st32(c,a,b);};
+    const float x=f32(v),y=f32(v+4u),z=f32(v+8u);
+    put(o+4u,float(or2x86::fpu_atan2(or2x86::x87_from_f32(or2x86::ld32(c,v)),or2x86::x87_from_f32(or2x86::ld32(c,v+8u)))));
+    const float sq=z*z+x*x;std::uint32_t sb;std::memcpy(&sb,&sq,4);
+    const float r=float(or2x86::x87_sqrt_op(or2x86::x87_from_f32(sb)));std::uint32_t rb;std::memcpy(&rb,&r,4);
+    std::uint32_t yb;std::memcpy(&yb,&y,4);
+    put(o,float(-or2x86::fpu_atan2(or2x86::x87_from_f32(yb),or2x86::x87_from_f32(rb))));
+    put(o+8u,0.0f);
+    c.esp+=4u;
+}
+// 40F140(a, b): the distance |a - b| = sqrt((dz*dz + dx*dx) + dy*dy) on the x87 stack, in ST0
+// (the beach balls' control).
+void leaf_40f140(or2x86::Cpu& c){
+    using driving::X87;
+    const std::uint32_t a=or2x86::ld32(c,c.esp+4u),b=or2x86::ld32(c,c.esp+8u);
+    auto fl=[&](std::uint32_t p){std::uint32_t u=or2x86::ld32(c,p);float f;std::memcpy(&f,&u,4);return X87(f);};
+    const X87 dx=fl(a)-fl(b),dy=fl(a+4u)-fl(b+4u),dz=fl(a+8u)-fl(b+8u);
+    c.fpu.push(driving::x87_sqrt((dz*dz+dx*dx)+dy*dy).v);c.esp+=4u;
+}
+// The beach balls' leaves (the request object 0x14, 50A140 / 509D80), cdecl, register-only:
+// 46D110(f): a band 6..0 in AL, the first of [6280C0] [5B4338] [5B4334] [5B4330] [5B432C]
+// [5B018C] that is >= f (SSE comiss); 46D180(obj, v): s = sin(|wrap([obj+160] * [628254] -
+// [v+4])|) stored as a float, then the same banding ([5B4348] on the x87 stack first, then
+// [5B4344] [5B4340] [628064] [5B433C] [6282C8]); 46D220(obj): (b[+36] + b[+35] + b[+34]) *
+// [628194] in ST0.
+std::uint32_t band_al(std::uint32_t eax,std::uint32_t k){return (eax&0xffffff00u)|k;}
+void leaf_46d110(or2x86::Cpu& c){
+    const std::uint32_t xb=or2x86::ld32(c,c.esp+4u);float x;std::memcpy(&x,&xb,4);
+    static constexpr std::uint32_t T[6]{0x6280c0u,0x5b4338u,0x5b4334u,0x5b4330u,0x5b432cu,0x5b018cu};
+    std::uint32_t k=0u;for(std::uint32_t i=0;i<6u;++i)if(exe_f32(T[i])>=x){k=6u-i;break;}
+    c.eax=band_al(c.eax,k);c.esp+=4u;
+}
+void leaf_46d180(or2x86::Cpu& c){
+    using driving::X87;
+    const std::uint32_t o=or2x86::ld32(c,c.esp+4u),v=or2x86::ld32(c,c.esp+8u);
+    auto fl=[&](std::uint32_t p){std::uint32_t u=or2x86::ld32(c,p);float f;std::memcpy(&f,&u,4);return f;};
+    const std::int32_t n=std::int16_t(or2x86::ld32(c,o+0x160u)&0xffffu);
+    float a=driving::x87_float(X87(n)*X87(exe_f32(0x628254u))-X87(fl(v+4u)));
+    const float hi=exe_f32(0x6280c8u),step=exe_f32(0x5a29dcu),lo=exe_f32(0x5a29d8u);   // 449470
+    if(a>hi){do a=a-step;while(a>hi);}
+    if(lo>a){do a=a+step;while(lo>a);}
+    const float ab=a<0.0f?-a:a;
+    const X87 sv=driving::x87_sin(X87(ab));const float sf=driving::x87_float(sv);
+    std::uint32_t k=0u;
+    if(!(X87(exe_f32(0x5b4348u)).v<sv.v))k=6u;
+    else{static constexpr std::uint32_t T[5]{0x5b4344u,0x5b4340u,0x628064u,0x5b433cu,0x6282c8u};
+        for(std::uint32_t i=0;i<5u;++i)if(exe_f32(T[i])>=sf){k=5u-i;break;}}
+    {std::uint32_t b;std::memcpy(&b,&sf,4);or2x86::st32(c,c.esp+4u,b);}   // 46D1B0 fst [esp+8] (the first argument's slot)
+    c.eax=band_al(c.eax,k);c.esp+=4u;
+}
+void leaf_46d220(or2x86::Cpu& c){
+    using driving::X87;
+    const std::uint32_t o=or2x86::ld32(c,c.esp+4u);
+    auto sb=[&](std::uint32_t p){return std::int32_t(std::int8_t(or2x86::ld8(c,p)));};
+    const std::int32_t n=sb(o+0x36u)+sb(o+0x35u)+sb(o+0x34u);
+    or2x86::st32(c,c.esp+4u,std::uint32_t(n));
+    c.fpu.push((X87(n)*X87(exe_f32(0x628194u))).v);c.esp+=4u;
+}
+// 40EFD0(a, b): the dot product (z*z + y*y) + x*x on the x87 stack, returned in ST0.
+void leaf_40efd0(or2x86::Cpu& c){
+    using driving::X87;
+    const std::uint32_t a=or2x86::ld32(c,c.esp+4u),b=or2x86::ld32(c,c.esp+8u);
+    auto fl=[&](std::uint32_t p){std::uint32_t u=or2x86::ld32(c,p);float f;std::memcpy(&f,&u,4);return X87(f);};
+    const X87 d=(fl(a+8u)*fl(b+8u)+fl(a+4u)*fl(b+4u))+fl(a)*fl(b);
+    c.fpu.push(d.v);c.esp+=4u;
+}
 // 4AF500 (fld [842110]: the race clock in ST0, read by the manager's 482140 / 4812D5) is in
 // the network translation set: chained on the same CPU (its x87 result stays on the stack).
 const TranslatedModule* requests_clock_module(){
@@ -1389,7 +1653,8 @@ const TranslatedModule* requests_clock_module(){
         for(const auto& f:{TranslatedFunction{0x449330u,leaf_449330},TranslatedFunction{0x449350u,leaf_449350},
                            TranslatedFunction{0x449360u,leaf_449360},TranslatedFunction{0x449370u,leaf_449370},
                            TranslatedFunction{0x449380u,leaf_449380},TranslatedFunction{0x449390u,leaf_449390},
-                           TranslatedFunction{0x4493a0u,leaf_4493a0}})v.push_back(f);
+                           TranslatedFunction{0x4493a0u,leaf_4493a0},TranslatedFunction{0x40eeb0u,leaf_40eeb0},
+                           TranslatedFunction{0x40efd0u,leaf_40efd0},TranslatedFunction{0x449800u,leaf_449800},TranslatedFunction{0x40f140u,leaf_40f140},TranslatedFunction{0x46d110u,leaf_46d110},TranslatedFunction{0x46d180u,leaf_46d180},TranslatedFunction{0x46d220u,leaf_46d220}})v.push_back(f);
         v.push_back(TranslatedFunction{0,nullptr});return v;}();
     static const TranslatedModule module=[]{TranslatedModule m{functions.data(),nullptr,{}};m.code_data=network_code_data;return m;}();
     return &module;
@@ -1398,9 +1663,22 @@ const TranslatedModule* requests_clock_module(){
 bool native_race_requests_call(NativeRuntimeContext& c,driving::PcMatrixStack& matrices,std::uint32_t pc,
                                std::initializer_list<std::uint32_t> args,std::uint32_t& eax,std::uint32_t ecx){
     auto& t=native_race_traffic(c);
-    if(t.latched)return false;
+    if(pc==0x46c2d0u){   // 46C2D0 builds a new request manager (START): a latch of the last race's teardown no longer applies
+        t.latched=false;t.fault=0;t.error.clear();t.heart_latched=false;t.heart_fault=0;t.heart_error.clear();
+        t.requests_display_latched=false;t.requests_display_fault=0;t.requests_display_error.clear();
+    }
+    // The AREA's stage change (44E590 states 6 / 7) waits on the manager: once it is latched
+    // (a fault, reported), those entries answer as a finished manager so the race goes on to
+    // the next stage instead of holding the area (a frozen stage change) for good.
+    auto latched_answer=[&]()->bool{
+        switch(pc){
+        case 0x46c240u:case 0x46c4d0u:eax=1u;return true;   // the stage script / resources: done
+        case 0x46c4c0u:case 0x46c260u:case 0x46c2c0u:eax=0u;return true;   // the stage reset
+        default:return false;}};
+    if(t.latched)return latched_answer();
     bool done=false;
     const bool ok=run_traffic(c,matrices,[&](PcRaceContext& ctx){
+        if(c.start_mode.scene_owner_course_world.query_ready())map_course_world_pc(ctx.m,c.start_mode.scene_owner_course_world);   // the manager's course queries (780100.. roots)
         if(pc==0x46c240u){eax=requests_stage_script_4829d0(c,ctx,matrices);done=true;return;}
         if(pc==0x46c4d0u){eax=requests_resources_481590(c,ctx.m);done=true;return;}
         PcRaceCall k{};k.pc=pc;k.ecx=ecx;k.argc=std::uint32_t(args.size());
@@ -1415,6 +1693,7 @@ bool native_race_requests_call(NativeRuntimeContext& c,driving::PcMatrixStack& m
         if(k.pc==0x46c1f0u&&!bulk_translated(k.pc)){k.pc=0x481250u;k.ecx=NativeRaceTraffic::RequestsBase;k.argc=1;k.args[0]=0u;}
         if(!bulk_translated(k.pc))throw TrafficUnported(pc,"request manager entry neither native nor translated");
         eax=bulk_call(ctx.m,ctx.service,k,&matrices,&c.event_function36.pc_crt_random_state,requests_clock_module());done=true;});
+    if(!ok&&t.latched)return latched_answer();
     return ok&&done;
 }
 // 481650 (ECX = 7F9460, [esp+4] = &table), from 46C380:
