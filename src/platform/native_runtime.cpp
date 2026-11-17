@@ -3,6 +3,7 @@
 #include "enhancements/frame_rate.hpp"
 #include "platform/race_variant_owners.hpp"
 #include "platform/pc_input_devices.hpp"
+#include "platform/online_sign_in.hpp"
 #include "platform/pc_network.hpp"
 #include "platform/race_end_runtime.hpp"
 #include "platform/race_ghosts_runtime.hpp"
@@ -1906,9 +1907,17 @@ void native_state2_gate_configure(void* user,driving::Bytes,
 }
 
 void native_state2_gate_action(void* user,std::uint32_t pc_entry,
-                               driving::Bytes,std::uint32_t){
+                               driving::Bytes owner,std::uint32_t key){
     if(!user||pc_entry!=0x00444fe0u)return;
-    ++static_cast<NativeEventFunction36State*>(user)->state2_gate_action_calls;
+    auto& state=*static_cast<NativeEventFunction36State*>(user);
+    ++state.state2_gate_action_calls;
+    // 444FE0(0x15) from 445810 (Y in the menus): the license chooser pushed on the
+    // history. Other keys (445A50's 0x2E notice) stay counted only.
+    if(key!=21u||!state.license_owners){state.frontend_last_missing_key=key;state.frontend_last_missing_action=pc_entry;return;}
+    if(frontend_push_444fe0(owner,key,native_frontend_stack(state))){
+        ++state.frontend_gate_owner_actions;++state.frontend_stack_pushes;
+        state.frontend_last_missing_key=~0u;state.frontend_last_missing_action=0u;
+    }
 }
 
 // 445A50's message: sprintf(buffer, text 0x340 / 0x341, the slot's name) then the network
@@ -2033,6 +2042,7 @@ void native_event36_state2_call(NativeEventFunction36State& state,
             inputs.alternate_7d68bc=state.frontend_queue.alternate_7d68bc;
             if(state.runtime)inputs.system_handle_67f614=std::uint32_t(state.runtime->start_mode.start_system_handle_67f614);   // 4999C0
             inputs.menu_state_7d38f0=state.runtime?race_over_state_450240(state.runtime->race.manager.state):0u;   // race manager binding: 7D38F0
+            inputs.player0_feature_mask=state.title_player0_feature_mask;   // 4536F0: X / Y (0x10 / 0x20)
             const driving::PcRuntimeGate445810Services gate_services{
                 &state,native_state2_gate_configure,native_state2_gate_action};
             driving::object_runtime_gate_445810(
@@ -4303,6 +4313,20 @@ bool native_runtime_event_function36_invoke(
                 else state.title_player0_feature_mask&=~1u;
             }else if(c.input_state.connected)state.title_player0_feature_mask|=1u;
             else state.title_player0_feature_mask&=~1u;
+            // 445810 (the root owner's X / Y gate) reads 4536F0 bits 0x10 and 0x20, the PC
+            // device buttons 0x8 / 0x10 of table 5A7BC0: 0x10 opens the online SIGN-IN
+            // dialog (key 22, 4DEC60; hint slot 0x8000 = X, "FRIENDS"), 0x20 the license
+            // chooser (key 21, hint slot 0x4000 = Y). They are this frame's presses (4536F0
+            // reads +8). The frontend mask keeps X / Y as 0x8000 / 0x4000 for 48F5F0 (the hint
+            // animation and sound); not in the race, where X is the view change.
+            // X is fed only with OnlineSignInSupported: key 22 is not ported as an overlay
+            // (no window, no input), so opening it froze the menus.
+            state.title_player0_feature_mask&=~0x30u;
+            if(c.mode_state.current!=16u&&c.mode_state.current!=18u&&c.input_state.connected){
+                if(OnlineSignInSupported&&(c.input_state.frontend.feature_mask&0x8000u))state.title_player0_feature_mask|=0x10u;
+                if(c.input_state.frontend.feature_mask&0x4000u)state.title_player0_feature_mask|=0x20u;
+            }
+            state.frontend_ui_globals.hide_sign_in=OnlineSignInSupported?0u:1u;
             state.title_event_state=&c.event_state;
             state.runtime=&c;
             state.title_game_flag_780248=&c.start_mode.game_flag_780248;

@@ -3163,6 +3163,7 @@ void ui_text_set_mode_42ccb0(PcUiNotifyGlobals& globals,std::uint32_t mode){glob
 std::uint32_t ui_table_lookup_465eb0(Bytes table,std::uint32_t index){table.check(std::size_t(index)*4u,4);return table.u32(std::size_t(index)*4u);}
 void ui_notify_441370(Bytes object,PcUiNotifyGlobals& globals,const PcUiNotifyServices& services){
     object.check(0xd94,1);if(object.u32(0xc50)==0xffffffffu)return;
+    if(globals.hide_sign_in)return;   // port: online sign-in not supported (no status text)
     auto resource=object.sub(0xc48,object.size()-0xc48);if(ui_resource_ready_4652e0(resource,services)==0u)return;
     r059_value_void(services,0x42ca60u,9u);ui_text_set_mode_42ccb0(globals,7u);ui_text_set_color_42cca0(globals,0xffffffffu);
     ui_text_set_xy_42cc00(globals,globals.source_x,globals.source_y);
@@ -5493,8 +5494,13 @@ void embedded_slot_close_446c50(Bytes b,std::uint32_t slot,const PcEmbeddedSlots
     if(s.configure_ui)s.configure_ui(s.user,0x446c50,child,effect,slot,x,y);else outrun::driving::service_hole("embedded_slot_close_446c50","s.configure_ui");
     if(s.finalize_ui)s.finalize_ui(s.user,0x465970,child);else outrun::driving::service_hole("embedded_slot_close_446c50","s.finalize_ui");
 }
-bool embedded_slots_set_446d90(Bytes b,const std::array<std::uint32_t,8>& args,PcUiNotifyGlobals& g,const PcEmbeddedSlotsServices446cf0& s){
+bool embedded_slots_set_446d90(Bytes b,const std::array<std::uint32_t,8>& requested,PcUiNotifyGlobals& g,const PcEmbeddedSlotsServices446cf0& s){
     b.check(0,0x68c);const auto depth=b.u32(0x408);if(depth>=32)throw std::out_of_range("embedded set depth");
+    // Port: without online sign-in the SIGN-IN / FRIENDS slot (key 0x8000) is left empty.
+    // Every label path ends here (440EA0, the 446EA0 per-screen defaults, 446FC0 pushes).
+    auto args=requested;
+    if(g.hide_sign_in)for(std::size_t i=0;i<8;i+=2)
+        if(args[i]==0x8000u&&(args[i+1]==0x297u||args[i+1]==0x298u))args[i]=args[i+1]=~0u;
     const auto at=8+depth*0x20;
     for(unsigned i=0;i<4;++i)if(b.u32(at+i*4)!=args[2*i]){
         embedded_slot_close_446c50(b,i,s);b.put8(1+i,1);b.put32(at+i*4,args[2*i]);

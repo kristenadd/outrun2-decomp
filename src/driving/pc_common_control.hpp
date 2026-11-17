@@ -875,6 +875,10 @@ struct PcUiNotifyGlobals {
     std::uint32_t source_x{};  // PC 0x631B30
     std::uint32_t source_y{};  // PC 0x631B34
     std::uint8_t alternate{};  // PC 0x7D68BC
+    // Port-only: hide the online sign-in status (441370) and the SIGN-IN help-bar
+    // slot (key 0x8000 with text 0x297 / 0x298). Set by the platform from
+    // OnlineSignInSupported (platform/online_sign_in.hpp); 0 keeps the PC behaviour.
+    std::uint8_t hide_sign_in{};
 };
 using PcUiHandleVoid = void(*)(void* user,std::uint32_t pc_entry,std::uint32_t handle);
 using PcUiHandleI32 = std::int32_t(*)(void* user,std::uint32_t pc_entry,std::uint32_t handle);
