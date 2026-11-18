@@ -100,11 +100,19 @@ u64 dualsense_mapped(){u64 m=0;for(const auto& e:PadMap)m|=e.first;return m;}
 //   antialiasing=off    off, msaa2, msaa4 or fxaa
 //   framerate=60        frames per second, 60 or 120 (the game ticks at 60 Hz); 120 only
 //                       where the screen refreshes at 100 Hz or more
+//   hd_textures=4       OutRun2006Tweaks texture packs in <game>/textures/load: the largest
+//                       scale kept (1..16; 0 = off). Default 4 on the Mac, 2 on iOS /
+//                       visionOS (memory: the HD GUI pack's frontend is ~320 MB at 2x)
 struct Options {bool reflections{true},resolution_set{};unsigned render_scale{3};outrun::enhancements::VideoSettings video;} g_options;
 const char* const OptionsDefault=
     "# OutRun 2006 macOS options (edit and restart)\n"
     "reflections=1\nwidescreen=0\nresolution=1920x1440\nantialiasing=off\n";
 void load_options(){
+#ifdef OR2_IOS
+    outrun::platform::texture_pack_set_max_scale(2);
+#else
+    outrun::platform::texture_pack_set_max_scale(4);
+#endif
 #if defined(OR2_IOS)&&!defined(OR2_VISIONOS)
     g_options.video.fit_screen=true;   // fill the device screen unless options.ini says fit_screen=0
 #endif
@@ -123,6 +131,10 @@ void load_options(){
         const auto eq=l.find('=');if(l.empty()||l[0]=='#'||eq==std::string::npos)continue;
         const std::string k=l.substr(0,eq);const unsigned v=unsigned(std::strtoul(l.c_str()+eq+1,nullptr,10));
         if(k=="reflections")g_options.reflections=v!=0;
+        else if(k=="hd_textures"){
+            if(v>16)throw std::runtime_error("hd_textures must be between 0 and 16");
+            outrun::platform::texture_pack_set_max_scale(v);
+        }
         else if(outrun::enhancements::GpuVideoBackend::parse_option(k,l.substr(eq+1),g_options.video))g_options.resolution_set|=k=="resolution";
         else if(k=="render_scale"){
             if(v<1||v>4)throw std::runtime_error("render_scale must be between 1 and 4");

@@ -1,4 +1,5 @@
 #include "platform/pc_pmt_loader.hpp"
+#include "platform/texture_pack.hpp"
 #include <cstring>
 #include <stdexcept>
 namespace outrun::platform {
@@ -87,7 +88,10 @@ bool pmt_textures_step_42e8c0(PcPmtResources& r,PcPmtLoadCursor& c,PcD3D9Device&
     q.width=q.height=0xffffffffu;q.usage=0;q.format=0;q.pool=1;q.filter=1;q.colour_key=0;
     if(caps2){q.cube=true;q.mip_levels=0xffffffffu;q.mip_filter=1;}
     else{q.cube=false;q.mip_levels=4;q.mip_filter=3;}
-    s.put32(slot,device.create_texture_from_file(q));
+    // Port: a texture pack's replacement (texture_pack.hpp), else the game's own.
+    auto handle=texture_pack_scene_texture(device,q);
+    if(!handle)handle=device.create_texture_from_file(q);
+    s.put32(slot,handle);
     c.texture_record_957be0+=0x14;
     ++c.texture_95b22c;
     return c.texture_95b22c>=s.u32(8);

@@ -234,6 +234,7 @@ and leaves (that's the original game's design, not a bug).
   stage change and the results only hold the stages driven. Bugs that need a
   stage change still need a real race. `OR2_HOST_GOAL_COURSE=10..14` picks the ending.
 - `OR2_IOS_ALLOW_NO_CONTROLLER=1`: skips the iOS controller gate (testing only).
+- `OR2_HD_TEXTURES=<0..16>`: texture-pack scale cap (overrides `hd_textures=`; 0 = off).
 - `OR2_MAC_SCREENSHOT_DIR` / `OR2_MAC_SCREENSHOT_FRAME`: dump frames (Mac).
   Frontend menus come out **blank white** in these dumps; use the simulator's
   `xcrun simctl io <id> screenshot` or ask the user instead.
@@ -428,6 +429,10 @@ the last teardown, or the next START stalls.
 - The race-end results screen calls `46C220` through its own binding
   (`race_end_runtime.cpp`), which still expects a translated `481A40` and
   lacks `4BB9E0` / `50ECC0`: expect it to latch at the end of a run.
+- `race traffic latched: PC 50E140: traffic service not ported` (owner's
+  Vision Pro run, 2026-11-18): about 4.5 minutes into a Clarissa race
+  (variant 5, mode 16); traffic and requests stop for the rest of that race.
+  Not investigated yet.
 - Drifting on turns (owner, iPad): fixed on 2026-11-17, **not yet confirmed
   by the owner**. Slip-angle control (`4A3310`) reads `46C470` = `[800AAC]`,
   the manager's `+764C` (1.0); the port passed a stale 0, which drops the
@@ -526,6 +531,34 @@ a race. Don't chase them again unless the owner reports one.
   sprite sheets are swapped by XXH32 for Xbox / PlayStation / Switch art from
   `<game>/textures/load/<Style>/` (downloaded by `tools/button_prompts/fetch.sh`, not in
   git), following the controller at runtime. `[btn]` lines under `OR2_TRACE`.
+  They share the texture-pack loader below and keep the pack's resolution; with packs
+  on, no controller shows the pack's `Keyboard/` (or unstyled) sheet.
+- **Hi-res texture packs** (2026-11-18, `src/platform/texture_pack.cpp`): OutRun2006Tweaks
+  packs in `<game>/textures/load/` (`<XXH32 of the original DDS>_<w>x<h>.dds`, any
+  folders; the bank's own XST / PMT folder wins, the `Keyboard/Xbox/PlayStation/Switch`
+  folders are prompts only). The owner's pack is the OR2006Sprites "HD GUI" pack (UI
+  only: 289 files, 3 GB, mostly 4x DXT5 / A8B8G8R8; their copy is in
+  `~/Projects/OutRun 2006 Coast 2 Coast Hi-Res/textures`, whose EXE differs from the
+  Steam one, so test with the normal game files plus that `textures` folder).
+  - **How:** `PcD3D9Device::create_replacement_texture` keeps the big texels but
+    GetLevelDesc (`texture_level_size`) reports the **original** size, so the 2D
+    renderer's texel → UV math (`42DDF0`, `42BE60`, ID3DXSprite rects) is unchanged.
+    Metal drops the CPU copy after upload (`gpu_only`). Never read a replacement's
+    texels through `texture_level_size` (the Metal fade check uses the real size).
+  - Sprite banks: decoded on a worker thread (`TexturePackUi`), swapped in at the full
+    2D flush (24 MB per frame budget), so the original shows for a moment. Scene (PMT)
+    textures: synchronous in `pc_pmt_loader.cpp` with a box mip chain.
+  - **Scale cap** `hd_textures=` in options.ini (0 off, 1..16; default 4 Mac, 2
+    iOS / visionOS), `OR2_HD_TEXTURES` overrides; box-filtered down to the largest
+    divisor of the file's scale. Banks are never unloaded, so memory grows with the
+    menus visited: the frontend bank `sumo_fe` is ~320 MB RGBA at 2x, 1.3 GB at 4x.
+  - `[tex]` lines under `OR2_TRACE` (one per replaced texture, failures with the reason).
+  - Owner-tested at 2x on iPhone 15 Pro Max, iPad mini 6 (menus, a race to the goal
+    ending, no jetsam) and Vision Pro (three races, 87–90 of 90 frames): 201–211
+    textures replaced, none failed. Copy a pack to a device with `xcrun devicectl
+    device copy to … --source <folder> --destination "Documents/[<game folder>/]textures/load/<folder>"`
+    (one folder per call; the iPad's game files are in `Documents` itself, the
+    iPhone's and Vision Pro's in `Documents/Outrun2006 Coast 2 Coast`).
 - Metal renderer: fewer render passes, clears folded into the next pass,
   GPU-private back buffer, and **pipelined frames** (CPU builds frame N+1 while
   the GPU draws N; one frame of latency). 1080p FXAA went from 26–28 to 60 fps

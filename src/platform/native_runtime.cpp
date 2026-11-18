@@ -1,5 +1,6 @@
 #include "system/dev_hooks.hpp"
 #include "platform/native_runtime.hpp"
+#include "platform/texture_pack.hpp"
 #include "enhancements/frame_rate.hpp"
 #include "platform/race_variant_owners.hpp"
 #include "platform/pc_input_devices.hpp"
@@ -4452,6 +4453,7 @@ bool native_runtime_attach_retail_assets(NativeRuntimeContext& c,
     }
     c.event_function36.retail_assets=&store;
     c.game_mode.course_retail=&store;
+    texture_pack_set_root(store.root);                     // port: textures/load packs (texture_pack.hpp)
     return true;
 }
 

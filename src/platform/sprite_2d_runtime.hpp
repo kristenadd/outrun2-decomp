@@ -17,6 +17,7 @@
 #include "platform/frontend_list.hpp"
 #include "platform/frontend_window.hpp"
 #include "platform/button_prompts.hpp"
+#include "platform/texture_pack.hpp"
 #include <map>
 #include <string>
 namespace outrun::platform {
@@ -34,6 +35,7 @@ struct NativeSprite2d {
     std::vector<FrontendWindowIcon> icons;                   // 429530 immediate scene draws
     std::uint32_t ui_displays{},ui_glyphs{},ui_images{},ui_icons{};
     ButtonPrompts prompts;                                   // port: controller button prompt sheets
+    TexturePackUi textures;                                  // port: texture pack (HD) replacements of the banks
 };
 NativeSprite2d& native_sprite2d(NativeRuntimeContext&);
 // 755860[bank-0x20]: the SPRANI animation path of a pool bank (null outside 0x20..0x4A).

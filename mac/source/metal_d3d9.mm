@@ -217,6 +217,8 @@ struct MetalD3D9Device::Impl {
             require(data.size()==std::size_t(size.width)*size.height*4,"Invalid RGBA texture level");
             [t replaceRegion:MTLRegionMake2D(0,0,size.width,size.height) mipmapLevel:level slice:face withBytes:data.data() bytesPerRow:std::size_t(size.width)*4 bytesPerImage:data.size()];
         }
+        // A texture-pack replacement is never read back or locked: the GPU copy is enough.
+        if(o->gpu_only)std::vector<std::vector<std::vector<std::uint8_t>>>().swap(o->rgba);
         textures.emplace(handle,t);return t;
     }
     id<MTLTexture> depth(std::uint32_t handle){
@@ -553,8 +555,10 @@ bool MetalD3D9Device::screen_fade(){
     if(!textures[0])return true;
     // A textured fade samples one flat patch of a sprite sheet (the ending's 512x256
     // sheet); 4:3 artwork drawn full screen samples a detailed picture.
-    const auto* o=object(textures[0]);std::uint32_t w=0,h=0;
-    if(!o||o->rgba.empty()||o->rgba[0].empty()||!texture_level_size(textures[0],0,w,h)||!w||!h)return false;
+    const auto* o=object(textures[0]);
+    if(!o||o->rgba.empty()||o->rgba[0].empty()||o->texture.faces.empty()||o->texture.faces[0].empty())return false;
+    const std::uint32_t w=o->texture.faces[0][0].width,h=o->texture.faces[0][0].height;   // the texels' size (not a replacement's logical one)
+    if(!w||!h)return false;
     const auto& px=o->rgba[0][0];if(px.size()<std::size_t(w)*h*4)return false;
     auto texel=[](float t,std::uint32_t n){return std::uint32_t(std::clamp(t*float(n),0.f,float(n-1)));};
     const std::uint32_t tx0=texel(u0,w),tx1=texel(u1,w),ty0=texel(v0,h),ty1=texel(v1,h);

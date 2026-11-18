@@ -11,6 +11,7 @@
 // A handle is never 0; 0 is what the PC code stores when a create call fails.
 #include <array>
 #include <cstdint>
+#include <vector>
 namespace outrun::platform {
 struct PcVertexElement { // D3DVERTEXELEMENT9
     std::uint16_t stream{},offset{};
@@ -128,6 +129,14 @@ public:
     // the level; false when the device does not know the texture.
     virtual bool texture_level_size(std::uint32_t texture,std::uint32_t level,std::uint32_t& width,std::uint32_t& height){
         (void)texture;(void)level;width=height=0;return false;}
+    // Port (texture packs, texture_pack.hpp): a 2D texture made from prepared
+    // RGBA8 levels (R,G,B,A bytes; level k is width>>k x height>>k), which
+    // GetLevelDesc reports as logical_width x logical_height (>> level): the
+    // original art's size, so texel coordinates written for it stay valid. The
+    // device may drop its CPU copy once the GPU has it. 0: unsupported.
+    virtual std::uint32_t create_replacement_texture(std::uint32_t width,std::uint32_t height,
+        std::vector<std::vector<std::uint8_t>>&& levels,std::uint32_t logical_width,std::uint32_t logical_height){
+        (void)width;(void)height;(void)levels;(void)logical_width;(void)logical_height;return 0;}
     // D3DXCreateSprite on this device (the object 95B218 points to); null when
     // the device has no sprite implementation.
     virtual PcD3DXSprite* sprite(){return nullptr;}

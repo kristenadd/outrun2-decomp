@@ -68,6 +68,66 @@ folders works too. For iOS / iPadOS, run the script on an empty folder and
 copy its `textures` folder next to the game files in the app's files.
 `OR2_BUTTON_PROMPTS=xbox|playstation|switch|keyboard` forces a style.
 
+## Hi-res textures (optional)
+
+The port reads texture packs made for
+[OutRun2006Tweaks](https://github.com/emoose/OutRun2006Tweaks) (its
+`UITextureReplacement` / `SceneTextureReplacement`), such as the
+[OR2006Sprites](https://github.com/Sonic-TV/OR2006Sprites) HD GUI pack, which
+redraws the menus, HUD, speedometers and fonts at 4x. Packs are not part of this
+repository.
+
+**Installing a pack:** put its `textures` folder next to the game files, so the
+replacement files end up in `textures/load/`:
+
+```text
+<game folder>/
+  OR2006C2C.EXE
+  Cars/ Sprite/ Stage/ ...
+  textures/
+    load/
+      spr_sprani_sumo_fe_cvt_Exst/1762489B_512x128.dds
+      spr_sprani_game_cvt_Exst/...
+      Keyboard/ PlayStation/ Switch/ Xbox/   (button prompts, see above)
+```
+
+- macOS: copy the folder into the game folder (inside the app bundle:
+  `Contents/Resources/Game/textures`, or wherever your game folder is).
+- iOS / iPadOS / visionOS: copy `textures` next to the game files in the app's
+  files (Finder ▸ the device ▸ **Files**, or the Files app), the same way as the
+  game folder ([details](ios/README.md)). From a Mac with `devicectl`, one
+  folder per call:
+
+  ```bash
+  xcrun devicectl device copy to --device <udid> --domain-type appDataContainer \
+    --domain-identifier <bundle id> --source "textures/load/<folder>" \
+    --destination "Documents/<game folder>/textures/load/<folder>"
+  ```
+
+Nothing else is needed: at launch the port lists `textures/load`, and every
+texture that has a replacement (named `<hash>_<width>x<height>.dds`, the hash of
+the original texture, in any folder) is swapped in. Menu art may show at its
+original resolution for a moment before the hi-res version appears. Only the
+EXE and data of your Steam installation are used; you don't need
+OutRun2006Tweaks itself, and a game folder already set up for it works as is
+(its `textures` folder is the one to copy).
+
+**Resolution and memory:** the art is kept at up to `hd_textures` times the
+original size, set in `options.ini` (next to the saves, [see above](#what-you-need-from-your-game);
+on iOS it is not in the Files app, [copy it with devicectl](ios/README.md#save-files)):
+
+```text
+hd_textures=4   # 1..16: the largest scale kept; 0 turns packs off
+```
+
+The default is 4 on macOS and 2 on iOS, iPadOS and visionOS. Larger art takes
+more memory, and menu art stays loaded once shown: the HD GUI pack's main menus
+alone take about 320 MB at 2x and 1.3 GB at 4x. 2x has been tested on an iPhone
+15 Pro Max, an iPad mini 6 (4 GB) and an Apple Vision Pro. If a device runs out
+of memory, use `hd_textures=1` (the pack's art scaled to the original size).
+`OR2_HD_TEXTURES=<n>` overrides the setting for one launch; with `OR2_TRACE=1`
+the log has a `[tex]` line for every replaced texture.
+
 ## Layout
 
 | Folder | Content |
@@ -138,6 +198,11 @@ The prompt art is from [OR2006Sprites](https://github.com/Sonic-TV/OR2006Sprites
 release set and earlier prompts by [envido32](https://github.com/envido32/OR2006Sprites),
 with contributions by Tenome. The script downloads it from the authors' repository;
 it is not redistributed here.
+
+Hi-res textures: the replacement format and loader design follow OutRun2006Tweaks
+by emoose. The HD GUI pack is a collaborative work collected in
+[OR2006Sprites](https://github.com/Sonic-TV/OR2006Sprites) by Sonic-TV, with art by
+its contributors (credited in the pack's README); it is not redistributed here.
 
 OutRun is a trademark of Sega. This project is not affiliated with or endorsed by Sega or Sumo Digital.
 

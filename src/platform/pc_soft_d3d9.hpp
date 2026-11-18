@@ -105,6 +105,8 @@ public:
             b[0]=std::min(b[0],x);b[1]=std::min(b[1],y);b[2]=std::max(b[2],x);b[3]=std::max(b[3],y);}return b;}
     std::uint32_t buffer_size(std::uint32_t h)override{auto* o=object(h);return o?std::uint32_t(o->bytes.size()):0u;}
     bool texture_level_size(std::uint32_t texture,std::uint32_t level,std::uint32_t& width,std::uint32_t& height)override;
+    std::uint32_t create_replacement_texture(std::uint32_t width,std::uint32_t height,std::vector<std::vector<std::uint8_t>>&& levels,
+                                             std::uint32_t logical_width,std::uint32_t logical_height)override;
     PcD3DXSprite* sprite()override{return &sprite_;}
     // Renderer-init objects (404250): cube/2D textures created empty,
     // surfaces of their levels, depth-stencil surfaces (no stencil buffer is
@@ -154,6 +156,10 @@ protected:
         // Textures created empty: D3DFORMAT. Surfaces: parent texture (0 for
         // a stand-alone depth-stencil surface), face, level, locked texels.
         std::uint32_t format{},parent{},face{},level{},width{},height{};
+        // Replacement textures (create_replacement_texture): the size GetLevelDesc
+        // reports for level 0 (0: the real size); gpu_only lets a GPU device
+        // drop `rgba` once uploaded.
+        std::uint32_t logical_width{},logical_height{};bool gpu_only{};
         std::vector<float> depth;std::vector<std::uint8_t> stencil;   // depth-stencil surface contents
     };
     struct Query { bool active{}; std::uint32_t count{},result{}; };

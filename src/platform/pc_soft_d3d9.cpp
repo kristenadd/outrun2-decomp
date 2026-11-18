@@ -562,7 +562,25 @@ void PcSoftD3D9Device::draw_primitive_up(std::uint32_t type,std::uint32_t count,
 bool PcSoftD3D9Device::texture_level_size(std::uint32_t texture,std::uint32_t level,std::uint32_t& w,std::uint32_t& h){
     w=h=0;auto* o=object(texture);
     if(!o||o->kind!=KTexture||o->texture.faces.empty()||level>=o->texture.faces[0].size())return false;
-    w=o->texture.faces[0][level].width;h=o->texture.faces[0][level].height;return true;
+    w=o->texture.faces[0][level].width;h=o->texture.faces[0][level].height;
+    if(o->logical_width&&o->logical_height){w=std::max(1u,o->logical_width>>level);h=std::max(1u,o->logical_height>>level);}
+    return true;
+}
+std::uint32_t PcSoftD3D9Device::create_replacement_texture(std::uint32_t w,std::uint32_t h,std::vector<std::vector<std::uint8_t>>&& levels,
+                                                           std::uint32_t lw,std::uint32_t lh){
+    if(!w||!h||levels.empty())return 0;
+    Object o;o.kind=KTexture;
+    o.texture.format=PcDdsTexture::Format::rgba8;o.texture.cube=false;o.texture.width=w;o.texture.height=h;
+    o.texture.levels=std::uint32_t(levels.size());o.texture.faces.resize(1);o.rgba.resize(1);
+    for(std::size_t l=0;l<levels.size();++l){
+        const std::uint32_t lw2=std::max(1u,w>>l),lh2=std::max(1u,h>>l);
+        if(levels[l].size()!=std::size_t(lw2)*lh2*4){errors.push_back("replacement texture level size");return 0;}
+        o.texture.faces[0].push_back({lw2,lh2,{}});              // texels only in rgba (as an empty texture's levels)
+        texture_bytes+=levels[l].size();
+        o.rgba[0].push_back(std::move(levels[l]));
+    }
+    o.logical_width=lw;o.logical_height=lh;o.gpu_only=true;
+    objects_.push_back(std::move(o));return std::uint32_t(objects_.size());
 }
 void PcSoftD3DXSprite::set_transform(const float m[16]){std::memcpy(transform_,m,sizeof transform_);}
 void PcSoftD3DXSprite::begin(std::uint32_t flags){flags_=flags;states_.begin(device_,flags);}
