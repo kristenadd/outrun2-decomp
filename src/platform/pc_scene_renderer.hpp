@@ -114,6 +114,9 @@ public:
     PcShaderGlobals shader_globals{};
     // Clear colour 89BD5C written by 40EC60 (owned by the runtime).
     const std::uint32_t* clear_colour_89bd5c{};
+    // Pause flag 7D2614 (449040, owned by the runtime): while set, 449050 does not
+    // advance the vertex / texture animation clock 89EDB8 (40ED60).
+    const std::uint32_t* pause_7d2614{};
     // Shared sun list words 7D26A8 (three u32, owned by the runtime and also
     // written by the preview 48C170) and the select table 844A08
     // (common/sel_dl_edit0.tgt) that token 0x844A08 resolves to.

@@ -1078,6 +1078,7 @@ void attach_pc_scene(GameHost& host,pf::NativeRuntimeContext& context,pf::Retail
     scene.bind_sun_lists(&shared.sun_lists_7d26a8);
     scene.bind_select_table(&shared.select_table_844a08);
     scene.clear_colour_89bd5c=&shared.clear_colour_89bd5c;
+    scene.pause_7d2614=&context.event_function36.title_pause_flag_7d2614;
     scene.vehicle_camera=[&shared](outrun::driving::Bytes& v,outrun::driving::Bytes& c){
         v=outrun::driving::Bytes(shared.car_799d18.data(),shared.car_799d18.size());
         c=outrun::driving::Bytes(shared.camera_79fe10.data(),shared.camera_79fe10.size());return true;};

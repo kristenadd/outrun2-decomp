@@ -30,7 +30,6 @@ PcSceneRenderer::PcSceneRenderer(PcD3D9Device& device):device_(device),matrix_ar
     // 40E4B0 -> 404250 once the device exists (render/stage defaults, 40F6B0,
     // 405160, fixed pixel shaders, normalisation cube map, shadow targets).
     renderer_init_gaps=renderer_init_404250(*flush_,*queue_,frame_.layer_7d25f0);
-    frame_.device_ready_7d2614=1;
 }
 PcSceneRenderer::~PcSceneRenderer(){
     for(const auto& swap:pending_swaps_406630)device_.release(swap.second);
@@ -537,6 +536,7 @@ bool PcSceneRenderer::environment_map_46bbc0(driving::Bytes car){
 void PcSceneRenderer::render_frame(driving::PcEventControlState& events,std::uint32_t mode_78026c){
     events_=&events;current_mode_=mode_78026c;
     if(clear_colour_89bd5c)frame_.clear_colour_89bd5c=*clear_colour_89bd5c;
+    frame_.pause_7d2614=pause_7d2614?*pause_7d2614:0u;
     PcEnvironmentRenderTables tables{Bytes(environment_.lights_899b98.data(),environment_.lights_899b98.size()),
         Bytes(environment_.fog_7d3a10.data(),environment_.fog_7d3a10.size()),0};
     struct Ctx{PcSceneRenderer* self;};

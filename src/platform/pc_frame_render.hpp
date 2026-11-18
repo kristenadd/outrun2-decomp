@@ -13,7 +13,7 @@
 namespace outrun::platform {
 struct PcFrameLayer { std::uint32_t colour{},depth{},callback{}; }; // 7D2618 + layer*0xC
 struct PcFrameState {
-    std::uint32_t device_ready_7d2614{};
+    std::uint32_t pause_7d2614{};   // 449040: set by the event pause 440930, cleared on resume (stops the 40ED60 clock)
     std::uint32_t current_colour_7d25e8{},backbuffer_7d25ec{},layer_7d25f0{},depth_7d25f4{};
     std::array<std::uint32_t,6> viewport_7d25f8{};
     std::uint32_t current_depth_7d2610{};
