@@ -49,7 +49,9 @@ platform::NativeInputState DualSenseInput::update(const PadSample& p,std::uint32
     if(!in_race){if(down&L1)f|=0x10u;if(down&R1)f|=0x20u;}
     if(down&Square)f|=0x8000u|0x40000u;
     if(down&Triangle)f|=0x4000u;
-    out.frontend.device_held=((down&L2)?0x1000u:0u)|((down&R2)?0x2000u:0u);
+    // Switch bit 0x10 (4536C0, held) is the PC's F1, drawn as Square by the prompt art: the car
+    // menu's colour (4C9290, its own edge latch +15D1) and the music menu's random track (4C9940).
+    out.frontend.device_held=((down&L2)?0x1000u:0u)|((down&R2)?0x2000u:0u)|((held&Square)?0x10u:0u);
     auto& d=out.pc_device;
     d.axes_94[0x0e]=axis_word(p.left_x);
     d.axes_94[0x0d]=std::int16_t(out.accelerator);
@@ -58,7 +60,12 @@ platform::NativeInputState DualSenseInput::update(const PadSample& p,std::uint32
     if(held&R1)d.buttons_04|=2u;
     if(held&Circle)d.buttons_04|=4u;
     if(held&L1)d.buttons_04|=8u;
-    if(held&Square)d.buttons_04|=0x10u;
+    // Mode 10 (the 2SP-style car / mode / transmission / music screens): the prompt art draws
+    // the PC's F1 (device 0x8 -> switch 0x10: colour 4C1AC0, gear 4C0340) as Square and F2
+    // (device 0x10 view -> switch 0x40000: the OutRun2 / 2SP page of 4C3DC0, 4C4880) as Triangle.
+    // Elsewhere Square stays the view button and L1 alone is device 0x8 (gear down).
+    if(mode==10u){if(held&Square)d.buttons_04|=8u;if(held&Triangle)d.buttons_04|=0x10u;}
+    else if(held&Square)d.buttons_04|=0x10u;
     if(held&Right)d.buttons_04|=0x80u;
     if(held&Left)d.buttons_04|=0x100u;
     // Match r155's result-screen confirm without shifting gear on Cross in GAME.

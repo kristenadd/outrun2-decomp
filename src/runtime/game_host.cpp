@@ -535,7 +535,8 @@ void map_pad(GameHost& s,platform::NativeInputState& out,std::uint64_t held,std:
         // PC device bits 0x1000 / 0x2000 (4536C0, 407930 +8) are buttons of their own, not the
         // D-pad: 0x2000 toggles the car class (4C9290) and the music list (4C9940). They were
         // mapped to Left/Right, so Right also changed the class. ZL / ZR now (not used in menus).
-        out.frontend.device_held=((down&PadZL)?0x1000u:0u)|((down&PadZR)?0x2000u:0u);   // one frame per press (4C9290 toggles on every frame it sees the bit)
+        out.frontend.device_held=((down&PadZL)?0x1000u:0u)|((down&PadZR)?0x2000u:0u)|   // one frame per press (4C9290 toggles on every frame it sees the bit)
+            ((held&PadX)?0x10u:0u);   // 4536C0(0x10) held, the PC's F1 (drawn as X): car colour (4C9290 latches +15D1), random music (4C9940)
     }
     // PC device record for 453BB0 (joystick configuration 5A7B50[0]: steer
     // axis 0x0E, accelerator 0x0D, brake 0x0C, shift up 0x2, shift down 0x8,
@@ -549,7 +550,12 @@ void map_pad(GameHost& s,platform::NativeInputState& out,std::uint64_t held,std:
             d.axes_94[0x0d]=std::int16_t((held&(PadZR|PadA))?255:0);
             d.axes_94[0x0c]=std::int16_t((held&(PadZL|PadB))?255:0);
             d.buttons_04=((held&PadPlus)?0x1u:0u)|((held&PadR)?0x2u:0u)|((held&PadL)?0x8u:0u)|
-                ((held&PadX)?0x10u:0u)|((held&PadRight)?0x80u:0u)|((held&PadLeft)?0x100u:0u);
+                ((held&PadRight)?0x80u:0u)|((held&PadLeft)?0x100u:0u);
+            // Mode 10 (2SP-style car / mode / transmission / music screens): X is the PC's F1
+            // (device 0x8: colour 4C1AC0, gear 4C0340) and Y its F2 (device 0x10, the view bit:
+            // the OutRun2 / 2SP page), as the prompt art draws them; elsewhere X is the view button.
+            if(s.runtime&&s.runtime->mode_state.current==10u)d.buttons_04|=((held&PadX)?0x8u:0u)|((held&PadY)?0x10u:0u);
+            else if(held&PadX)d.buttons_04|=0x10u;
             // Race-end prompts (modes 34/35: 4536F0 masks 4 and 8 = device
             // bits 0x2 and 0x4): B is device 0x4 (no race role in 5A7B50[0]);
             // A adds 0x2 outside GAME only (0x2 is shift up while racing).
