@@ -339,8 +339,6 @@ the last teardown, or the next START stalls.
 - The race-end results screen calls `46C220` through its own binding
   (`race_end_runtime.cpp`), which still expects a translated `481A40` and
   lacks `4BB9E0` / `50ECC0`: expect it to latch at the end of a run.
-- Request-car kinds 4 / 5 (`4AE0F0` → `4AE18B` item draw) are not ported and
-  fault the car draw if they appear.
 - Drifting on turns (owner, iPad): fixed on 2026-11-17, **not yet confirmed
   by the owner**. Slip-angle control (`4A3310`) reads `46C470` = `[800AAC]`,
   the manager's `+764C` (1.0); the port passed a stale 0, which drops the
@@ -393,8 +391,31 @@ the last teardown, or the next START stalls.
   for a test by pointing every record's `+58` at a def): `3` keep passing
   cars, `F` dribble the beach ball (list entries type 8), `13` avoid the
   meteors (type 9, model `1EE0005`), `14` cut the line, `15` avoid abduction
-  (UFO: runs, its draw not checked). `16` (reverse courses) still latches: its
-  display reaches the D3D device `89BD60` (not mapped for the bulk display).
+  (UFO: a request car of kind 4, drawn by the native `4AE18B`; kind 5 too), `16`
+  "Honk the horn!" (reverse courses only; object 21). The horn is race switch
+  bit `0x10`: **B / Circle** on the Mac pad (the PC joystick config; L1 is gear
+  down). Its road strip is drawn by `5064E0` straight through the device: the
+  request display runs with a recording device (`RequestsRecordingDevice`) whose
+  calls are replayed in draw-list order. Clarissa has no `HAM_MIS_HHORN` voice
+  bank (only Holly's `ENGLISHH_` exists), so effect 420 is silent by data.
+- Request types by voice bank (`481C92`): 1 MATCH, 2 DRIFT, 3 PASS, **4 COLLIDE
+  ("Don't crash!")**, 5 ZONE, 6 CONEHIT, 7 COIN, 8 GATES, A NITRO, B GHOST /
+  HCARS ("Hit the cars!"), C SLIP, D FOOD1..6, E MTOTAL, F BALL, 10 SOUND..CARS
+  (sub-kinds), 11 HOLDLINE, 12 KEEPCONT, 13 METEOR, 14 CUTLINE, 15 UFO, 16 HHORN,
+  17 DUCK, 18 PHOTO. Rank (`4FFE10`) = record `+28` (score) − `+2C` (penalty)
+  against 0/10/20/30/45/60/80 (`6ADDAC`), capped by `+40/+44/+48`; 6 is best.
+- "Don't crash!" ranked E (owner, fixed 2026-11-17, **not yet confirmed**): its
+  score is the per-frame progress `[7F9460+7690] − [+7694]` (`4FC490` from
+  `4A6CF0`), and `4A6CF0` returns in **ST0**; the service answered EAX, so the
+  bulk code read 0. `TranslatedModule::st0_results` (bulk: `4A6CF0`, `449940`)
+  pushes such a service's answer onto the translated FPU.
+- Forcing a request for a test (2026-11-17): in `requests_stage_script_4829d0`,
+  set `+140` (course id, `64EF38` names) before the path, and before `482820`
+  write `base + def` into each record's `+58` (base = loader `+A4`, i.e.
+  `[7F9460+A4]`; records are 0x74 bytes, e.g. Niagara_r `1518`×8 / def `1418`,
+  Niagara `166C`×6 / UFO def `1578`); patch the records' u16 start / end to
+  shorten the window. The def must be patched before `482820` (its `5053A0`
+  prepares the def).
 
 **Heart Attack** (OutRun 2SP, variant 2), from the title, 2 s apart: A,
 Right ×2, A ×3, Right, A ×2. Autoplay:

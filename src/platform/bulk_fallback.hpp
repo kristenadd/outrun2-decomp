@@ -11,9 +11,10 @@ bool bulk_translated(std::uint32_t pc);
 // pc with the call's EAX / ECX and stack words over m; throws what the translated code
 // throws (an unmapped address, an unported callee of the service).
 // `next`: another translated set its code may call straight into (the LAN network set).
+// `device`: the IDirect3DDevice9 [89BD60] the code sees (none: [89BD60] is unmapped).
 std::uint32_t bulk_call(PcRaceMemory& m,const PcRaceService& service,const PcRaceCall& k,
                         driving::PcMatrixStack* matrices=nullptr,std::uint32_t* crt_random=nullptr,
-                        const TranslatedModule* next=nullptr);
+                        const TranslatedModule* next=nullptr,PcD3D9Device* device=nullptr);
 struct BulkStats {std::map<std::uint32_t,std::uint32_t> calls,faults;};
 BulkStats& bulk_stats();
 }

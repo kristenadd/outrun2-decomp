@@ -291,6 +291,74 @@ void matrix_invert_current(driving::PcMatrixStack& matrices){
     const float r=1.0f/det;for(float& v:inv)v*=r;
     std::memcpy(b.data(),inv,64);driving::pc_matrix_load(matrices,driving::Bytes(b.data(),b.size()));
 }
+// The request manager's display 46C210 reaches the D3D device [89BD60] itself in 5064E0 (the
+// road strip of a request whose +C is 9: type 0x16 on the reverse courses): saved / set render
+// and texture stage states, SetTexture(0, 0), SetFVF(XYZ), SetVertexShader(0), one
+// DrawPrimitiveUP(strip) of the manager's +1A4 vertices, the states restored. The bulk display
+// runs with this recorder as its device: reads answer the renderer's current state; every
+// other call is queued (a RequestsDeviceCommand marker in the draw list, the vertices copied)
+// and replayed on the renderer in draw-list order by native_race_requests_display. A device
+// call outside that set throws (the display latches, reported).
+constexpr std::uint32_t RequestsDeviceCommand=0x0000014cu;   // draw-list marker (not a PC)
+struct RequestsDeviceCall {
+    enum Kind:std::uint8_t {RenderState,StageState,Texture,Fvf,VertexShader,Transform,RenderGlobals,DrawUp} kind{};
+    std::uint32_t a{},b{},c{},d{};
+    std::vector<std::uint8_t> vertices;
+    std::array<float,16> matrix{};
+};
+class RequestsRecordingDevice final:public PcD3D9Device {
+public:
+    RequestsRecordingDevice(PcD3D9Device& real,std::vector<RequestsDeviceCall>& calls,std::vector<PcVehicleDrawCall>& draws)
+        :real_(real),calls_(calls),draws_(draws){}
+    void queue(RequestsDeviceCall call){
+        PcVehicleDrawCall d{};d.pc=RequestsDeviceCommand;d.argc=1;d.args[0]=std::uint32_t(calls_.size());
+        calls_.push_back(std::move(call));draws_.push_back(d);}
+    std::uint32_t get_render_state(std::uint32_t s)override{return real_.get_render_state(s);}
+    std::uint32_t get_texture_stage_state(std::uint32_t st,std::uint32_t t)override{return real_.get_texture_stage_state(st,t);}
+    void set_render_state(std::uint32_t s,std::uint32_t v)override{queue({RequestsDeviceCall::RenderState,s,v});}
+    void set_texture_stage_state(std::uint32_t st,std::uint32_t t,std::uint32_t v)override{queue({RequestsDeviceCall::StageState,st,t,v});}
+    void set_texture(std::uint32_t st,std::uint32_t tex)override{
+        if(tex)unsupported("SetTexture with a texture");
+        queue({RequestsDeviceCall::Texture,st,0u});}
+    void set_fvf(std::uint32_t f)override{queue({RequestsDeviceCall::Fvf,f});}
+    void set_vertex_shader(std::uint32_t v)override{
+        if(v)unsupported("SetVertexShader with a shader");
+        queue({RequestsDeviceCall::VertexShader,0u});}
+    void set_transform(std::uint32_t state,const float m[16])override{
+        RequestsDeviceCall c{RequestsDeviceCall::Transform,state};std::memcpy(c.matrix.data(),m,64);queue(std::move(c));}
+    void draw_primitive_up(std::uint32_t type,std::uint32_t count,const void* data,std::uint32_t stride)override{
+        std::uint32_t n=0;
+        switch(type){case 4:n=count*3u;break;case 5:case 6:n=count?count+2u:0u;break;default:unsupported("DrawPrimitiveUP type");}
+        RequestsDeviceCall c{RequestsDeviceCall::DrawUp,type,count,stride};
+        const auto* p=static_cast<const std::uint8_t*>(data);c.vertices.assign(p,p+std::size_t(n)*stride);
+        queue(std::move(c));}
+    // Everything else the request display does not do.
+    std::uint32_t create_vertex_buffer(std::uint32_t,std::uint32_t,std::uint32_t,std::uint32_t)override{unsupported("CreateVertexBuffer");}
+    std::uint32_t create_index_buffer(std::uint32_t,std::uint32_t,std::uint32_t,std::uint32_t)override{unsupported("CreateIndexBuffer");}
+    std::uint8_t* lock(std::uint32_t,std::uint32_t,std::uint32_t,std::uint32_t)override{unsupported("Lock");}
+    void unlock(std::uint32_t)override{unsupported("Unlock");}
+    std::uint32_t create_vertex_declaration(const PcVertexElement*)override{unsupported("CreateVertexDeclaration");}
+    std::uint32_t create_vertex_shader(const std::uint32_t*)override{unsupported("CreateVertexShader");}
+    void set_vertex_shader_constant_f(std::uint32_t,const float*,std::uint32_t)override{unsupported("SetVertexShaderConstantF");}
+    std::uint32_t create_texture_from_file(const PcTextureFileRequest&)override{unsupported("D3DXCreateTextureFromFileInMemoryEx");}
+    void release(std::uint32_t)override{unsupported("Release");}
+    std::uint32_t get_texture(std::uint32_t)override{unsupported("GetTexture");}
+    std::uint32_t get_sampler_state(std::uint32_t,std::uint32_t)override{unsupported("GetSamplerState");}
+    void set_sampler_state(std::uint32_t,std::uint32_t,std::uint32_t)override{unsupported("SetSamplerState");}
+    std::uint32_t draw_indexed_primitive(std::uint32_t,std::int32_t,std::uint32_t,std::uint32_t,std::uint32_t,std::uint32_t)override{unsupported("DrawIndexedPrimitive");}
+    void set_vertex_declaration(std::uint32_t)override{unsupported("SetVertexDeclaration");}
+    void set_stream_source(std::uint32_t,std::uint32_t,std::uint32_t,std::uint32_t)override{unsupported("SetStreamSource");}
+    void set_indices(std::uint32_t)override{unsupported("SetIndices");}
+    std::uint32_t create_pixel_shader(const std::uint32_t*)override{unsupported("CreatePixelShader");}
+    void set_pixel_shader(std::uint32_t)override{unsupported("SetPixelShader");}
+    void set_pixel_shader_constant_f(std::uint32_t,const float*,std::uint32_t)override{unsupported("SetPixelShaderConstantF");}
+    std::uint32_t get_declaration(std::uint32_t,PcVertexElement*)override{unsupported("GetDeclaration");}
+private:
+    [[noreturn]] static void unsupported(const char* what){throw TrafficUnported(0x46c210u,std::string("request display device call not queued: ")+what);}
+    PcD3D9Device& real_;
+    std::vector<RequestsDeviceCall>& calls_;
+    std::vector<PcVehicleDrawCall>& draws_;
+};
 struct Run {
     NativeRuntimeContext& c;
     NativeRaceTraffic& t;
@@ -298,6 +366,7 @@ struct Run {
     PcRaceContext* ctx{};
     NativeHeartBinding* heart{};
     PcSceneRenderer* renderer{};   // course object displays (4082B0 / 410740 / 4107A0)
+    RequestsRecordingDevice* recorder{};   // the request display (46C210): 409E00 / 410670 queued in order
     void routed(std::uint32_t pc){++t.routed[pc];t.last_routed_pc=pc;}
     [[noreturn]] void missing(std::uint32_t pc,const std::string& why){++t.missing[pc];throw TrafficUnported(pc,why);}
     PcRaceMemory& m(){return t.memory;}
@@ -890,7 +959,13 @@ struct Run {
         case 0x4493c0u:routed(pc);return native_race_end(c).language_7d2698;   // mov eax,[7D2698]: the language index
         case 0x409e00u:case 0x410670u:{
             if(!renderer)missing(pc,"render state outside a display");
-            routed(pc);auto& fl=renderer->flush_context();
+            routed(pc);
+            if(recorder){   // after the queued draws before it (the request display's device calls)
+                if(pc==0x410670u){recorder->queue({RequestsDeviceCall::RenderGlobals});return 0u;}
+                static constexpr std::uint32_t States[10]={2,3,0x10,0x11,0x12,0x13,0x100,0x101,0x102,0x103};
+                float mtx[16];const auto cur=matrices.current();for(unsigned q=0;q<16;++q)mtx[q]=cur.f32(q*4);
+                recorder->set_transform(a[0]<10u?States[a[0]]:2u,mtx);return 0u;}
+            auto& fl=renderer->flush_context();
             if(pc==0x410670u){fl.g.w(0x89ede0)=0;fl.g.w(0x89ede8)=0;return 0u;}
             static constexpr std::uint32_t States[10]={2,3,0x10,0x11,0x12,0x13,0x100,0x101,0x102,0x103};   // 409E74
             float mtx[16];const auto cur=matrices.current();for(unsigned q=0;q<16;++q)mtx[q]=cur.f32(q*4);
@@ -1336,6 +1411,31 @@ bool native_race_objects_display(NativeRuntimeContext& c,PcSceneRenderer& r,std:
     catch(const std::exception& e){++t.object_draw_faults;if(t.object_error.empty())t.object_error=std::string("object draw list: ")+e.what();}
     return true;
 }
+namespace {
+// The request display's draw list: the queued render leaves through the AREA's executor, the
+// queued device calls on the renderer's device between them, in the order they were made.
+void requests_draw_list_replay(NativeRuntimeContext& c,PcSceneRenderer& r,const std::vector<PcVehicleDrawCall>& draws,
+                               const std::vector<RequestsDeviceCall>& calls){
+    std::vector<PcVehicleDrawCall> leaves;
+    auto& d=r.device();
+    for(const auto& call:draws){
+        if(call.pc!=RequestsDeviceCommand){leaves.push_back(call);continue;}
+        if(!leaves.empty()){(void)native_race_draw_list_execute(c,r,leaves);leaves.clear();}
+        const auto& q=calls.at(call.args[0]);
+        switch(q.kind){
+        case RequestsDeviceCall::RenderState:d.set_render_state(q.a,q.b);break;
+        case RequestsDeviceCall::StageState:d.set_texture_stage_state(q.a,q.b,q.c);break;
+        case RequestsDeviceCall::Texture:d.set_texture(q.a,0u);break;
+        case RequestsDeviceCall::Fvf:d.set_fvf(q.a);break;
+        case RequestsDeviceCall::VertexShader:d.set_vertex_shader(0u);break;
+        case RequestsDeviceCall::Transform:d.set_transform(q.a,q.matrix.data());break;
+        case RequestsDeviceCall::RenderGlobals:{auto& fl=r.flush_context();fl.g.w(0x89ede0)=0;fl.g.w(0x89ede8)=0;break;}   // 410670
+        case RequestsDeviceCall::DrawUp:if(q.b)d.draw_primitive_up(q.a,q.b,q.vertices.data(),q.c);break;
+        }
+    }
+    if(!leaves.empty())(void)native_race_draw_list_execute(c,r,leaves);
+}
+}
 bool native_race_requests_display(NativeRuntimeContext& c,PcSceneRenderer& r,std::uint32_t callback,std::uint32_t work){
     if(callback!=0x46c210u)return false;
     auto& t=native_race_traffic(c);
@@ -1343,7 +1443,9 @@ bool native_race_requests_display(NativeRuntimeContext& c,PcSceneRenderer& r,std
     auto& matrices=r.matrices();
     const auto depth=matrices.depth;
     std::vector<PcVehicleDrawCall> draws;
-    Run run{c,t,matrices};run.renderer=&r;
+    std::vector<RequestsDeviceCall> device_calls;
+    RequestsRecordingDevice recorder{r.device(),device_calls,draws};
+    Run run{c,t,matrices};run.renderer=&r;run.recorder=&recorder;
     try{
         map_memory(c,t);racers_in(c,t);
         t.memory.map(0x899b98u,r.environment().lights_899b98.data(),r.environment().lights_899b98.size());
@@ -1351,10 +1453,10 @@ bool native_race_requests_display(NativeRuntimeContext& c,PcSceneRenderer& r,std
         PcRaceContext ctx{t.memory,matrices,[&](const PcRaceCall& k){return run(k);},&draws};
         run.ctx=&ctx;
         PcRaceCall k{};k.pc=0x46c210u;k.argc=1;k.args[0]=work;
-        (void)bulk_call(ctx.m,ctx.service,k,&matrices,&c.event_function36.pc_crt_random_state,requests_clock_module());
+        (void)bulk_call(ctx.m,ctx.service,k,&matrices,&c.event_function36.pc_crt_random_state,requests_clock_module(),&recorder);
         racers_out(c,t);ints_out(c,t);
         ++t.requests_displays;
-        try{(void)native_race_draw_list_execute(c,r,draws);}
+        try{requests_draw_list_replay(c,r,draws,device_calls);}
         catch(const std::exception& e){if(t.requests_display_error.empty())t.requests_display_error=std::string("draw list: ")+e.what();}
         return true;
     }catch(const TrafficUnported& e){t.requests_display_fault=e.pc;t.requests_display_error=e.what();}

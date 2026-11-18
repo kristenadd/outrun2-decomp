@@ -868,16 +868,53 @@ void heart_item_draw_4ae386(Draw& d,std::uint32_t car){
     d.leaf(0x4044c0u,{});
     d.pop();                                                                     // 40A010
 }
+// 4AE18B (Clarissa mode, request car kinds 4 / 5), in the car's matrix (409F90 car +B0), with
+// n = the frame counter +D18 (509711 / 50970B): 4 the UFO of "Avoid abduction!" (0x15):
+// rotate z by cos(n * [5A91BC] * pi) * [5C473C], y by n * [6280E8] * [5C4738], lifted
+// sin(n * [5C4744] * 2pi) * 0.5 + 7; its body 1400000 scaled 0.2, then the beam 1EE0010
+// three times, scaled by (1.2, 1.3, 1.2), (0.8, 1, 0.8) and 1 on top. 5: the body alone,
+// turned by n * [6280E8] * [5C4740], lifted sin(...) * 0.25 + 1 and scaled 0.075.
+void request_item_draw_4ae18b(Draw& d,std::uint32_t car,std::uint32_t kind){
+    auto& m=d.m;
+    using driving::X87;using driving::x87_float;
+    auto exe=[](std::uint32_t a){float f;std::memcpy(&f,exe_image_bytes(a,4),4);return f;};
+    const std::int32_t n=std::int32_t(m.u32(car+0xd18));
+    d.push_load(car+0xb0);                                                       // 409F90
+    const float phase=float(n)*exe(0x5c4744u)*exe(0x5a29dcu);                   // cvtsi2ss; mulss; mulss
+    const X87 wave=driving::x87_sin(X87(phase));                                 // 449360 (fsin)
+    if(kind==4u){
+        const float bob=x87_float(wave*X87(exe(0x628064u)));                    // fmul 0.5; fstp
+        const X87 tilt=driving::x87_cos(X87(n)*X87(exe(0x5a91bcu))*X87(exe(0x6280c8u)));   // fild; fmul; fmul; fcos
+        driving::pc_matrix_rotate_z(d.s,x87_float(tilt*X87(exe(0x5c473cu))));   // 40A440
+        driving::pc_matrix_rotate_y(d.s,float(n)*exe(0x6280e8u)*exe(0x5c4738u)); // 40A410
+        d.translate3(0.0f,x87_float(X87(bob)+X87(exe(0x5b4434u))),0.0f);        // 40A290 (+7)
+        d.scale3(0.2f,0.2f,0.2f);                                                // 40A360
+        d.leaf(0x4044a0u,{});d.leaf(0x4044e0u,{8});
+        d.leaf(0x405360u,{0x1400000u,0,0,0,None,0});
+        d.scale3(1.2f,1.3f,1.2f);d.leaf(0x405360u,{0x1ee0010u,0,0,0,None,0});
+        d.scale3(0.8f,1.0f,0.8f);d.leaf(0x405360u,{0x1ee0010u,0,0,0,None,0});
+        d.scale3(1.0f,1.0f,1.0f);d.leaf(0x405360u,{0x1ee0010u,0,0,0,None,0});
+    }else{
+        const float bob=x87_float(wave*X87(exe(0x628088u)));                    // fmul 0.25; fstp
+        driving::pc_matrix_rotate_y(d.s,float(n)*exe(0x6280e8u)*exe(0x5c4740u)); // 40A410
+        d.translate3(0.0f,x87_float(X87(bob)+X87(exe(0x62806cu))),0.0f);        // 40A290 (+1)
+        d.scale3(0.075f,0.075f,0.075f);                                          // 40A360
+        d.leaf(0x4044a0u,{});d.leaf(0x4044e0u,{8});
+        d.leaf(0x405360u,{0x1400000u,0,0,0,None,0});
+    }
+    d.leaf(0x4044c0u,{});
+    d.pop();                                                                     // 40A010
+}
 // 4AE0F0 (ESI = car). While the request manager runs (55A930: Clarissa mode), its cars'
 // kind +D14 (4FBBB0: the request's +C) picks the draw: 2 / 3 none (4AE10F / 4AE118 -> 4AE5D4),
-// 1 the heart item (4AE15D -> 4AE386), 4 / 5 an item draw not ported here, others the car.
+// 1 the heart item (4AE15D -> 4AE386), 4 / 5 the request items (4AE18B), others the car.
 void other_car_draw_4ae0f0(PcRaceContext& c,std::uint32_t car){
     Draw d(c);auto& m=c.m;
     if(m.u32(0x7f94c0u)!=0u){
         const std::uint32_t kind=m.u32(car+0xd14);
         if(kind==2u||kind==3u)return;
         if(kind==1u){heart_item_draw_4ae386(d,car);return;}
-        if(kind==4u||kind==5u)throw std::runtime_error("4AE0F0: request item draw (kind 4 / 5, 4AE18B) not ported");
+        if(kind==4u||kind==5u){request_item_draw_4ae18b(d,car,kind);return;}
     }
     else if(m.u32(0x780258u)==2u&&(m.u32(car+0xc5c)&0x80000u)){heart_item_draw_4ae386(d,car);return;}
     std::uint32_t flags=m.u32(car+4);

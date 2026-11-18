@@ -46,6 +46,9 @@ struct TranslatedModule {
     // Another translated set the code may call into on the same CPU and guest stack
     // (stdcall callees, _chkstk frames), searched after this one's functions; null: none.
     const TranslatedModule* next{};
+    // Services that return a float on the x87 stack (ST0): the service answers its bits in
+    // EAX, pushed onto the translated FPU before the return. Ends with 0; null: none.
+    const std::uint32_t* st0_results{};
 };
 // Guest stack of the translated calls (unused PC addresses).
 constexpr std::uint32_t TranslatedStackBase=0x0ff00000u,TranslatedStackSize=0x10000u;

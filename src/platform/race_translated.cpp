@@ -348,6 +348,7 @@ std::uint32_t translated_call_list(PcRaceMemory& m,const PcRaceService& service,
         for(unsigned i=0;i<k.args.size();++i)k.args[i]=translated_arg(c,i);
         const std::uint32_t eax=(*s.service)(k);
         if(s.module->matrices)matrices_out(s);
+        for(const auto* f=s.module->st0_results;f&&*f;++f)if(*f==target){c.fpu.push(or2x86::x87_from_f32(eax));break;}
         translated_return(c,eax,pops(*s.module,target));
     };
     std::uint32_t esp=active.empty()?TranslatedStackBase+TranslatedStackSize-0x20u:active.back()->esp-0x40u;
