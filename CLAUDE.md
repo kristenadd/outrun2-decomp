@@ -223,6 +223,8 @@ and leaves (that's the original game's design, not a bug).
 - `OR2_HOST_LIVE=1`: live frame profiler every 300 race frames, with
   GPU time, CPU record time and fence wait.
 - `OR2_METAL_SYNC=1`: turns off pipelined frames (see below).
+- `OR2_METAL_FFP=generic|sync`: fixed-function pipelines never specialised /
+  specialised at once instead of in the background (see below; default async).
 - `OR2_DEBUG_RACE_END=<seconds>`: testing only. Once the race clock (from GO)
   passes `<seconds>`, the player car "crosses the goal" (the goal flag that
   `4513C0` sets at the goal line), so the race ends through the game's own
@@ -528,6 +530,20 @@ a race. Don't chase them again unless the owner reports one.
   GPU-private back buffer, and **pipelined frames** (CPU builds frame N+1 while
   the GPU draws N; one frame of latency). 1080p FXAA went from 26–28 to 60 fps
   on the iPhone.
+- **Specialised fixed-function pipelines** (2026-11-18, owner's report: Casino
+  Town choppy once the road is wet, worst on Vision Pro). The wet road's spray
+  (PART_EFC water, 419DC0 billboards behind the car) shades ~1.5 screens of
+  blended fragments per frame, which is authentic, and every fixed-function draw ran
+  `pc_ffp`, a generic shader interpreting the stage cascade per fragment. Now
+  each fixed-function state (stage op / arg / misc, specular, alpha test, fog
+  mode) gets its own pipeline with that state as function constants
+  (`ffp_fixed`, `ffp_state0..12`, `generate_metal_shaders.py`), compiled in
+  the background; the generic pipeline draws until it is ready (no hitches).
+  Same arithmetic, so the same pixels (`mac_metal_d3d9_differential_ffp`).
+  M3 Max, 1920x1440: race GPU 3.9 → 1.35 ms/frame, Casino Town 5.1 → 1.75 ms,
+  the spray 0.6–1.0 → 0.2 ms. `OR2_TRACE` logs `[metal] N fixed-function
+  pipelines specialised`. Confirmed by the owner on the Vision Pro (2026-11-18):
+  a solid 90 fps through Casino Town (84.7 of 90 refreshes got a new frame in the log, min 77).
 - Announcer voices: `4489C0` / `44C3D0` / `4F2210` no longer fall through to
   unload-all in `race_end_runtime.cpp` (it was emptying `FE.PAK` in the menus).
 - Passenger "Let's go!" (ORC 130, `4249F0(0x82)` at race start) now plays.

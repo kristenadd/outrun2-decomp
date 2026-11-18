@@ -3,9 +3,16 @@
 #import <Metal/Metal.h>
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <cmath>
 #include <map>
+#include <memory>
+#include <mutex>
+#include <set>
+#include <string>
 #include <sstream>
 #include <stdexcept>
 namespace outrun::mac {
@@ -34,6 +41,14 @@ MTLBlendOperation blend_op(unsigned v){require(v>=1&&v<=5,"Invalid D3D9 blend op
 MTLSamplerAddressMode address(unsigned v){
     switch(v){case 1:return MTLSamplerAddressModeRepeat;case 2:return MTLSamplerAddressModeMirrorRepeat;case 3:return MTLSamplerAddressModeClampToEdge;case 4:return MTLSamplerAddressModeClampToBorderColor;case 5:return MTLSamplerAddressModeMirrorClampToEdge;default:throw std::runtime_error("Unknown D3D9 sampler address mode");}
 }
+}
+constexpr unsigned FfpGeneric=0,FfpAsync=1,FfpSync=2;
+constexpr std::size_t FfpLimit=4096;   // distinct fixed-function states specialised (then the generic pipeline)
+// The pc_ffp function constants: ffp_fixed and the 13 state vectors (generic: false, zeros).
+static MTLFunctionConstantValues* ffp_constants(bool fixed,const std::array<std::int32_t,52>& state){
+    auto c=[MTLFunctionConstantValues new];[c setConstantValue:&fixed type:MTLDataTypeBool atIndex:32];
+    for(unsigned i=0;i<13;++i)[c setConstantValue:state.data()+4*i type:MTLDataTypeInt4 atIndex:33+i];
+    return c;
 }
 struct MetalD3D9Device::Impl {
     MetalD3D9Device& owner;
@@ -85,6 +100,28 @@ struct MetalD3D9Device::Impl {
     std::map<std::uint32_t,id<MTLBuffer>> buffers;
     std::map<std::uint32_t,id<MTLTexture>> textures,depths;
     std::map<std::string,id<MTLRenderPipelineState>> pipelines;
+    // Specialised fixed-function pipelines (flush): requested once per state,
+    // compiled by Metal in the background (FfpAsync, the default), at once
+    // (FfpSync: OR2_METAL_FFP=sync, for tests) or never (OR2_METAL_FFP=generic).
+    struct FfpResults {
+        std::mutex lock;std::vector<std::pair<std::string,id<MTLRenderPipelineState>>> ready;std::atomic<unsigned> waiting{};unsigned failed{};
+        void done(const std::string& key,id<MTLRenderPipelineState> state){
+            std::lock_guard<std::mutex> g(lock);if(state)ready.emplace_back(key,state);else ++failed;++waiting;}
+    };
+    unsigned ffp_mode{FfpAsync},ffp_built{};
+    std::set<std::string> ffp_requested;
+    std::shared_ptr<FfpResults> ffp_async=std::make_shared<FfpResults>();
+    void collect_ffp(){
+        if(!ffp_async->waiting.load(std::memory_order_acquire))return;
+        std::lock_guard<std::mutex> g(ffp_async->lock);
+        for(auto& r:ffp_async->ready){
+            pipelines.emplace(r.first,r.second);++ffp_built;
+            static const bool trace=std::getenv("OR2_TRACE")!=nullptr;
+            if(trace&&!(ffp_built&(ffp_built-1)))std::fprintf(stderr,"[metal] %u fixed-function pipelines specialised (%u failed)\n",ffp_built,ffp_async->failed);
+        }
+        ffp_async->ready.clear();ffp_async->waiting=0;
+    }
+    std::map<std::string,id<MTLFunction>> vertex_functions;
     std::map<std::string,id<MTLDepthStencilState>> depth_states;
     std::map<std::string,id<MTLSamplerState>> samplers;
     std::vector<id<MTLBuffer>> vertex_buffers;
@@ -296,6 +333,7 @@ MetalD3D9Device::MetalD3D9Device(unsigned w,unsigned h,unsigned scale):PcSoftD3D
         m.library=[m.device newLibraryWithSource:[NSString stringWithUTF8String:PcMetalSource] options:options error:&error];
         if(!m.library)metal_error(error,"Recovered MSL shader compilation");
         m.amplification=[m.device supportsVertexAmplificationCount:2];
+        if(const char* v=std::getenv("OR2_METAL_FFP"))m.ffp_mode=std::strcmp(v,"generic")==0?FfpGeneric:std::strcmp(v,"sync")==0?FfpSync:FfpAsync;
         m.allocate_back(w*scale,h*scale);
         auto td=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:1 height:1 mipmapped:NO];
         td.storageMode=MTLStorageModeShared;td.usage=MTLTextureUsageShaderRead;
@@ -552,16 +590,49 @@ void MetalD3D9Device::flush(){
         // unreachable interpreter branches, while material state stays dynamic.
         if(kind){word(unsigned(ps->program.blobs.size()));for(auto blob:ps->program.blobs)word(blob);}
         for(auto state:{RS_COLORWRITEENABLE,RS_ALPHABLENDENABLE,RS_SRCBLEND,RS_DESTBLEND,RS_BLENDOP,RS_SEPARATEALPHABLENDENABLE,RS_SRCBLENDALPHA,RS_DESTBLENDALPHA,RS_BLENDOPALPHA})word(render[state]);
-        auto pipeline=m.pipelines.find(key);
-        if(pipeline==m.pipelines.end()){
+        Uniforms u{};std::memcpy(u.pc,ps_constants.data(),sizeof u.pc);
+        for(auto& row:u.program)for(auto& value:row.v)value=-1;
+        if(kind)for(unsigned i=0;i<ps->program.blobs.size();++i)u.program[i/4].v[i%4]=int(ps->program.blobs[i]);
+        if(kind)u.info.v[0]=int(ps->program.blobs.size());
+        for(unsigned s=0;s<8;++s){const auto* t=object(textures[s]);u.kinds[s/4].v[s%4]=t&&t->kind==5&&t->texture.cube;
+            for(unsigned k=0;k<4;++k)u.bump[s].v[k]=f(stage[s][7+k]);}
+        for(unsigned s=0;s<4;++s){const auto& t=stage[s];
+            u.lum[s/2].v[(s%2)*2]=f(t[22]);u.lum[s/2].v[(s%2)*2+1]=f(t[23]);
+            u.op[s]={{int(t[1]),int(t[2]),int(t[3]),int(t[4])}};
+            u.arg[s]={{int(t[5]),int(t[6]),int(t[26]),int(t[27])}};
+            const auto* tx=object(textures[s]);u.misc[s]={{int(t[28]),int(t[11]&3),tx&&tx->kind==5&&!tx->texture.cube,tx&&tx->kind==5&&tx->texture.cube}};
+            u.konst[s]=colour(t[32]);
+        }
+        u.tfactor=colour(render[RS_TEXTUREFACTOR]);u.flags.v[0]=render[RS_SPECULARENABLE]!=0;
+        u.fog_colour=colour(render[RS_FOGCOLOR]);u.fog_colour.v[3]=f(render[RS_FOGEND]);
+        u.fog_params={{render[RS_FOGENABLE]?float(render[RS_FOGTABLEMODE]?render[RS_FOGTABLEMODE]:4):0,f(render[RS_FOGSTART]),f(render[RS_FOGDENSITY]),1}};
+        u.alpha_test={{render[RS_ALPHATESTENABLE]?1.f:0.f,float(render[RS_ALPHAREF]&255),float(render[RS_ALPHAFUNC]),0}};
+        // Fixed-function draws: the cascade state as function constants (the
+        // values the generic pipeline reads from u), compiled in the background
+        // and used once ready; until then, the generic pipeline (port optimisation:
+        // the generic one interprets every stage per fragment, which made the
+        // full-screen road spray of wet courses GPU-bound at high resolutions).
+        std::array<std::int32_t,52> ffp_state{};
+        if(!kind){
+            for(unsigned s=0;s<4;++s)for(unsigned k=0;k<4;++k){ffp_state[s*4+k]=u.op[s].v[k];ffp_state[16+s*4+k]=u.arg[s].v[k];ffp_state[32+s*4+k]=u.misc[s].v[k];}
+            ffp_state[48]=u.flags.v[0];ffp_state[49]=u.alpha_test.v[0]!=0;ffp_state[50]=int(u.alpha_test.v[2]);ffp_state[51]=int(u.fog_params.v[0]);
+        }
+        // The pipeline's descriptor; fixed: without its fragment program (the caller sets the specialised one).
+        auto describe=[&](bool fixed)->MTLRenderPipelineDescriptor*{
             auto d=[MTLRenderPipelineDescriptor new];
             if(!native_vertices_)d.vertexFunction=[m.library newFunctionWithName:@"pc_vertex"];
             else{
-                auto constants=[MTLFunctionConstantValues new];
                 std::int32_t instructions[32];std::fill(std::begin(instructions),std::end(instructions),-1);
                 for(unsigned i=0;i<vs->program.blobs.size();++i)instructions[i]=int(vs->program.blobs[i]);
-                for(unsigned i=0;i<8;++i)[constants setConstantValue:instructions+4*i type:MTLDataTypeInt4 atIndex:16+i];
-                NSError* error=nil;d.vertexFunction=[m.library newFunctionWithName:@"pc_native_vertex" constantValues:constants error:&error];
+                // One specialisation per program (the generic and the specialised fixed-function pipelines share it).
+                auto& function=m.vertex_functions[std::string(reinterpret_cast<const char*>(instructions),sizeof instructions)];
+                NSError* error=nil;
+                if(!function){
+                    auto constants=[MTLFunctionConstantValues new];
+                    for(unsigned i=0;i<8;++i)[constants setConstantValue:instructions+4*i type:MTLDataTypeInt4 atIndex:16+i];
+                    function=[m.library newFunctionWithName:@"pc_native_vertex" constantValues:constants error:&error];
+                }
+                d.vertexFunction=function;
                 if(!d.vertexFunction)metal_error(error,"Metal vertex program specialization");
                 auto layout=[MTLVertexDescriptor vertexDescriptor];
                 for(unsigned reg=0;reg<16;++reg){layout.attributes[reg].format=MTLVertexFormatFloat4;layout.attributes[reg].bufferIndex=4;}
@@ -576,8 +647,11 @@ void MetalD3D9Device::flush(){
                     }
                 }d.vertexDescriptor=layout;
             }
-            if(!kind)d.fragmentFunction=[m.library newFunctionWithName:@"pc_ffp"];
-            else{
+            if(fixed){}
+            else if(!kind){
+                NSError* error=nil;d.fragmentFunction=[m.library newFunctionWithName:@"pc_ffp" constantValues:ffp_constants(false,{}) error:&error];
+                if(!d.fragmentFunction)metal_error(error,"Metal fixed-function program");
+            }else{
                 auto constants=[MTLFunctionConstantValues new];
                 std::int32_t instructions[16];std::fill(std::begin(instructions),std::end(instructions),-1);
                 for(unsigned i=0;i<ps->program.blobs.size();++i)instructions[i]=int(ps->program.blobs[i]);
@@ -597,6 +671,34 @@ void MetalD3D9Device::flush(){
             if(has_depth){d.depthAttachmentPixelFormat=MTLPixelFormatDepth32Float_Stencil8;d.stencilAttachmentPixelFormat=MTLPixelFormatDepth32Float_Stencil8;}
             d.rasterSampleCount=samples;
             if(layered){d.maxVertexAmplificationCount=2;d.inputPrimitiveTopology=MTLPrimitiveTopologyClassTriangle;}
+            return d;
+        };
+        auto pipeline=m.pipelines.end();
+        if(!kind&&m.ffp_mode!=FfpGeneric){
+            m.collect_ffp();
+            std::string fixed=key;fixed.push_back('F');fixed.append(reinterpret_cast<const char*>(ffp_state.data()),sizeof ffp_state);
+            pipeline=m.pipelines.find(fixed);
+            if(pipeline==m.pipelines.end()&&m.ffp_requested.size()<FfpLimit&&m.ffp_requested.insert(fixed).second){
+                auto d=describe(true);
+                auto constants=ffp_constants(true,ffp_state);
+                if(m.ffp_mode==FfpSync){
+                    NSError* error=nil;d.fragmentFunction=[m.library newFunctionWithName:@"pc_ffp" constantValues:constants error:&error];
+                    if(!d.fragmentFunction)metal_error(error,"Metal fixed-function specialisation");
+                    auto p=[m.device newRenderPipelineStateWithDescriptor:d error:&error];if(!p)metal_error(error,"Metal D3D9 fixed-function pipeline");
+                    pipeline=m.pipelines.emplace(fixed,p).first;++m.ffp_built;
+                }else{
+                    auto shared=m.ffp_async;id<MTLDevice> device=m.device;
+                    [m.library newFunctionWithName:@"pc_ffp" constantValues:constants completionHandler:^(id<MTLFunction> function,NSError*){
+                        if(!function){shared->done(fixed,nil);return;}
+                        d.fragmentFunction=function;
+                        [device newRenderPipelineStateWithDescriptor:d completionHandler:^(id<MTLRenderPipelineState> state,NSError*){shared->done(fixed,state);}];
+                    }];
+                }
+            }
+        }
+        if(pipeline==m.pipelines.end())pipeline=m.pipelines.find(key);
+        if(pipeline==m.pipelines.end()){
+            auto d=describe(false);
             NSError* error=nil;auto p=[m.device newRenderPipelineStateWithDescriptor:d error:&error];if(!p)metal_error(error,"Metal D3D9 pipeline");pipeline=m.pipelines.emplace(key,p).first;
         }
         key.clear();word(has_depth);
@@ -611,23 +713,6 @@ void MetalD3D9Device::flush(){
             }
             auto ds=[m.device newDepthStencilStateWithDescriptor:d];require(ds!=nil,"Cannot create Metal depth/stencil state");depth_state=m.depth_states.emplace(key,ds).first;
         }
-        Uniforms u{};std::memcpy(u.pc,ps_constants.data(),sizeof u.pc);
-        for(auto& row:u.program)for(auto& value:row.v)value=-1;
-        if(kind)for(unsigned i=0;i<ps->program.blobs.size();++i)u.program[i/4].v[i%4]=int(ps->program.blobs[i]);
-        if(kind)u.info.v[0]=int(ps->program.blobs.size());
-        for(unsigned s=0;s<8;++s){const auto* t=object(textures[s]);u.kinds[s/4].v[s%4]=t&&t->kind==5&&t->texture.cube;
-            for(unsigned k=0;k<4;++k)u.bump[s].v[k]=f(stage[s][7+k]);}
-        for(unsigned s=0;s<4;++s){const auto& t=stage[s];
-            u.lum[s/2].v[(s%2)*2]=f(t[22]);u.lum[s/2].v[(s%2)*2+1]=f(t[23]);
-            u.op[s]={{int(t[1]),int(t[2]),int(t[3]),int(t[4])}};
-            u.arg[s]={{int(t[5]),int(t[6]),int(t[26]),int(t[27])}};
-            const auto* tx=object(textures[s]);u.misc[s]={{int(t[28]),int(t[11]&3),tx&&tx->kind==5&&!tx->texture.cube,tx&&tx->kind==5&&tx->texture.cube}};
-            u.konst[s]=colour(t[32]);
-        }
-        u.tfactor=colour(render[RS_TEXTUREFACTOR]);u.flags.v[0]=render[RS_SPECULARENABLE]!=0;
-        u.fog_colour=colour(render[RS_FOGCOLOR]);u.fog_colour.v[3]=f(render[RS_FOGEND]);
-        u.fog_params={{render[RS_FOGENABLE]?float(render[RS_FOGTABLEMODE]?render[RS_FOGTABLEMODE]:4):0,f(render[RS_FOGSTART]),f(render[RS_FOGDENSITY]),1}};
-        u.alpha_test={{render[RS_ALPHATESTENABLE]?1.f:0.f,float(render[RS_ALPHAREF]&255),float(render[RS_ALPHAFUNC]),0}};
         [e setRenderPipelineState:pipeline->second];[e setDepthStencilState:depth_state->second];[e setStencilReferenceValue:render[57]&255];
         [e setFrontFacingWinding:MTLWindingClockwise];[e setCullMode:render[RS_CULLMODE]==CULL_NONE?MTLCullModeNone:render[RS_CULLMODE]==CULL_CCW?MTLCullModeBack:MTLCullModeFront];
         [e setTriangleFillMode:render[RS_FILLMODE]==2?MTLTriangleFillModeLines:MTLTriangleFillModeFill];

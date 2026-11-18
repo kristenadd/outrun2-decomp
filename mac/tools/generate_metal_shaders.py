@@ -39,6 +39,20 @@ vertex Varying pc_vertex(uint i [[vertex_id]],ushort eye [[amplification_id]],co
  o.t4=v[i].t4;o.t5=v[i].t5;o.t6=v[i].t6;o.t7=v[i].t7;o.fog=v[i].fog;return o;
 }
 float4 greaterThan(float4 a,float4 b){return select(float4(0),float4(1),a>b);}
+// Fixed-function state as function constants (port optimisation, MetalD3D9Device::flush):
+// ffp_fixed pipelines take the stage cascade (op / arg / misc of stages 0..3) and
+// the epilogue switches (specular, alpha test enable and function, fog mode) from
+// ffp_state, so the compiler folds the switches; the generic pipeline
+// (ffp_fixed false) reads them from the uniforms. Same arithmetic either way.
+constant bool ffp_fixed [[function_constant(32)]];
+constant int4 ffp_state0 [[function_constant(33)]];constant int4 ffp_state1 [[function_constant(34)]];
+constant int4 ffp_state2 [[function_constant(35)]];constant int4 ffp_state3 [[function_constant(36)]];
+constant int4 ffp_state4 [[function_constant(37)]];constant int4 ffp_state5 [[function_constant(38)]];
+constant int4 ffp_state6 [[function_constant(39)]];constant int4 ffp_state7 [[function_constant(40)]];
+constant int4 ffp_state8 [[function_constant(41)]];constant int4 ffp_state9 [[function_constant(42)]];
+constant int4 ffp_state10 [[function_constant(43)]];constant int4 ffp_state11 [[function_constant(44)]];
+constant int4 ffp_state12 [[function_constant(45)]];
+static int4 ffp_pick(int s,int4 a,int4 b,int4 c,int4 d){return s==0?a:s==1?b:s==2?c:d;}
 '''
 fields = 'PC program info stage_kind bump lum op arg misc konst tfactor flags fog_colour fog_params alpha_test'.split()
 parts = [header, vertex_source(root)]
@@ -61,6 +75,24 @@ for name, file in [('ffp','pc_ffp_fsh.glsl'),('ps11','pc_ps11_uber_fsh.glsl'),('
     # Texture resources are dynamic, but stage indices remain authored constants.
     source = re.sub(r'texture\((tex2d|texcube)(\d),([^;]+?)\)', lambda m:f'io.{m[1]}[{m[2]}].sample(io.smp[{m[2]}],{m[3]},bias(u.lod_bias[{m[2]}]))', source)
     source = re.sub(r'texture\((tex|cube)(\d),([^;]+?)\)', lambda m:f'io.{"tex2d" if m[1]=="tex" else "texcube"}[{m[2]}].sample(io.smp[{m[2]}],{m[3]},bias(u.lod_bias[{m[2]}]))', source)
+    if name == 'ffp':
+        # Stage and epilogue state through the function constants above.
+        source = re.sub(r'u\.(op|arg|misc)\[([^\]]+)\]', r'ffp_\1(\2)', source)
+        for old, new in [('u.flags.x!=0', '(ffp_fixed?ffp_state12.x:u.flags.x)!=0'),
+                         ('u.alpha_test.x!=0.0', '(ffp_fixed?float(ffp_state12.y):u.alpha_test.x)!=0.0'),
+                         ('int(u.alpha_test.z)', '(ffp_fixed?ffp_state12.z:int(u.alpha_test.z))'),
+                         ('u.fog_params.x!=0.0', '(ffp_fixed?float(ffp_state12.w):u.fog_params.x)!=0.0'),
+                         ('int(u.fog_params.x)', '(ffp_fixed?ffp_state12.w:int(u.fog_params.x))'),
+                         ('    for(int s=0;s<4;++s){', '    _Pragma("clang loop unroll(full)")\n    for(int s=0;s<4;++s){')]:
+            if source.count(old) != 1:
+                raise ValueError(f'fixed-function specialisation: {old!r} found {source.count(old)} times')
+            source = source.replace(old, new)
+        if re.search(r'u\.(op|arg|misc)\[', re.sub(r'//[^\n]*', '', source)):
+            raise ValueError('fixed-function stage state read outside the function constants')
+        source = '''int4 ffp_op(int s){return ffp_fixed?ffp_pick(s,ffp_state0,ffp_state1,ffp_state2,ffp_state3):u.op[s];}
+int4 ffp_arg(int s){return ffp_fixed?ffp_pick(s,ffp_state4,ffp_state5,ffp_state6,ffp_state7):u.arg[s];}
+int4 ffp_misc(int s){return ffp_fixed?ffp_pick(s,ffp_state8,ffp_state9,ffp_state10,ffp_state11):u.misc[s];}
+''' + source
     if 'layout(' in source or 'texture(' in source or 'out_colour' in source or 'gl_' in source:
         raise ValueError(f'untranslated shader construct in {file}')
     parts.append(f'struct Eval_{name} {{\n constant Uniforms& u; Varying v; IO io;\n'+source+'\n};\n')
