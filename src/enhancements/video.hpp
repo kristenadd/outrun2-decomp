@@ -33,6 +33,8 @@ struct VideoSettings {
     // The screen's own aspect (Hor+, widescreen set too) where the platform
     // knows it (VideoBackend::screen_aspect), e.g. an iPad's 3:2-ish screen.
     bool fit_screen{};
+    // Stereoscopic 3D depth (visionOS): 0 = off (mono), 1 .. VideoBackend::stereo_depths().
+    std::uint32_t stereo_depth{};
 };
 
 class VideoBackend {
@@ -49,6 +51,9 @@ public:
     virtual float screen_aspect()const{return 0;}
     // Frames per second offered, smallest first (60, 120); fewer than two: no row.
     virtual std::vector<std::uint32_t> frame_rates()const{return {};}
+    // The highest 3D DEPTH level where the platform shows stereoscopic 3D
+    // (visionOS), the row offering OFF, 1 .. this; 0: no such row.
+    virtual std::uint32_t stereo_depths()const{return 0;}
     virtual VideoSettings current()const=0;
     // Applies (live when the platform can, else at the next launch) and saves.
     virtual void apply(const VideoSettings&)=0;

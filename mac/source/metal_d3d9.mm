@@ -2,6 +2,7 @@
 #include "pc_metal_shaders.hpp"
 #import <Metal/Metal.h>
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <cmath>
 #include <map>
@@ -51,12 +52,35 @@ struct MetalD3D9Device::Impl {
     id<MTLRenderPipelineState> fxaa;
     id<MTLSamplerState> fxaa_sampler;
     id<MTLBuffer> visibility;
+    // Stereo (set_stereo): the back buffer, its depth, the MSAA targets and the
+    // FXAA source have `layers` layers (2: left, right eye); a pass on them
+    // renders both at once (vertex amplification, `layered`).
+    unsigned layers{1};
+    bool amplification{};             // the GPU renders 2 views per draw
+    bool pass_layered{},layered{};    // the last pass descriptor / the open encoder covers both layers
+    std::array<id<MTLTexture>,2> fxaa_views;   // scene_copy's layers as 2D textures
     // Pipelined frames (set_pipelined): the frame the GPU still renders keeps
     // its own vertex arena, visibility results and readback copy (the spare
     // set) while the CPU records the next one in the current set.
     id<MTLBuffer> spare_visibility,spare_staging;
     std::vector<id<MTLBuffer>> spare_vertex_buffers;
     id<MTLCommandBuffer> inflight;unsigned inflight_samples{};bool inflight_done{};
+    // gpu_frames_: the back buffer's copies (3, as the queue may still read the
+    // shown one while the next two are drawn) and their eyes as 2D textures.
+    std::array<id<MTLTexture>,3> presents;
+    std::array<std::array<id<MTLTexture>,2>,3> present_eyes;
+    unsigned present_next{};int inflight_present{-1},shown_present{-1};
+    unsigned copy_present(id<MTLBlitCommandEncoder> blit){
+        const unsigned k=present_next;present_next=(k+1)%3;auto& t=presents[k];
+        if(!t||t.width!=back.width||t.height!=back.height||t.arrayLength!=back.arrayLength||t.textureType!=back.textureType){
+            auto td=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:back.width height:back.height mipmapped:NO];
+            td.textureType=back.textureType;td.arrayLength=back.arrayLength;td.storageMode=MTLStorageModePrivate;td.usage=MTLTextureUsageShaderRead;
+            t=[device newTextureWithDescriptor:td];require(t!=nil,"Cannot allocate a frame copy");
+            for(unsigned eye=0;eye<2;++eye)present_eyes[k][eye]=back.textureType==MTLTextureType2DArray
+                ?[t newTextureViewWithPixelFormat:MTLPixelFormatRGBA8Unorm textureType:MTLTextureType2D levels:NSMakeRange(0,1) slices:NSMakeRange(std::min<NSUInteger>(eye,back.arrayLength-1),1)]:t;
+        }
+        [blit copyFromTexture:back toTexture:t];return k;
+    }
     id<MTLBuffer> default_vertex;
     std::map<std::uint32_t,id<MTLBuffer>> buffers;
     std::map<std::uint32_t,id<MTLTexture>> textures,depths;
@@ -80,7 +104,7 @@ struct MetalD3D9Device::Impl {
         }
         if(h<owner.buffer_dirty_.size())owner.buffer_dirty_[h]=false;return b;
     }
-    void end_encoder(){if(encoder){[encoder endEncoding];encoder=nil;}}
+    void end_encoder(){if(encoder){[encoder endEncoding];encoder=nil;}layered=false;}
     // Ends the pass; a clear still pending (no draw followed it) runs as a pass of its own.
     void finish_encoder(){
         end_encoder();if(!clear_flags)return;
@@ -120,13 +144,23 @@ struct MetalD3D9Device::Impl {
         const std::size_t bytes=std::size_t(back.width)*back.height*4;
         destination.resize(bytes);
         if(from&&from.length>=bytes)std::memcpy(destination.data(),from.contents,bytes);
+        if(layers<2){owner.right_colour_.clear();return;}
+        owner.right_colour_.resize(bytes);
+        if(from&&from.length>=2*bytes)std::memcpy(owner.right_colour_.data(),static_cast<const char*>(from.contents)+bytes,bytes);
+    }
+    // The back buffer's layers into `to` (one after the other), for copy_out.
+    void copy_back(id<MTLBlitCommandEncoder> blit,id<MTLBuffer> to,NSUInteger w,NSUInteger h){
+        const std::size_t row=std::size_t(w)*4;
+        for(unsigned layer=0;layer<layers;++layer)
+            [blit copyFromTexture:back sourceSlice:layer sourceLevel:0 sourceOrigin:MTLOriginMake(0,0,0) sourceSize:MTLSizeMake(w,h,1)
+                 toBuffer:to destinationOffset:row*h*layer destinationBytesPerRow:row destinationBytesPerImage:row*h];
     }
     // Waits for the frame in flight (pipelined) and shows it: before the CPU
     // changes what that frame reads (texture uploads, a resize) or reads back.
     void drain(){
         if(!inflight)return;
         [inflight waitUntilCompleted];
-        if(!inflight_done){completed(inflight,spare_visibility,inflight_samples);copy_out(spare_staging);}
+        if(!inflight_done){completed(inflight,spare_visibility,inflight_samples);if(inflight_present>=0)shown_present=inflight_present;else copy_out(spare_staging);}
         inflight=nil;inflight_done=false;
     }
     id<MTLTexture> texture(std::uint32_t handle){
@@ -168,6 +202,10 @@ struct MetalD3D9Device::Impl {
         const auto col=colour(c);p.colorAttachments[0].clearColor=MTLClearColorMake(col.v[0],col.v[1],col.v[2],col.v[3]);
         auto d=depth(owner.depth_target_);
         if(msaa){require(owner.depth_target_==owner.DepthBuffer||!d,"MSAA scene with a separate depth surface");if(d)d=msaa_depth;}
+        // Both eyes when the target is the layered back buffer (with its own
+        // depth or none); a separate depth surface keeps the pass mono (left eye).
+        pass_layered=layers>1&&owner.colour_target_==owner.BackBuffer&&(!d||d==back_depth||d==msaa_depth);
+        if(pass_layered)p.renderTargetArrayLength=layers;
         if(d){
             require(d.width>=std::max(NSUInteger(1),target.width>>level)&&d.height>=std::max(NSUInteger(1),target.height>>level),"Metal depth attachment smaller than target");
             p.depthAttachment.texture=d;p.depthAttachment.loadAction=flags&2?MTLLoadActionClear:MTLLoadActionLoad;p.depthAttachment.storeAction=MTLStoreActionStore;p.depthAttachment.clearDepth=z;
@@ -177,23 +215,27 @@ struct MetalD3D9Device::Impl {
     }
     id<MTLRenderCommandEncoder> render_encoder(){
         start();
-        if(!encoder){const unsigned flags=clear_flags;clear_flags=0;encoder=[command renderCommandEncoderWithDescriptor:pass(flags,clear_colour,clear_z,clear_stencil)];require(encoder!=nil,"Cannot create Metal render encoder");}
+        if(!encoder){const unsigned flags=clear_flags;clear_flags=0;encoder=[command renderCommandEncoderWithDescriptor:pass(flags,clear_colour,clear_z,clear_stencil)];require(encoder!=nil,"Cannot create Metal render encoder");
+            layered=pass_layered;
+            if(layered){const MTLVertexAmplificationViewMapping views[2]{{0,0},{0,1}};[encoder setVertexAmplificationCount:2 viewMappings:views];}}
         return encoder;
     }
     void allocate_back(unsigned w,unsigned h){
         require(w>0&&h>0&&w<=16384&&h<=16384,"Invalid Metal back buffer size");
         auto td=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:w height:h mipmapped:NO];
+        if(layers>1){td.textureType=MTLTextureType2DArray;td.arrayLength=layers;}
         // GPU-private (losslessly compressed on Apple GPUs); readback() copies it out.
         td.storageMode=MTLStorageModePrivate;td.usage=MTLTextureUsageShaderRead|MTLTextureUsageRenderTarget;back=[device newTextureWithDescriptor:td];
         td.pixelFormat=MTLPixelFormatDepth32Float_Stencil8;td.storageMode=MTLStorageModePrivate;back_depth=[device newTextureWithDescriptor:td];
         require(back&&back_depth,"Cannot allocate Metal back buffers");
-        scene_copy=nil;msaa_colour=msaa_depth=nil;readback_staging=spare_staging=nil;
+        scene_copy=nil;fxaa_views={};msaa_colour=msaa_depth=nil;readback_staging=spare_staging=nil;
     }
     void ensure_msaa(unsigned samples){
-        if(msaa_colour&&msaa_colour.sampleCount==samples&&msaa_colour.width==back.width&&msaa_colour.height==back.height)return;
+        if(msaa_colour&&msaa_colour.sampleCount==samples&&msaa_colour.width==back.width&&msaa_colour.height==back.height&&msaa_colour.arrayLength==layers)return;
         require([device supportsTextureSampleCount:samples],"Metal GPU lacks this MSAA sample count");
         auto td=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:back.width height:back.height mipmapped:NO];
-        td.textureType=MTLTextureType2DMultisample;td.sampleCount=samples;td.storageMode=MTLStorageModePrivate;td.usage=MTLTextureUsageRenderTarget;
+        td.textureType=layers>1?MTLTextureType2DMultisampleArray:MTLTextureType2DMultisample;td.arrayLength=layers;
+        td.sampleCount=samples;td.storageMode=MTLStorageModePrivate;td.usage=MTLTextureUsageRenderTarget;
         msaa_colour=[device newTextureWithDescriptor:td];
         td.pixelFormat=MTLPixelFormatDepth32Float_Stencil8;msaa_depth=[device newTextureWithDescriptor:td];
         require(msaa_colour&&msaa_depth,"Cannot allocate the MSAA scene targets");
@@ -202,11 +244,14 @@ struct MetalD3D9Device::Impl {
     // cleared for the 2D layer drawn there next.
     void resolve_msaa(){
         finish_encoder();start();
-        auto p=[MTLRenderPassDescriptor renderPassDescriptor];
-        p.colorAttachments[0].texture=msaa_colour;p.colorAttachments[0].loadAction=MTLLoadActionLoad;
-        p.colorAttachments[0].storeAction=MTLStoreActionMultisampleResolve;p.colorAttachments[0].resolveTexture=back;
-        auto e=[command renderCommandEncoderWithDescriptor:p];require(e!=nil,"Cannot encode the MSAA resolve");[e endEncoding];
-        p=[MTLRenderPassDescriptor renderPassDescriptor];
+        MTLRenderPassDescriptor* p;id<MTLRenderCommandEncoder> e;
+        for(unsigned layer=0;layer<layers;++layer){   // one eye per resolve
+            p=[MTLRenderPassDescriptor renderPassDescriptor];
+            p.colorAttachments[0].texture=msaa_colour;p.colorAttachments[0].slice=layer;p.colorAttachments[0].loadAction=MTLLoadActionLoad;
+            p.colorAttachments[0].storeAction=MTLStoreActionMultisampleResolve;p.colorAttachments[0].resolveTexture=back;p.colorAttachments[0].resolveSlice=layer;
+            e=[command renderCommandEncoderWithDescriptor:p];require(e!=nil,"Cannot encode the MSAA resolve");[e endEncoding];
+        }
+        p=[MTLRenderPassDescriptor renderPassDescriptor];if(layers>1)p.renderTargetArrayLength=layers;
         p.colorAttachments[0].texture=back;p.colorAttachments[0].loadAction=MTLLoadActionLoad;p.colorAttachments[0].storeAction=MTLStoreActionStore;
         p.depthAttachment.texture=back_depth;p.depthAttachment.loadAction=MTLLoadActionClear;p.depthAttachment.storeAction=MTLStoreActionStore;p.depthAttachment.clearDepth=1;
         p.stencilAttachment.texture=back_depth;p.stencilAttachment.loadAction=MTLLoadActionClear;p.stencilAttachment.storeAction=MTLStoreActionStore;p.stencilAttachment.clearStencil=0;
@@ -246,10 +291,11 @@ MetalD3D9Device::MetalD3D9Device(unsigned w,unsigned h,unsigned scale):PcSoftD3D
         require(scale>=1&&scale<=4,"Metal render scale must be between 1 and 4");
         static_assert(sizeof(Vertex)==180,"MSL packed vertex layout");
         auto& m=*metal_;m.device=MTLCreateSystemDefaultDevice();require(m.device!=nil,"No Metal GPU available");
-        m.queue=[m.device newCommandQueue];require(m.queue!=nil,"Cannot create Metal queue");
+        m.queue=(__bridge id<MTLCommandQueue>)metal_shared_queue();require(m.queue!=nil&&m.queue.device==m.device,"Cannot create Metal queue");
         NSError* error=nil;auto options=[MTLCompileOptions new];options.fastMathEnabled=NO;
         m.library=[m.device newLibraryWithSource:[NSString stringWithUTF8String:PcMetalSource] options:options error:&error];
         if(!m.library)metal_error(error,"Recovered MSL shader compilation");
+        m.amplification=[m.device supportsVertexAmplificationCount:2];
         m.allocate_back(w*scale,h*scale);
         auto td=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:1 height:1 mipmapped:NO];
         td.storageMode=MTLStorageModeShared;td.usage=MTLTextureUsageShaderRead;
@@ -274,6 +320,10 @@ MetalD3D9Device::MetalD3D9Device(unsigned w,unsigned h,unsigned scale):PcSoftD3D
 MetalD3D9Device::~MetalD3D9Device(){try{metal_->drain();metal_->finish();}catch(const std::exception& e){std::fprintf(stderr,"Metal shutdown: %s\n",e.what());}}
 void MetalD3D9Device::begin_frame(){
     metal_->finish();metal_->gpu_ns=0;scene_finished_=false;
+    // Stereo on or off: the back buffer's layers change (between frames, as a resize).
+    {auto& m=*metal_;const unsigned layers=stereo_separation_>0&&m.amplification?2u:1u;
+     if(layers!=m.layers)@autoreleasepool {m.drain();m.finish();m.layers=layers;m.allocate_back(unsigned(m.back.width),unsigned(m.back.height));if(layers<2)right_colour_.clear();}
+     stereo_live_=m.layers>1;}
     msaa_live_=msaa_>1&&!count_only;
     if(msaa_live_)@autoreleasepool {metal_->ensure_msaa(msaa_);}
     if(!count_only)metal_->start();
@@ -291,17 +341,24 @@ void MetalD3D9Device::finish_scene(){
         auto& m=*metal_;m.finish_encoder();m.start();
         if(!m.scene_copy){
             auto td=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:m.back.width height:m.back.height mipmapped:NO];
+            if(m.layers>1){td.textureType=MTLTextureType2DArray;td.arrayLength=m.layers;}
             td.storageMode=MTLStorageModePrivate;td.usage=MTLTextureUsageShaderRead;
             m.scene_copy=[m.device newTextureWithDescriptor:td];require(m.scene_copy!=nil,"Cannot allocate the FXAA source");
+            for(unsigned layer=0;layer<m.layers&&m.layers>1;++layer){
+                m.fxaa_views[layer]=[m.scene_copy newTextureViewWithPixelFormat:MTLPixelFormatRGBA8Unorm textureType:MTLTextureType2D levels:NSMakeRange(0,1) slices:NSMakeRange(layer,1)];
+                require(m.fxaa_views[layer]!=nil,"Cannot view the FXAA source");
+            }
         }
         auto blit=[m.command blitCommandEncoder];require(blit!=nil,"Cannot encode the FXAA copy");
         [blit copyFromTexture:m.back toTexture:m.scene_copy];[blit endEncoding];
-        auto p=[MTLRenderPassDescriptor renderPassDescriptor];
-        p.colorAttachments[0].texture=m.back;p.colorAttachments[0].loadAction=MTLLoadActionDontCare;p.colorAttachments[0].storeAction=MTLStoreActionStore;
-        auto e=[m.command renderCommandEncoderWithDescriptor:p];require(e!=nil,"Cannot encode FXAA");
-        [e setRenderPipelineState:m.fxaa];[e setFragmentTexture:m.scene_copy atIndex:0];[e setFragmentSamplerState:m.fxaa_sampler atIndex:0];
-        [e setViewport:MTLViewport{0,0,double(m.back.width),double(m.back.height),0,1}];
-        [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];[e endEncoding];
+        for(unsigned layer=0;layer<m.layers;++layer){   // one eye per pass
+            auto p=[MTLRenderPassDescriptor renderPassDescriptor];
+            p.colorAttachments[0].texture=m.back;p.colorAttachments[0].slice=layer;p.colorAttachments[0].loadAction=MTLLoadActionDontCare;p.colorAttachments[0].storeAction=MTLStoreActionStore;
+            auto e=[m.command renderCommandEncoderWithDescriptor:p];require(e!=nil,"Cannot encode FXAA");
+            [e setRenderPipelineState:m.fxaa];[e setFragmentTexture:m.layers>1?m.fxaa_views[layer]:m.scene_copy atIndex:0];[e setFragmentSamplerState:m.fxaa_sampler atIndex:0];
+            [e setViewport:MTLViewport{0,0,double(m.back.width),double(m.back.height),0,1}];
+            [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];[e endEncoding];
+        }
         ++fxaa_passes;
     }
 }
@@ -313,20 +370,21 @@ void MetalD3D9Device::end_frame(){
     // instead of waiting: one frame of latency, the CPU and GPU in parallel.
     auto& m=*metal_;m.finish_encoder();
     const auto w=presentation_width(),h=presentation_height();const std::size_t row=std::size_t(w)*4;
-    if(!m.readback_staging||m.readback_staging.length<row*h){
-        m.readback_staging=[m.device newBufferWithLength:row*h options:MTLResourceStorageModeShared];require(m.readback_staging!=nil,"Cannot allocate the readback buffer");}
+    if(!m.readback_staging||m.readback_staging.length<row*h*m.layers){
+        m.readback_staging=[m.device newBufferWithLength:row*h*m.layers options:MTLResourceStorageModeShared];require(m.readback_staging!=nil,"Cannot allocate the readback buffer");}
     m.start();auto blit=[m.command blitCommandEncoder];require(blit!=nil,"Cannot encode the readback");
-    [blit copyFromTexture:m.back sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0,0,0) sourceSize:MTLSizeMake(w,h,1)
-         toBuffer:m.readback_staging destinationOffset:0 destinationBytesPerRow:row destinationBytesPerImage:row*h];
+    const int present=gpu_frames_?int(m.copy_present(blit)):-1;   // GPU frames: no CPU readback
+    if(present<0)m.copy_back(blit,m.readback_staging,w,h);
     [blit endEncoding];
     id<MTLCommandBuffer> frame=m.command;const unsigned samples=m.samples;m.command=nil;m.samples=0;
     [frame commit];
     bool done=false;
     if(m.inflight)m.drain();
     else{   // the first frame: shown at once (and again next frame, while the pipeline fills)
-        [frame waitUntilCompleted];m.completed(frame,m.visibility,samples);m.copy_out(m.readback_staging);done=true;
+        [frame waitUntilCompleted];m.completed(frame,m.visibility,samples);
+        if(present>=0)m.shown_present=present;else m.copy_out(m.readback_staging);done=true;
     }
-    m.inflight=frame;m.inflight_samples=samples;m.inflight_done=done;
+    m.inflight=frame;m.inflight_samples=samples;m.inflight_done=done;m.inflight_present=present;
     std::swap(m.visibility,m.spare_visibility);std::swap(m.readback_staging,m.spare_staging);std::swap(m.vertex_buffers,m.spare_vertex_buffers);
 }
 void MetalD3D9Device::set_pipelined(bool on){
@@ -339,13 +397,21 @@ void MetalD3D9Device::readback(){
     const auto w=presentation_width(),h=presentation_height();
     destination.resize(std::size_t(w)*h*4);
     auto& m=*metal_;const std::size_t row=std::size_t(w)*4;
-    if(!m.readback_staging||m.readback_staging.length<row*h){
-        m.readback_staging=[m.device newBufferWithLength:row*h options:MTLResourceStorageModeShared];require(m.readback_staging!=nil,"Cannot allocate the readback buffer");}
+    if(!m.readback_staging||m.readback_staging.length<row*h*m.layers){
+        m.readback_staging=[m.device newBufferWithLength:row*h*m.layers options:MTLResourceStorageModeShared];require(m.readback_staging!=nil,"Cannot allocate the readback buffer");}
     m.start();auto blit=[m.command blitCommandEncoder];require(blit!=nil,"Cannot encode the readback");
-    [blit copyFromTexture:m.back sourceSlice:0 sourceLevel:0 sourceOrigin:MTLOriginMake(0,0,0) sourceSize:MTLSizeMake(w,h,1)
-         toBuffer:m.readback_staging destinationOffset:0 destinationBytesPerRow:row destinationBytesPerImage:row*h];
+    m.copy_back(blit,m.readback_staging,w,h);
     [blit endEncoding];m.finish();
     std::memcpy(destination.data(),m.readback_staging.contents,row*h);
+    if(m.layers>1){right_colour_.resize(row*h);std::memcpy(right_colour_.data(),static_cast<const char*>(m.readback_staging.contents)+row*h,row*h);}
+}
+void* metal_shared_queue(){
+    static id<MTLCommandQueue> queue=[]{id<MTLDevice> d=MTLCreateSystemDefaultDevice();return d?[d newCommandQueue]:nil;}();
+    return (__bridge void*)queue;
+}
+void* MetalD3D9Device::gpu_frame(unsigned eye)const{
+    const auto& m=*metal_;if(m.shown_present<0)return nullptr;
+    return (__bridge void*)m.present_eyes[std::size_t(m.shown_present)][eye?1:0];
 }
 unsigned MetalD3D9Device::presentation_width()const{return unsigned(metal_->back.width);}
 unsigned MetalD3D9Device::presentation_height()const{return unsigned(metal_->back.height);}
@@ -471,9 +537,10 @@ void MetalD3D9Device::flush(){
         }
         const bool has_depth=depth_target_!=0;
         const bool separate=render[RS_SEPARATEALPHABLENDENABLE]!=0;
+        auto e=m.render_encoder();const bool layered=m.layered;   // both eyes (stereo back buffer)
         std::string key;auto word=[&](unsigned v){key.append(reinterpret_cast<const char*>(&v),sizeof v);};
         const unsigned samples=colour_target_==BackBuffer&&msaa_live_?msaa_:1;
-        word(kind);word(has_depth);word(samples);
+        word(kind);word(has_depth);word(samples);word(layered);
         word(native_vertices_);
         const auto* vs=object(vertex_shader);const auto* decl=object(declaration);
         if(native_vertices_){
@@ -529,6 +596,7 @@ void MetalD3D9Device::flush(){
             }
             if(has_depth){d.depthAttachmentPixelFormat=MTLPixelFormatDepth32Float_Stencil8;d.stencilAttachmentPixelFormat=MTLPixelFormatDepth32Float_Stencil8;}
             d.rasterSampleCount=samples;
+            if(layered){d.maxVertexAmplificationCount=2;d.inputPrimitiveTopology=MTLPrimitiveTopologyClassTriangle;}
             NSError* error=nil;auto p=[m.device newRenderPipelineStateWithDescriptor:d error:&error];if(!p)metal_error(error,"Metal D3D9 pipeline");pipeline=m.pipelines.emplace(key,p).first;
         }
         key.clear();word(has_depth);
@@ -560,7 +628,7 @@ void MetalD3D9Device::flush(){
         u.fog_colour=colour(render[RS_FOGCOLOR]);u.fog_colour.v[3]=f(render[RS_FOGEND]);
         u.fog_params={{render[RS_FOGENABLE]?float(render[RS_FOGTABLEMODE]?render[RS_FOGTABLEMODE]:4):0,f(render[RS_FOGSTART]),f(render[RS_FOGDENSITY]),1}};
         u.alpha_test={{render[RS_ALPHATESTENABLE]?1.f:0.f,float(render[RS_ALPHAREF]&255),float(render[RS_ALPHAFUNC]),0}};
-        auto e=m.render_encoder();[e setRenderPipelineState:pipeline->second];[e setDepthStencilState:depth_state->second];[e setStencilReferenceValue:render[57]&255];
+        [e setRenderPipelineState:pipeline->second];[e setDepthStencilState:depth_state->second];[e setStencilReferenceValue:render[57]&255];
         [e setFrontFacingWinding:MTLWindingClockwise];[e setCullMode:render[RS_CULLMODE]==CULL_NONE?MTLCullModeNone:render[RS_CULLMODE]==CULL_CCW?MTLCullModeBack:MTLCullModeFront];
         [e setTriangleFillMode:render[RS_FILLMODE]==2?MTLTriangleFillModeLines:MTLTriangleFillModeFill];
         require(render[RS_FILLMODE]==2||render[RS_FILLMODE]==3,"Metal point fill mode is not implemented");
@@ -600,6 +668,9 @@ void MetalD3D9Device::flush(){
             }
             [e setFragmentSamplerState:sample->second atIndex:s];u.lod_bias[s]=f(state[SAMP_MIPMAPLODBIAS]);
         }
+        // Per-eye shift (pc_stereo in the vertex programs): left, right, convergence.
+        const float eyes[4]{layered?-stereo_separation_:0.f,layered?stereo_separation_:0.f,stereo_convergence_,0};
+        [e setVertexBytes:eyes length:sizeof eyes atIndex:7];
         // Metal copies set*Bytes immediately; large vertex batches need a buffer.
         if(native_vertices_){
             for(unsigned i=0;i<4;++i)if(streams[i].buffer)[e setVertexBuffer:m.buffer(streams[i].buffer) offset:streams[i].offset atIndex:i];

@@ -80,6 +80,10 @@ public:
     // bound by the platform to the robots runtime's work (race_robots_runtime.hpp).
     const std::uint8_t* autoscene_work_799ca0{};
     std::uint32_t camera_inits{},camera_controls{},camera_unanswered{},car_displays{},race_car_displays{};
+    // Above 60 Hz: camera replays registered (the tick's view rebuilt exactly by 482F20) / skipped (it was not).
+    std::uint32_t camera_replays{},camera_replays_skipped{};
+    // Diagnostics: race car displays whose matrix (+B0) or scene lights were not finite.
+    std::uint32_t race_car_bad_matrix{},race_car_bad_lights{};
     // PMT banks (inflated archive bytes) loaded through the native loader
     // 42E490..42E8C0 onto the device.
     bool load_bank(std::uint32_t resource,std::vector<std::uint8_t> pmt,std::string& error);
@@ -192,7 +196,8 @@ private:
     void apply_camera(const driving::PcCameraDevice&,driving::Bytes camera);
     // Port enhancement (enhancements/frame_rate.hpp): the 485FE0 view redone
     // between ticks from the camera before (`before`) and after this tick.
-    void note_camera_replay(driving::Bytes camera,const std::vector<std::uint8_t>& before);
+    void note_camera_replay(driving::Bytes camera,const std::vector<std::uint8_t>& before,const driving::PcCameraDevice& tick);
+    bool camera_replay_faithful(driving::Bytes camera,const driving::PcCameraDevice& tick);
     bool display_car();
     bool display_race_car();
     // 49F400 (GamePlCar display): the headlight pool (pc_headlight_pool.hpp).

@@ -1645,7 +1645,9 @@ bool frontend_owner_call_impl(NativeRuntimeContext& c,std::uint32_t pc,std::uint
         else{if(created)stack.release(&st,created);owner.put32(0x488,0);}
     };
     switch(pc){
-    case 0x43fa00u:eax=enhancements::display_frames()?c.frame_state.updates_95af48:1u;return true;   // [780278] = [95AF48]: ticks of this frame (417B20; 0 on a display-only frame)
+    case 0x43fa00u:{   // testing: OR2_FPS_TICKS_ONE=1 answers 1 on display-only frames too
+        static const bool one=std::getenv("OR2_FPS_TICKS_ONE")!=nullptr;
+        eax=enhancements::display_frames()&&!one?c.frame_state.updates_95af48:1u;return true;}   // [780278] = [95AF48]: ticks of this frame (417B20; 0 on a display-only frame)
     case 0x4412c0u:                                         // the +488 overlay's key, 0x53 when none
         eax=owner.u32(0x488)&&owner.u8(0x48c)?stack.key(&st,owner.u32(0x488)):0x53u;return true;
     case 0x444780u:if(n<1)return false;overlay(a[0]);return true;
@@ -4867,7 +4869,13 @@ std::uint32_t run_native_frame_loop(NativeRuntimeContext& c,const NativeRuntimeL
         // 417C7B tests the live [78026C] for its one-tick modes (0x18 / 0x20 /
         // 0x24); this loop keeps the mode of its setup there, which suits one
         // tick per frame but would keep a race at one tick per frame.
-        if(enhancements::display_frames()){fs.ticks=&display_hooks;c.frame_state.mode_78026c=c.mode_state.current;}
+        if(enhancements::display_frames()){fs.ticks=&display_hooks;c.frame_state.mode_78026c=c.mode_state.current;
+            // The course queries' lane prediction (7801A8) and the world's: displays run their
+            // own course queries; a display-only frame must not move what the next tick reads.
+            auto& race_lct=c.event_function36.car_select.race_prediction;
+            enhancements::display_preserve(&race_lct,&race_lct,sizeof race_lct,"race lane prediction 7801A8");
+            auto& world_lct=c.start_mode.scene_owner_course_world.prediction_storage();
+            enhancements::display_preserve(&world_lct,&world_lct,sizeof world_lct,"course world lane prediction");}
         const auto result=driving::runtime_frame_step_417c7b(c.frame_state,fs);
         ++c.completed_frames;
         if(result.platform_wait_before_next_frame){

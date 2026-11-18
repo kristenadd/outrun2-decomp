@@ -232,7 +232,15 @@ void common_service(void* user,std::uint32_t pc){
             driving::PcMaterialSounds{x.view(0x5e0f00u,32u),material_commands(x)},f.ends,std::uint32_t(f.game_mode()),std::uint32_t(f.variant())};
         driving::PcBodyWallContext body{query,bk,wall,P,W.sub(0x258,4*0xf4),wrecker};
         driving::PcColiCarContext ctx{ground,body,P,f.wheels};
-        driving::coli_car(e,W,ctx);
+        try{driving::coli_car(e,W,ctx);}
+        catch(const std::out_of_range& ex){
+            // Diagnostics: the lane prediction and the lanes' polygon counts with the fault.
+            const auto& lct=c.event_function36.car_select.race_prediction;auto& world=c.start_mode.scene_owner_course_world;
+            char text[160];int n=std::snprintf(text,sizeof text," [easy %u world %u, lanes",unsigned(lct.easy),unsigned(world.prediction().easy));
+            for(std::uint32_t t=0;t<4u&&n>0&&n<int(sizeof text);++t)
+                n+=std::snprintf(text+n,sizeof text-std::size_t(n)," %d",world.lane_loaded(t)?int(world.lane(t).pc_layout.polygon_count):-1);
+            throw std::out_of_range(std::string(ex.what())+text+"]");
+        }
         w.rotation_5e302c=wall.rebound.response.rotation_odd;w.rotation_5e3030=wall.rebound.response.rotation_even;
         return;}
     case 0x004a1b70u:driving::suspension_force(W,P);return;

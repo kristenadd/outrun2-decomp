@@ -23,6 +23,11 @@ public:
     // screen (iOS): adds FULL SCREEN to the aspect row (fit_screen, the 16:9
     // push with the resolution at this aspect). Called before attach.
     void set_screen_aspect(float aspect);
+    // Stereoscopic 3D (visionOS): levels 1 .. `levels` (0: no 3D DEPTH row)
+    // and the platform call that applies one (0 = off). Called before attach.
+    using StereoPush=std::function<void(std::uint32_t level)>;
+    void set_stereo_depths(std::uint32_t levels,StereoPush push);
+    std::uint32_t stereo_depths()const override{return stereo_levels_;}
     float screen_aspect()const override{return screen_aspect_;}
     // The renderer once initialized (an empty function detaches it): the
     // settings are applied to it from then on.
@@ -35,7 +40,8 @@ public:
     void apply(const VideoSettings&)override;
     bool needs_restart(const VideoSettings& s)const override{return !pace_&&s.frame_rate!=start_rate_;}
     VideoSettings supported(VideoSettings)const;   // a loaded setting made valid
-    // options.ini keys: widescreen=0/1, fit_screen=0/1, resolution=WxH, antialiasing=off/msaa2/msaa4/fxaa, framerate=60/120.
+    // options.ini keys: widescreen=0/1, fit_screen=0/1, resolution=WxH, antialiasing=off/msaa2/msaa4/fxaa, framerate=60/90/120,
+    // stereo_depth=0..5 (visionOS).
     static bool parse_option(const std::string& key,const std::string& value,VideoSettings&);
 private:
     void push()const;
@@ -47,5 +53,7 @@ private:
     std::uint32_t start_rate_{60},saved_rate_{60};   // the rate of this launch; the one loaded from options.ini
     Push push_;
     RatePush pace_;
+    std::uint32_t stereo_levels_{},saved_stereo_{};   // saved_stereo_: stereo_depth loaded from options.ini (kept until the levels are known)
+    StereoPush stereo_push_;
 };
 }

@@ -28,8 +28,13 @@ struct IO {
  array<texturecube<float>,6> texcube;
  array<sampler,6> smp;
 };
-vertex Varying pc_vertex(uint i [[vertex_id]],const device Input* v [[buffer(0)]]) {
- Varying o; o.p=v[i].p; o.d0=v[i].d0;o.d1=v[i].d1;
+// Stereo (port enhancement, MetalD3D9Device::set_stereo): eye 0 / 1 of a
+// layered back-buffer pass moves by s.x / s.y * (w - s.z); 0 when mono.
+// Screen-space positions (w == 1) keep zero parallax; nearer than the
+// convergence depth, the (crossed) parallax is capped at the far one's.
+static float4 pc_stereo(float4 p,ushort eye,float4 s){ if(fabs(p.w-1.0f)>1.0e-5f)p.x+=(eye?s.y:s.x)*max(p.w-s.z,-p.w); return p; }
+vertex Varying pc_vertex(uint i [[vertex_id]],ushort eye [[amplification_id]],const device Input* v [[buffer(0)]],constant float4& stereo [[buffer(7)]]) {
+ Varying o; o.p=pc_stereo(v[i].p,eye,stereo); o.d0=v[i].d0;o.d1=v[i].d1;
  o.t0=v[i].t0;o.t1=v[i].t1;o.t2=v[i].t2;o.t3=v[i].t3;
  o.t4=v[i].t4;o.t5=v[i].t5;o.t6=v[i].t6;o.t7=v[i].t7;o.fog=v[i].fog;return o;
 }

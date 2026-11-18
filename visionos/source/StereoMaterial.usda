@@ -1,0 +1,55 @@
+#usda 1.0
+(
+    defaultPrim = "Root"
+    metersPerUnit = 1
+    upAxis = "Y"
+)
+
+# The game's window picture: unlit, one texture per eye (RealityKit's camera
+# index switch: the left eye sees `left`, the right eye `right`, a mono view
+# `left`). Set by OutRunApp.swift (StereoScreen) from two LowLevelTextures.
+def Xform "Root"
+{
+    def Material "Stereo"
+    {
+        asset inputs:left
+        asset inputs:right
+        token outputs:mtlx:surface.connect = </Root/Stereo/Unlit.outputs:out>
+        token outputs:realitykit:vertex
+
+        def Shader "Unlit"
+        {
+            uniform token info:id = "ND_realitykit_unlit_surfaceshader"
+            bool inputs:applyPostProcessToneMap = 0
+            color3f inputs:color.connect = </Root/Stereo/Eye.outputs:out>
+            bool inputs:hasPremultipliedAlpha = 0
+            float inputs:opacity = 1
+            token outputs:out
+        }
+
+        def Shader "Eye"
+        {
+            uniform token info:id = "ND_realitykit_geometry_switch_cameraindex_color3"
+            color3f inputs:left.connect = </Root/Stereo/Left.outputs:out>
+            color3f inputs:mono.connect = </Root/Stereo/Left.outputs:out>
+            color3f inputs:right.connect = </Root/Stereo/Right.outputs:out>
+            color3f outputs:out
+        }
+
+        def Shader "Left"
+        {
+            uniform token info:id = "ND_RealityKitTexture2D_color3"
+            asset inputs:file.connect = </Root/Stereo.inputs:left>
+            string inputs:mip_filter = "none"
+            color3f outputs:out
+        }
+
+        def Shader "Right"
+        {
+            uniform token info:id = "ND_RealityKitTexture2D_color3"
+            asset inputs:file.connect = </Root/Stereo.inputs:right>
+            string inputs:mip_filter = "none"
+            color3f outputs:out
+        }
+    }
+}

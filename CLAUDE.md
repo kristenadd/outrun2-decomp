@@ -15,6 +15,9 @@ The repository contains **no game data**. The player supplies their own Steam
 install. The EXE is read at first launch, checked against SHA-256 ranges, and
 cached as `OR2006C2C.cache` next to the game files.
 
+A native **visionOS** port (`visionos/`, stereoscopic 3D in a window) was
+added on 2026-11-17; see "visionOS port" below.
+
 Upstream is `r4dius/outrun2-decomp` (remote `upstream`); this fork is
 `kristenadd/outrun2-decomp` (remote `origin`). The iOS work lives on the
 `ios-port` branch.
@@ -57,6 +60,90 @@ Reuses the Mac game: `mac/source/main.cpp`, `renderer.cpp`, `metal_d3d9.mm`,
 - `ios/Info.plist.in`: landscape, full screen, file sharing, scene manifest,
   controller keys.
 - Shared Mac files have small `#ifdef OR2_IOS` blocks (fullscreen windows).
+
+### visionOS port (`visionos/`)
+
+Reuses the iOS game (`ios/source/platform_api.cpp`, `ios_paths.mm`) and the
+Mac renderer, but **not SDL's video**: SDL2's UIKit video layer doesn't compile
+for visionOS (`UIScreen`), so SDL2 is built with `SDL_VIDEO=OFF`
+`SDL_HIDAPI=OFF` (audio, events, MFi controllers only). Pieces:
+
+- `OutRunApp.swift`: SwiftUI app with one plain window holding a RealityKit
+  plane. `StereoMaterial.usda` (camera-index switch) shows each eye its own
+  `LowLevelTexture`. The window resizes `.uniform` at the game's aspect
+  (4:3 / 16:9; `screen_aspect()` is 0, so there's no FULL SCREEN).
+- `vision_display.mm`: `SdlDisplay` reimplemented on a Metal compositor
+  (3 frame slots). The app's `SceneEvents.Update` takes the newest slot
+  (`vision_bridge.h`).
+- `vision_main.mm`: `main.cpp` is built as `or2_game_main` (`-Dmain=…`) and
+  runs on a 16 MB-stack thread.
+- Stereo is in `MetalD3D9Device::set_stereo` (`metal_d3d9.mm`): a layered back
+  buffer and vertex amplification, plus `pc_stereo` in the generated vertex
+  shaders (`x ± s·max(w−C, −w)`, nothing at `w == 1`). The Mac test
+  `mac_metal_d3d9_differential` checks it on the Mac GPU.
+- Options ▸ Settings ▸ **3D DEPTH** (OFF, 1..5, `stereo_depth=` in options.ini,
+  default 3): `VideoBackend::stereo_depths()`, visionOS only.
+- **FRAME RATE 60 / 90** (default 60 until the owner confirms the fixes below): the headset refreshes at 90 Hz, and 60
+  judders there (1 and 2 refreshes alternate). 90 uses the 120 fps
+  interpolation (`frame_rate.hpp`) and is paced by the window's RealityKit
+  updates (`or2_vision_take_frame` counts refreshes; `submit` waits for one).
+- Frames stay on the GPU (`MetalD3D9Device::set_gpu_frames`: a ring of 3
+  back-buffer copies the compositor samples, all on `metal_shared_queue()`);
+  there's no CPU readback on visionOS.
+- Measuring on the headset: `OR2_TRACE` logs `[visionos] N updates/s, M
+  frames/s` (M of N refreshes got a new frame; 82–87 of 90 in a race at
+  1600x900 stereo, 2026-11-18). **`OR2_HOST_LIVE` "hitch" lines are
+  meaningless at 90 fps**: they time 60 Hz ticks, which hold one or two frames
+  (11 / 22 ms). GPU time per frame is about 8–9 ms stereo, 5–7 ms mono, and
+  barely depends on resolution (1080 vs 900).
+- **Car / ending vanishing at 90 fps (2026-11-18), fixed on the Mac, not yet
+  confirmed by the owner on the headset.** At stage 4's end and in the goal
+  ending the player car (traffic too) vanished, leaving only its shadow; the
+  ending had no characters.
+  - **Cause:** the camera's between-tick replay (`note_camera_replay`,
+    `pc_scene_renderer.cpp`) rebuilt the view with 482F20 and `apply_camera`
+    also wrote the **culling frustum / planes** 482F20 does not compute. The
+    special stage-change / goal cameras do not set them again every tick, so
+    the car stayed culled until the next camera change. The replay now keeps
+    the tick's frustum and planes, and only replays a tick whose view 482F20
+    rebuilds exactly at blend 1 (`camera_replay_faithful`; in practice all of
+    them: `camera replays N, skipped 0` in the race summary).
+  - **Also found on the way (kept):** `pc_cw_crush_status` read 0x10 bytes past
+    the 0x10F0-byte car on a hard wall hit (any frame rate; latched the car,
+    `car_fault=4a8330`); `crash_entry_candidate_boundaries` now runs it on the
+    real car size. Display-only frames no longer move the shared lane
+    predictions (`display_preserve`). Cars whose `+16C` is more than 8 units
+    from `+14` (traffic just spawned) are drawn at the tick matrix.
+  - **Reproducing on the Mac** (`OR2_HOST_FRAME_HZ=90`: fixed game clock, 90 fps
+    interpolation, deterministic): the 2SP autoplay path below with
+    `script=1900-40000:ZR` drives itself to stage 5 with
+    `OR2_HOST_HOLD_TIME=1` (race clock held). `OR2_HOST_CAR_PIXELS=1` logs
+    `[car-px] frame=N red=M` (the car's red pixels, bottom centre, every 59
+    frames): the vanishing was red≈0 at frames 34,000–35,800 and 43,400–45,000
+    (the ending). Side-by-side runs: `OR2_HOST_WINDOW_TITLE=...`,
+    `OR2_HOST_WINDOW_RECT=x,y,w,h`. Isolating switches: `OR2_FPS_NO_REPLAYS`,
+    `OR2_FPS_NO_CAR_REPLAYS`, `OR2_FPS_NO_CAMERA_REPLAY`,
+    `OR2_FPS_NO_ROBOT_REPLAYS`, `OR2_FPS_TICKS_ONE` (43FA00 answers 1).
+    About 13 minutes per run (the game runs at 2/3 speed on a 60 Hz screen).
+- visionOS holds the game only when the scene is in the **background**:
+  `inactive` happens in ordinary use (system UI, focus) and holding there froze
+  the game and its controller input.
+- **Controller on visionOS** (2026-11-18, not yet confirmed): read straight from
+  GameController every sample (`vision_gamepad.mm`), not SDL's MFi driver.
+  visionOS sends controller input to what the player looks at, as pinches unless
+  that view opts in. `GCEventInteraction` on the UIWindow didn't cover the
+  RealityKit picture, so input froze mid-race (R2 stuck on: the car kept
+  driving). Now the whole view opts in (`handlesGameControllerEvents`, visionOS
+  26), and while the scene isn't `active` every control reads released.
+  `OR2_TRACE` logs `[pad]` presses, controller changes and focus.
+- `OR2_IOS` and `OR2_VISIONOS` are both defined. Shared files check
+  `OR2_VISIONOS` where visionOS differs (`main.cpp`, `renderer_present.inc`,
+  `sdl_backend.hpp`).
+- Xcode generator only (Swift). Presets `visionos-simulator` and
+  `visionos-device` (`-DOR2_VISIONOS_TEAM`, `-DOR2_VISIONOS_BUNDLE_ID`).
+- The owner hasn't confirmed it on a Vision Pro yet. The stereo look (depth,
+  comfort, HUD at zero parallax) is unverified on hardware; the simulator shows
+  only the left eye.
 
 ## Building
 
@@ -456,6 +543,13 @@ a race. Don't chase them again unless the owner reports one.
   47EE70`): traffic cars' destroy callback `470560` went to the ghost handler,
   which faulted for good when a stage change destroyed traffic. The traffic
   module now handles its own `470560`.
+- **120 fps on iPhone** (2026-11-18): `SdlDisplay::present` slept to 1/60 s per present
+  whatever the FRAME RATE (Mac too); it now follows `display_rate()`. A ProMotion iPhone
+  also needs a display link with a preferred rate range before a Metal layer goes past
+  60 Hz (`screen_request_frames_per_second`, `ios/source/display_rate.mm`). The select-button
+  overlay counts frames shown (not 60 Hz ticks) and lists the real settings. `OR2_TRACE`
+  logs `[present] N frames/s`. Measured on the 15 Pro Max at 2342x1080 FXAA: ~119 fps while
+  cool, 47–70 once warm (CPU record and GPU time per frame both about double: thermal).
 - Goal ending (mode 24, staff roll): the scene stays in its 320x240 window
   (the car reflection cube's target switch reset the viewport), centred in the
   4:3 area with a 4:3 camera in widescreen; race-end modes no longer tick the

@@ -24,9 +24,18 @@ bool present_frame(RendererImpl& r){
         // widescreen aspect (16:9 or the screen's), or the screen's aspect for
         // the 4:3 screen (pillarboxed in it). SDL letterboxes a canvas narrower or wider than the screen.
         {const float screen=r.display->screen_aspect();
+#ifdef OR2_VISIONOS
+         // visionOS: the window takes the canvas's aspect (4:3 or 16:9, no full screen).
+         const float aspect=g_widescreen?g_aspect:4.f/3.f;(void)screen;
+#else
          const float aspect=screen<=0?16.f/9.f:g_widescreen?g_aspect:screen;
+#endif
          const auto width=std::max(FramebufferHeight*4u/3u,(std::uint32_t(float(FramebufferHeight)*aspect+0.5f)+1u)&~1u);
          if(width!=g_canvas_width&&r.display->resize(width,FramebufferHeight,r.last_error))g_canvas_width=width;}
+#endif
+#ifdef OR2_VISIONOS
+        // 3D DEPTH: the eye separation for the window's physical width (SdlDisplay::stereo, visionOS).
+        {const auto eyes=r.display->stereo(r.stereo_depth);r.device->set_stereo(eyes.separation,eyes.convergence);}
 #endif
         r.device->begin_frame();
         if(!r.start_loading_visible&&r.scene){
@@ -63,6 +72,13 @@ bool present_frame(RendererImpl& r){
 #else
             // D3D9 presents RGB regardless of the back buffer alpha. The PC
             // sprite flush writes RGB only; treating it as an overlay hides it.
+#ifdef OR2_VISIONOS
+            if(void* left=pc.gpu_frame(0))   // the frame stays on the GPU (set_gpu_frames)
+                display.gpu_frame(left,pc.gpu_frame(1),pc.presentation_height(),int(ox),0,int(ow),int(FramebufferHeight));
+            else if(pc.stereo()&&pc.rgba_right().size()==pc.rgba().size())
+                display.rgba_stereo(r.device.get(),pc.rgba().data(),pc.rgba_right().data(),pc.presentation_width(),pc.presentation_height(),int(ox),0,int(ow),int(FramebufferHeight));
+            else
+#endif
             display.rgba(r.device.get(),pc.rgba().data(),pc.presentation_width(),pc.presentation_height(),int(ox),0,int(ow),int(FramebufferHeight),true);
 #endif
             // The title movie stays 4:3 in a 16:9 frame.
@@ -79,7 +95,37 @@ bool present_frame(RendererImpl& r){
                         const auto& t=r.frontend.textures[slot];display.quad(make_animated_frontend_quad(r.frontend,d,0u),display.texels(&t,t.format,t.width,t.height,t.bytes),t.width,t.height);}}
             }
         }
+#if defined(OR2_MAC_HOST)&&!defined(OR2_VISIONOS)
+        // Testing (OR2_HOST_CAR_PIXELS=1): the player car's red pixels in the bottom
+        // centre of the 3D frame, about once a second (car visibility, unattended runs).
+        {static const bool probe=std::getenv("OR2_HOST_CAR_PIXELS")!=nullptr;
+         if(probe&&r.stats.frames%59u==0u&&!r.start_loading_visible){   // 59: both tick and in-between frames at 90
+            const auto& px=r.device->rgba();const unsigned w=r.device->presentation_width(),h=r.device->presentation_height();
+            std::size_t red=0;
+            if(px.size()>=std::size_t(w)*h*4)for(unsigned y=h*55/100;y<h*95/100;y+=2)for(unsigned x=w*30/100;x<w*70/100;x+=2){
+                const auto* p=&px[(std::size_t(y)*w+x)*4];if(p[0]>140&&p[1]<70&&p[2]<70)++red;}
+            std::fprintf(stderr,"[car-px] frame=%u red=%zu\n",r.stats.frames,red);}}
+#endif
+        screen_request_frames_per_second(enhancements::display_rate());   // (iOS: lets ProMotion go past 60 Hz)
+#ifndef OR2_VISIONOS
+        display.set_frames_per_second(enhancements::display_rate());
+#endif
+        const auto present_begin=std::chrono::steady_clock::now();
         if(!display.present(r.last_error))return false;
+        {   // Diagnostics (OR2_TRACE): frames shown per second, and the time spent in present (vsync waits).
+            static const bool trace=std::getenv("OR2_TRACE")!=nullptr;
+            static auto window=std::chrono::steady_clock::now();static unsigned shown=0;static double present_ms=0;
+            if(trace){
+                const auto now=std::chrono::steady_clock::now();++shown;
+                present_ms+=std::chrono::duration<double,std::milli>(now-present_begin).count();
+                if(now-window>=std::chrono::seconds(5)){
+                    const double s=std::chrono::duration<double>(now-window).count();
+                    std::fprintf(stderr,"[present] %.1f frames/s (rate %u, screen %u Hz), present %.2f ms/frame\n",
+                        shown/s,unsigned(enhancements::display_rate()),r.screen_hz,present_ms/shown);
+                    window=now;shown=0;present_ms=0;
+                }
+            }
+        }
         if(r.screen_hz_age++%120u==0u)r.screen_hz=screen_max_frames_per_second();   // the window may move to another screen
         if(enhancements::display_rate()<=60u&&r.screen_hz>=100u){
             const auto due=r.last_present+std::chrono::microseconds(16667);

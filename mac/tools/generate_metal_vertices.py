@@ -18,11 +18,11 @@ def vertex_source(root):
 struct VsState { float4 R[12]{},V[16]{}; constant float4* C; float4 oPos{},oFog{1,1,1,1},oPts{},oD[2]{},oT[8]{}; };
 '''+math+funcs+'''\nvoid run(int blob,thread VsState& s){switch(blob){'''+cases+'''\n}}\n}
 struct NativeInput {'''+attrs+'''};
-vertex Varying pc_native_vertex(NativeInput input [[stage_in]],constant float4* constants [[buffer(5)]],constant float4& viewport [[buffer(6)]]) {
+vertex Varying pc_native_vertex(NativeInput input [[stage_in]],ushort eye [[amplification_id]],constant float4* constants [[buffer(5)]],constant float4& viewport [[buffer(6)]],constant float4& stereo [[buffer(7)]]) {
  native_vs::VsState s{};s.C=constants;
 '''+inputs+runs+'''
  Varying o; o.p=s.oPos;o.p.x+=o.p.w/viewport.x;o.p.y-=o.p.w/viewport.y;o.p.z+=viewport.z*o.p.w;
  o.d0=native_vs::sat(s.oD[0]);o.d1=native_vs::sat(s.oD[1]);
- o.t0=s.oT[0];o.t1=s.oT[1];o.t2=s.oT[2];o.t3=s.oT[3];o.t4=s.oT[4];o.t5=s.oT[5];o.t6=s.oT[6];o.t7=s.oT[7];o.fog=native_vs::clamp01(s.oFog.x);return o;
+ o.t0=s.oT[0];o.t1=s.oT[1];o.t2=s.oT[2];o.t3=s.oT[3];o.t4=s.oT[4];o.t5=s.oT[5];o.t6=s.oT[6];o.t7=s.oT[7];o.fog=native_vs::clamp01(s.oFog.x);o.p=pc_stereo(o.p,eye,stereo);return o;
 }
 '''

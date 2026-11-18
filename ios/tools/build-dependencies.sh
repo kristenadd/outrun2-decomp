@@ -2,11 +2,15 @@
 # Local, pinned ARM64 iOS dependencies (SDL2, Ogg, Vorbis, FFmpeg) for the
 # device (iphoneos) and the simulator (iphonesimulator), plus a host pkgconf.
 # Same sources and SHA-256 as the Mac build (mac/tools/dependencies.lock).
-# Usage: build-dependencies.sh [iphoneos|iphonesimulator ...]  (default: both)
+# visionOS (xros, xrsimulator; visionos/README.md) uses the same script: SDL2
+# is built without its video layer there (SDL2's UIKit video predates
+# visionOS); the game uses it for audio and game controllers only.
+# Usage: build-dependencies.sh [iphoneos|iphonesimulator|xros|xrsimulator ...]  (default: the two iOS SDKs)
 set -eu
 task_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 task_cmake=${OR2_CMAKE:-cmake}
-task_min=16.0
+task_ios_min=16.0
+task_xr_min=2.0
 task_sources="$task_root/build/dependency-sources"
 task_archives="$task_root/build/downloads"
 task_host="$task_root/build/ios-dependencies/host"
@@ -34,9 +38,18 @@ fi
 [ $# -gt 0 ] || set -- iphoneos iphonesimulator
 for task_sdk in "$@"; do
     case "$task_sdk" in
-        iphoneos) task_target="arm64-apple-ios$task_min" ;;
-        iphonesimulator) task_target="arm64-apple-ios$task_min-simulator" ;;
+        iphoneos) task_min=$task_ios_min; task_target="arm64-apple-ios$task_min" ;;
+        iphonesimulator) task_min=$task_ios_min; task_target="arm64-apple-ios$task_min-simulator" ;;
+        xros) task_min=$task_xr_min; task_target="arm64-apple-xros$task_min" ;;
+        xrsimulator) task_min=$task_xr_min; task_target="arm64-apple-xros$task_min-simulator" ;;
         *) echo "unknown SDK: $task_sdk" >&2; exit 2 ;;
+    esac
+    case "$task_sdk" in
+        xr*) task_system=visionOS
+             # SDL_PLATFORM_VISIONOS: SDL_sysurl.m's visionOS branch (SDL2 never defines it).
+             # No HIDAPI (SDL2 has no visionOS backend for it): controllers come through GameController (MFi).
+             task_sdl_options="-DSDL_VIDEO=OFF -DSDL_HIDAPI=OFF -DSDL_RENDER=OFF -DSDL_OPENGL=OFF -DSDL_OPENGLES=OFF -DSDL_METAL=OFF -DCMAKE_C_FLAGS=-DSDL_PLATFORM_VISIONOS=1 -DCMAKE_OBJC_FLAGS=-DSDL_PLATFORM_VISIONOS=1" ;;
+        *) task_system=iOS; task_sdl_options="" ;;
     esac
     task_prefix="$task_root/build/ios-dependencies/$task_sdk"
     task_build="$task_root/build/dependency-build/ios-$task_sdk"
@@ -45,12 +58,12 @@ for task_sdk in "$@"; do
         task_source=${task_pair%:*}
         task_name=${task_pair#*:}
         "$task_cmake" -S "$task_sources/$task_source" -B "$task_build/$task_name" \
-            -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT="$task_sdk" \
+            -DCMAKE_SYSTEM_NAME=$task_system -DCMAKE_OSX_SYSROOT="$task_sdk" \
             -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=$task_min \
             -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$task_prefix" \
             -DCMAKE_PREFIX_PATH="$task_prefix" -DCMAKE_FIND_ROOT_PATH="$task_prefix" \
             -DCMAKE_POLICY_VERSION_MINIMUM=3.5 -DBUILD_SHARED_LIBS=OFF \
-            -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST=OFF
+            -DSDL_SHARED=OFF -DSDL_STATIC=ON -DSDL_TEST=OFF $task_sdl_options
         "$task_cmake" --build "$task_build/$task_name" -j 6
         "$task_cmake" --install "$task_build/$task_name"
     done
@@ -74,4 +87,4 @@ for task_sdk in "$@"; do
         make install
     )
 done
-printf 'iOS dependencies installed in %s\n' "$task_root/build/ios-dependencies"
+printf 'iOS / visionOS dependencies installed in %s\n' "$task_root/build/ios-dependencies"

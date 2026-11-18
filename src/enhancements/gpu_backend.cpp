@@ -4,10 +4,13 @@
 #include <cstdlib>
 
 namespace outrun::enhancements {
-GpuVideoBackend::GpuVideoBackend(std::string path,const VideoSettings& start):path_(std::move(path)),saved_fit_(start.fit_screen),saved_rate_(start.frame_rate){settings_=supported(start);}
+GpuVideoBackend::GpuVideoBackend(std::string path,const VideoSettings& start):path_(std::move(path)),saved_fit_(start.fit_screen),saved_rate_(start.frame_rate),saved_stereo_(start.stereo_depth){settings_=supported(start);}
 void GpuVideoBackend::set_screen_aspect(float aspect){
     screen_aspect_=aspect>0?aspect:0;settings_.fit_screen=saved_fit_;settings_=supported(settings_);}
 void GpuVideoBackend::attach(Push push){push_=std::move(push);this->push();}
+void GpuVideoBackend::set_stereo_depths(std::uint32_t levels,StereoPush push){
+    stereo_levels_=levels;stereo_push_=std::move(push);settings_.stereo_depth=saved_stereo_;settings_=supported(settings_);
+    if(stereo_push_)stereo_push_(settings_.stereo_depth);}
 void GpuVideoBackend::set_frame_rates(std::vector<std::uint32_t> rates,RatePush pace){
     rates_=rates.empty()?std::vector<std::uint32_t>{60}:std::move(rates);settings_.frame_rate=saved_rate_;settings_=supported(settings_);
     pace_=std::move(pace);
@@ -22,6 +25,7 @@ VideoSettings GpuVideoBackend::supported(VideoSettings s)const{
     const auto modes=antialiasing_modes();
     if(std::find(modes.begin(),modes.end(),s.antialiasing)==modes.end())s.antialiasing=Antialiasing::Off;
     if(std::find(rates_.begin(),rates_.end(),s.frame_rate)==rates_.end())s.frame_rate=rates_.front();
+    s.stereo_depth=std::min(s.stereo_depth,stereo_levels_);
     return s;
 }
 void GpuVideoBackend::push()const{
@@ -31,12 +35,14 @@ void GpuVideoBackend::push()const{
 }
 void GpuVideoBackend::apply(const VideoSettings& s){
     settings_=supported(s);push();
+    if(stereo_push_)stereo_push_(settings_.stereo_depth);
     if(pace_){set_display_rate(settings_.frame_rate);pace_(settings_.frame_rate);}
-    saved_fit_=settings_.fit_screen;
+    saved_fit_=settings_.fit_screen;saved_stereo_=settings_.stereo_depth;
     std::vector<std::pair<std::string,std::string>> values{{"widescreen",settings_.widescreen?"1":"0"},
         {"resolution",resolution_key(settings_.resolution)},{"antialiasing",antialiasing_key(settings_.antialiasing)},
         {"framerate",std::to_string(settings_.frame_rate)}};
     if(screen_aspect_>0)values.push_back({"fit_screen",settings_.fit_screen?"1":"0"});
+    if(stereo_levels_>0)values.push_back({"stereo_depth",std::to_string(settings_.stereo_depth)});
     if(!path_.empty())write_options(path_,values);
 }
 bool GpuVideoBackend::parse_option(const std::string& key,const std::string& value,VideoSettings& s){
@@ -44,7 +50,8 @@ bool GpuVideoBackend::parse_option(const std::string& key,const std::string& val
     if(key=="fit_screen"){s.fit_screen=std::strtoul(value.c_str(),nullptr,10)!=0;return true;}
     if(key=="resolution")return parse_resolution(value,s.resolution);
     if(key=="antialiasing")return parse_antialiasing(value,s.antialiasing);
-    if(key=="framerate"){const auto r=std::strtoul(value.c_str(),nullptr,10);if(r!=60&&r!=120)return false;s.frame_rate=std::uint32_t(r);return true;}
+    if(key=="stereo_depth"){const auto d=std::strtoul(value.c_str(),nullptr,10);if(d>9)return false;s.stereo_depth=std::uint32_t(d);return true;}
+    if(key=="framerate"){const auto r=std::strtoul(value.c_str(),nullptr,10);if(r!=60&&r!=90&&r!=120)return false;s.frame_rate=std::uint32_t(r);return true;}
     return false;
 }
 }

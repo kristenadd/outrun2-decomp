@@ -82,6 +82,7 @@ copy its `textures` folder next to the game files in the app's files.
 | `src/enhancements` | port additions kept apart from the reconstructed game: extra Options > Settings rows (aspect ratio, resolution, anti-aliasing, frame rate); each platform lists what it supports (`enhancements_*.cpp` in its `source/`) |
 | `switch/`, `mac/`, `ps5/`, `xbox/` | one folder per platform, same layout in each |
 | `ios/` | iOS / iPadOS: reuses the Mac platform code (`mac/source`); `ios/source` holds only the iOS parts (folders, scene life cycle, controller notice) |
+| `visionos/` | Apple Vision Pro: the iOS game in a resizable stereoscopic 3D window (SwiftUI / RealityKit; `visionos/source`) |
 | `tests/` | unit and regression tests (CTest) |
 | `tools/` | EXE image tools, leak check, x86 translator, decompilation tracking, generators, PS5 build and package scripts |
 | `images/` | screenshots |
@@ -106,6 +107,7 @@ backgrounds, the Xbox package logos and the Mac application icon.
 | Nintendo Switch | `make -C switch` | `switch/README.md` |
 | macOS | `cmake --preset mac-full` | `mac/README.md` |
 | iOS / iPadOS | `sh ios/tools/build-dependencies.sh`, then `cmake --preset ios-device` (or `ios-simulator`) | `ios/README.md` |
+| visionOS | `sh ios/tools/build-dependencies.sh xros xrsimulator`, then `cmake --preset visionos-device` (or `visionos-simulator`) | `visionos/README.md` |
 | PS5 | `Build-PS5.ps1` (Windows + WSL; makes the `.pkg`) | `ps5/README.md` |
 | Xbox | `cmake` with `-DOR2_XBOX=ON` (Visual Studio 2026, UWP) | `xbox/README.md` |
 

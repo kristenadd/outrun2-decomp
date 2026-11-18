@@ -62,6 +62,8 @@ void mac_renderer_set_video(MacRenderer&,unsigned width,unsigned height,bool wid
 // The width / height of the screen the game fills (iOS: the device screen,
 // landscape); 0 where the window has no fixed size (macOS).
 float mac_renderer_screen_aspect(MacRenderer&);
+// visionOS: the 3D DEPTH level (0 = mono, 1 .. 5), applied from the next frame.
+void mac_renderer_set_stereo_depth(MacRenderer&,unsigned level);
 // The 2D layer starts (PC 42D710): the 3D scene's MSAA resolve or FXAA.
 void mac_renderer_scene_to_frame(MacRenderer&);
 // Borrowed pool must outlive the renderer. Binding copies authored timing into

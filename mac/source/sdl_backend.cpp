@@ -33,7 +33,11 @@ bool SdlDisplay::open(unsigned w,unsigned h,std::string& error){
 #else
     constexpr Uint32 window_flags=SDL_WINDOW_SHOWN|SDL_WINDOW_RESIZABLE|SDL_WINDOW_ALLOW_HIGHDPI;
 #endif
-    window_=SDL_CreateWindow("OutRun 2006 macOS",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,window_width,window_height,window_flags);
+    // Testing (side-by-side runs): OR2_HOST_WINDOW_TITLE labels the window, OR2_HOST_WINDOW_RECT=x,y,w,h places it.
+    const char* title=std::getenv("OR2_HOST_WINDOW_TITLE");
+    int wx=SDL_WINDOWPOS_CENTERED,wy=SDL_WINDOWPOS_CENTERED,ww=window_width,wh=window_height;
+    if(const char* rect=std::getenv("OR2_HOST_WINDOW_RECT")){int a,b,c,d;if(std::sscanf(rect,"%d,%d,%d,%d",&a,&b,&c,&d)==4&&c>0&&d>0){wx=a;wy=b;ww=c;wh=d;}}
+    window_=SDL_CreateWindow(title&&*title?title:"OutRun 2006 macOS",wx,wy,ww,wh,window_flags);
     if(!window_){error=SDL_GetError();return false;}
     SDL_SetHint(SDL_HINT_RENDER_DRIVER,"metal");
     renderer_=SDL_CreateRenderer(window_,-1,SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC);
@@ -129,9 +133,9 @@ bool SdlDisplay::present(std::string& error){
 #endif
     SDL_ClearError();SDL_RenderPresent(renderer_);
     if(*SDL_GetError()){error=SDL_GetError();return false;}
-    // One recovered simulation tick per presentation: keep the PC's 60 Hz
-    // on Retina screens and external monitors with different refresh rates.
-    constexpr auto frame_period=std::chrono::nanoseconds(1000000000/60);
+    // Presents no faster than the FRAME RATE (60: one simulation tick per
+    // presentation, the PC's 60 Hz, on screens of any refresh rate; 120: two).
+    const auto frame_period=std::chrono::nanoseconds(1000000000/frames_per_second_);
     const auto now=std::chrono::steady_clock::now();
     if(next_frame_==std::chrono::steady_clock::time_point{})next_frame_=now;
     next_frame_+=frame_period;

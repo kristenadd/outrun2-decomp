@@ -10,4 +10,5 @@ unsigned screen_max_frames_per_second(){
         return 60;
     }
 }
+void screen_request_frames_per_second(unsigned){}
 }

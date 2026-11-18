@@ -78,7 +78,8 @@ inline std::uint32_t run_entry_native(CrashEntryFixture& f,unsigned id){auto b=f
  case 2:pc_add_impact_feedback(b.sub(0,0x1100),b.u32(0x59a8)%16,b.f32(0x59dc),c.feedback);break;
  case 3:pc_enter_crash_candidate(b.sub(0,0x1100),b.u32(0x59a8),b.u32(0x59ac),b.u32(0x59b0)!=0,b.f32(0x59b4),c);break;
  case 4:pc_start_crash_candidate(b.sub(0,0x1100),b.u32(0x59a8),b.u32(0x59ac),b.u32(0x59b0)!=0,c);break;
- case 5:{auto queue=f.sounds();return pc_cw_crush_status_candidate(b.sub(0,0x1100),b.sub(0x1200,0x800),b.f32(0x59b8),b.sub(0x4400,0x100),c,f.wall_context(),f.tuning(),f.materials(),queue,f.ends(),b.u32(0x4c64),b.u32(0x4c68))?1:0;}
+ case 5:{auto queue=f.sounds();return pc_cw_crush_status_candidate(b.sub(0,0x10f0),   // the car's real size: the crush status read past it (fixed 2026-11-18)
+  b.sub(0x1200,0x800),b.f32(0x59b8),b.sub(0x4400,0x100),c,f.wall_context(),f.tuning(),f.materials(),queue,f.ends(),b.u32(0x4c64),b.u32(0x4c68))?1:0;}
  case 9:pc_advance_crash_state(b.sub(0,0x1100),f.tables());break;
  default:throw std::invalid_argument("crash entry selector");
  }return 0;

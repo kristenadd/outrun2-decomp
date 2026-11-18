@@ -6,11 +6,13 @@
 // reads 634B34, a .data constant 1.0 on the PC, which display_blend() stands
 // for. At 60 frames per second nothing differs from the PC.
 #include <cstdint>
+#include <cstddef>
 #include <functional>
+#include <vector>
 
 namespace outrun::driving { class Bytes; struct PcMatrixStack; }
 namespace outrun::enhancements {
-// Frames shown per second: 60 (one per tick, as on the PC) or 120.
+// Frames shown per second: 60 (one per tick, as on the PC), 90 (visionOS) or 120.
 std::uint32_t display_rate();
 void set_display_rate(std::uint32_t);
 // display_rate() above 60: 417C7B may run frames without a tick.
@@ -38,4 +40,21 @@ void display_note(const void* key,std::function<void()> replay,std::function<voi
 void display_note_car(driving::Bytes car,std::function<float()> blend,std::uint8_t scene_code);
 // A scratch matrix stack for replays.
 driving::PcMatrixStack& display_matrices();
+// Game state the displays change and the ticks read, such as the course
+// queries' lane prediction (PC 7801A8). On the PC every display follows a tick;
+// a frame without a tick (display_ticks() 0) is the port's, so its changes
+// are put back before anything else runs: its value from before the frame's
+// displays returns at the next frame's ticks (or the next display-only
+// frame). `key` registers the region once (a new pointer replaces it);
+// `name` names it in the diagnostics. Nothing happens at 60 frames per second.
+void display_preserve(const void* key,void* bytes,std::size_t size,const char* name);
+// A car's previous tick position (+16C) farther from its position (+14) than
+// any tick's motion (DisplayMaxTickMotion world units): stale (not refreshed
+// by the code moving the car), so the car is drawn at its tick matrix. Counted.
+constexpr double DisplayMaxTickMotion=8.0;
+bool display_stale_previous(driving::Bytes car);
+std::uint64_t display_stale_previous_count();
+// Display-only frames whose displays changed a preserved region (put back), by name.
+struct DisplayPreserveStats {const char* name;std::uint64_t changes;};
+std::vector<DisplayPreserveStats> display_preserve_stats();
 }

@@ -377,7 +377,9 @@ void race_robot_driver_matrix_488af0(PcRaceContext& c,std::uint32_t work,std::ui
     p.pop();
     // Port enhancement (enhancements/frame_rate.hpp): the character rides the
     // car drawn between ticks; its matrix is rebuilt from the replayed +B0.
-    if(enhancements::display_frames()){
+    // Testing (isolating 90 fps issues): OR2_FPS_NO_ROBOT_REPLAYS=1 keeps the characters' tick matrices.
+    static const bool no_robot_replays=std::getenv("OR2_FPS_NO_ROBOT_REPLAYS")!=nullptr;
+    if(enhancements::display_frames()&&!no_robot_replays){
         const driving::Bytes body=m.bytes(car+0xb0,0x80),out=m.bytes(work+0x10,64);
         auto tick=std::make_shared<std::array<std::uint8_t,64>>();std::memcpy(tick->data(),out.data(),64);
         enhancements::display_note(out.data(),[body,out,v]{

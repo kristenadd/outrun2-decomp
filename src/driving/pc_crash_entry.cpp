@@ -121,8 +121,10 @@ bool pc_cw_crush_status(Bytes e,Bytes w,float angle,Bytes contacts,
  const auto plan=plan_entry(e,state,reverse,true,c); // reject missing wrecker transactionally
  // Preflight the remaining services on private scratch states. No side effects
  // escape on invalid native views; the real calls below preserve original order.
- std::uint8_t scratch_event[0x1100],scratch_queue[128],scratch_indices[8];
- for(std::size_t k=0;k<sizeof scratch_event;++k)scratch_event[k]=e.u8(k);
+ // The car is 0x10F0 bytes (checked above): copy that much, the rest of the
+ // scratch stays zero (copying 0x1100 read past the car and latched it).
+ std::uint8_t scratch_event[0x1100]{},scratch_queue[128],scratch_indices[8];
+ for(std::size_t k=0;k<0x10f0;++k)scratch_event[k]=e.u8(k);
  queue.entries.check(0,128);queue.state.check(0,8);
  for(unsigned k=0;k<128;++k)scratch_queue[k]=queue.entries.u8(k);
  for(unsigned k=0;k<8;++k)scratch_indices[k]=queue.state.u8(k);

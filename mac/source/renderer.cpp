@@ -308,6 +308,7 @@ struct RendererImpl {
     unsigned screen_hz{},screen_hz_age{};
     std::chrono::steady_clock::time_point last_present{};
     unsigned video_width{},video_height{},video_msaa{1};
+    unsigned stereo_depth{};   // visionOS 3D DEPTH (mac_renderer_set_stereo_depth)
     bool movie_visible{};
     bool start_loading_visible{};
     std::uint32_t primary_frontend_scenes{};
@@ -360,6 +361,9 @@ bool mac_renderer_initialize(MacRenderer& renderer,const char* frontend_path,std
         // The CPU records the next frame while the GPU renders this one (one
         // frame of latency); OR2_METAL_SYNC=1 waits for every frame instead.
         impl->device->set_pipelined(std::getenv("OR2_METAL_SYNC")==nullptr);
+#ifdef OR2_VISIONOS
+        impl->device->set_gpu_frames(true);   // the compositor samples the frame on the GPU (no readback)
+#endif
 #endif
         std::printf("Metal GPU: %s; 3D resolution %ux%u\n",impl->device->device_name().c_str(),impl->device->presentation_width(),impl->device->presentation_height());
     }
@@ -371,6 +375,9 @@ void mac_renderer_set_video(MacRenderer& renderer,unsigned width,unsigned height
     g_widescreen=widescreen;g_aspect=widescreen&&height?float(width)/float(height):4.f/3.f;
     if(std::fabs(g_aspect-16.f/9.f)<0.01f)g_aspect=16.f/9.f;   // 16:9 widths are rounded to even (854x480)
     r->video_width=width;r->video_height=height;r->video_msaa=msaa;r->video_fxaa=fxaa;r->video_pending=true;
+}
+void mac_renderer_set_stereo_depth(MacRenderer& renderer,unsigned level){
+    if(auto* r=static_cast<RendererImpl*>(renderer.impl))r->stereo_depth=level;
 }
 float mac_renderer_screen_aspect(MacRenderer& renderer){
 #ifndef OR2_MAC_OPENGL

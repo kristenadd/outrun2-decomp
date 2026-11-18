@@ -10,6 +10,7 @@
 #include "platform/pc_shadow_volume.hpp"
 #include "platform/pc_vertex_shader_setup.hpp"
 #include "platform/embedded_camera_data.hpp"
+#include <cmath>
 #include <cstring>
 #include <cstdlib>
 #include <stdexcept>
@@ -151,7 +152,47 @@ void PcSceneRenderer::apply_camera(const driving::PcCameraDevice& d,Bytes camera
     view_.frustum_95bf40=d.frustum_95bf40;view_.planes_95bf58=d.planes_95bf58;
     for(unsigned k=0;k<3;++k){view_.eye[k]=camera.f32(0xf8+k*4);view_.target[k]=camera.f32(0x104+k*4);}
 }
-void PcSceneRenderer::note_camera_replay(Bytes camera,const std::vector<std::uint8_t>& before){
+bool PcSceneRenderer::camera_replay_faithful(Bytes camera,const driving::PcCameraDevice& tick){
+    std::vector<std::uint8_t> copy(camera.data(),camera.data()+camera.size());
+    driving::PcCameraDevice d;const auto depth=matrices_.depth;
+    try{driving::camera_view_482f20(Bytes(copy.data(),copy.size()),matrices_,d,1.f);}
+    catch(const std::exception&){while(matrices_.depth>depth)driving::pc_matrix_pop(matrices_);return false;}
+    while(matrices_.depth>depth)driving::pc_matrix_pop(matrices_);
+    auto same=[](const std::uint8_t* a,const std::uint8_t* b,std::size_t n){
+        for(std::size_t k=0;k+4<=n;k+=4){float x,y;std::memcpy(&x,a+k,4);std::memcpy(&y,b+k,4);
+            if(!(std::fabs(x-y)<=1e-4f*std::max(1.f,std::fabs(y))))return false;}
+        return true;};
+    static const bool trace=std::getenv("OR2_TRACE")!=nullptr;static unsigned reported=0;
+    auto miss=[&](const char* why,int a,int b){
+        if(trace&&reported<12){++reported;std::fprintf(stderr,"[fps] camera replay not faithful: %s (%d / %d) view %u stores",why,a,b,unsigned(camera.u8(0x34a)));
+            for(const auto& st:d.stores)std::fprintf(stderr," %u",st.slot);std::fprintf(stderr," | tick");for(const auto& st:tick.stores)std::fprintf(stderr," %u",st.slot);
+            std::fprintf(stderr," transforms");for(auto t:d.transforms)std::fprintf(stderr," %u",t);std::fprintf(stderr," | tick");for(auto t:tick.transforms)std::fprintf(stderr," %u",t);std::fprintf(stderr,"\n");}
+        return false;};
+    // Every slot the replay writes is one this tick wrote, with the same value at blend 1
+    // (the tick's own extra slots, its projection, stay as the tick left them).
+    if(d.stores.empty())return miss("no view",0,0);
+    for(const auto& st:d.stores){
+        const auto* match=static_cast<const driving::PcCameraDevice::Store*>(nullptr);
+        for(const auto& t:tick.stores)if(t.slot==st.slot)match=&t;   // the tick's last write of that slot
+        if(!match)return miss("slot the tick did not set",int(st.slot),0);
+        if(!same(st.matrix.data(),match->matrix.data(),64))return miss("view differs",int(st.slot),0);
+    }
+    for(const auto slot:d.transforms){
+        if(std::find(tick.transforms.begin(),tick.transforms.end(),slot)==tick.transforms.end())return miss("transform the tick did not set",int(slot),0);
+        if(slot<10&&!same(d.slots_95d860[slot].data(),tick.slots_95d860[slot].data(),64))return miss("transform differs",int(slot),0);
+    }
+    return true;
+}
+void PcSceneRenderer::note_camera_replay(Bytes camera,const std::vector<std::uint8_t>& before,const driving::PcCameraDevice& tick){
+    // Testing (isolating 90 fps issues): OR2_FPS_NO_CAMERA_REPLAY=1 keeps the tick's camera between ticks.
+    static const bool none=std::getenv("OR2_FPS_NO_CAMERA_REPLAY")!=nullptr;if(none)return;
+    // The replay rebuilds the view with 482F20. Some camera modes (the stage-change and
+    // goal cameras) build theirs otherwise and set fewer device slots: a 482F20 view
+    // applied between their ticks overwrote slots (projection, frustum) their ticks never
+    // set again, and the car vanished until the next camera change. So the replay must
+    // rebuild this tick's view exactly at blend 1, or this tick is not replayed.
+    if(!camera_replay_faithful(camera,tick)){++camera_replays_skipped;return;}
+    ++camera_replays;
     auto after=std::make_shared<std::vector<std::uint8_t>>(camera.data(),camera.data()+0x3b4);
     enhancements::display_note(this,[this,camera,before,after]{
         const std::uint8_t autoscene=std::uint8_t(events_?events_->slots[6].flags:0u);
@@ -165,6 +206,8 @@ void PcSceneRenderer::note_camera_replay(Bytes camera,const std::vector<std::uin
         // inverse at +1C0 as the tail of 484BD0.
         driving::PcCameraDevice d;
         driving::camera_view_482f20(camera,matrices_,d,1.f);
+        // The culling frustum and planes stay the tick's (482F20 only moves the view).
+        d.frustum_95bf40=view_.frustum_95bf40;d.planes_95bf58=view_.planes_95bf58;
         driving::pc_matrix_push_load(matrices_,camera.sub(0x140,64));
         driving::pc_d3dx_matrix_inverse(matrices_.current(),nullptr,matrices_.current());
         driving::pc_matrix_get(matrices_,camera.sub(0x1c0,64));
@@ -241,7 +284,7 @@ bool PcSceneRenderer::invoke(std::uint32_t callback,std::uint32_t,std::uint32_t,
                 ++camera_unanswered;last_error="485FE0 debug camera or race mode without inputs: mode "+std::to_string(mode_78026c)+" (view "+std::to_string(camera.u8(0x34a))+", +94/+98/+9C "+std::to_string(camera.u32(0x94))+"/"+std::to_string(camera.u32(0x98))+"/"+std::to_string(camera.u32(0x9c))+")";return true;}
             ++camera_controls;
             apply_camera(d,camera);
-            if(!before.empty())note_camera_replay(camera,before);
+            if(!before.empty())note_camera_replay(camera,before,d);
             return true;
         }
         apply_camera(d,camera);
@@ -339,6 +382,12 @@ bool PcSceneRenderer::display_race_car(){
         Bytes(environment_.fog_7d3a10.data(),environment_.fog_7d3a10.size()),0};
     PcVehicleDisplayContext c{*flush_,*queue_,tables,events_?events_->slots[386].flags:std::uint8_t(0),frame_.layer_7d25f0,matrices_,body,
         std::int32_t(current_mode_),scene_82e7d4};
+    {   // Diagnostics: a car drawn with a non-finite matrix or lights is invisible.
+        bool ok=true;for(unsigned k=0;k<16;++k)ok&=std::isfinite(vehicle.f32(0xb0+k*4));
+        if(!ok)++race_car_bad_matrix;
+        bool lit=true;for(std::size_t k=0;k+4<=environment_.lights_899b98.size();k+=4){float v;std::memcpy(&v,environment_.lights_899b98.data()+k,4);lit&=std::isfinite(v);}
+        if(!lit)++race_car_bad_lights;
+    }
     // Offline race: the network session word 7F9460+60 is 0 (no LAN session is ported).
     c.shadow=[this,vehicle](const PcVehicleDrawCall& call){return shadow_leaf(call,vehicle);};
     vehicle_race_display_46bd30(c,race_display_,PcRaceCarDisplayInputs{0u,0u,pause_780248},vehicle,

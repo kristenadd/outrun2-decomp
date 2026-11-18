@@ -13,17 +13,25 @@
 #include <stdexcept>
 #include <thread>
 #include <algorithm>
+#ifdef OR2_VISIONOS
+#include "vision_gamepad.hpp"
+#endif
 namespace {
 bool initialized=false,running=true;
 std::string retail,cache;
 SDL_GameController* controller=nullptr;
-void open_controller(){
+[[maybe_unused]] void open_controller(){   // iOS (visionOS reads GameController)
     if(controller&&!SDL_GameControllerGetAttached(controller)){SDL_GameControllerClose(controller);controller=nullptr;}
     if(!controller)for(int i=0;i<SDL_NumJoysticks();++i)if(SDL_IsGameController(i)){controller=SDL_GameControllerOpen(i);if(controller)break;}
 }
 void read_pad(outrun::ps5::PadSample& p){
     using namespace outrun::ps5;
     p=PadSample{};p.connected=true;
+#ifdef OR2_VISIONOS
+    // visionOS: the controller comes straight from GameController (vision_gamepad.hpp).
+    {int type=-1;outrun::vision::gamepad_read(p,type);
+     outrun::platform::button_prompts_set_style(outrun::platform::button_prompts_style_for_sdl_type(type));}
+#else
     open_controller();
     // Button prompts follow the connected controller (keyboard art without one).
     outrun::platform::button_prompts_set_style(outrun::platform::button_prompts_style_for_sdl_type(controller?int(SDL_GameControllerGetType(controller)):-1));
@@ -44,6 +52,7 @@ void read_pad(outrun::ps5::PadSample& p){
             if(now&~last)for(int k=0;k<SDL_CONTROLLER_BUTTON_MAX;++k)if((now&~last)&(1u<<k))std::fprintf(stderr,"[pad] %s pressed\n",SDL_GameControllerGetStringForButton(SDL_GameControllerButton(k)));
             last=now;}
     }
+#endif
     // A hardware keyboard (iPad) keeps the Mac bindings; Escape does not quit on iOS.
     const auto* keys=SDL_GetKeyboardState(nullptr);
     const struct {SDL_Scancode key;u64 bit;} bindings[]={

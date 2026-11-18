@@ -713,6 +713,15 @@ void host_hooks(GameHost& s,std::uint64_t down){
             for(std::uint32_t i=0;i<rs.count_80fb04;++i){const auto* p=rs.racers_80fb00.data()+std::size_t(i)*0xa0u;std::uint32_t a,b;std::memcpy(&a,p+0x54,4);std::memcpy(&b,p+0x5c,4);
                 std::fprintf(stderr," [%u %x %x m%u]",i,a,b,p[0x72]);}
             std::fprintf(stderr,"\nmodels 8367C0:");for(unsigned k=0;k<44;++k)if(r.start_mode.scene_owner_models_8367c0[k])std::fprintf(stderr," %u",k);std::fprintf(stderr,"\n");}}
+        {   // The car as drawn (race, goal, ending): display matrix position, pose flags, draws.
+            const auto m=r.mode_state.current;
+            if((m==16u||m==18u||m==19u||m==24u||m==33u)&&(s.input_samples%30u)==0u&&s.pc_scene){
+                const auto& car=r.event_function36.car_select.car_799d18;float d[3];std::uint32_t fl;
+                std::memcpy(d,car.data()+0xb0+0x30,12);std::memcpy(&fl,car.data()+4,4);
+                std::fprintf(stderr,"[%u] car drawn mode=%u disp=(%.1f,%.1f,%.1f) flags=%08x displays=%u bad_matrix=%u bad_lights=%u\n",s.input_samples,m,d[0],d[1],d[2],fl,
+                    s.pc_scene->race_car_displays,s.pc_scene->race_car_bad_matrix,s.pc_scene->race_car_bad_lights);
+            }
+        }
         if((r.mode_state.current==16u||r.mode_state.current==18u)&&(s.input_samples%30u)==0u){
             const auto& cw=r.race.car_world;const auto& car=r.event_function36.car_select.car_799d18;
             float px,py,pz,sp;std::memcpy(&px,car.data()+0x14,4);std::memcpy(&py,car.data()+0x18,4);std::memcpy(&pz,car.data()+0x1c,4);std::memcpy(&sp,car.data()+0x1c4,4);
@@ -784,8 +793,13 @@ void host_hooks(GameHost& s,std::uint64_t down){
                 for(const auto& [k,n]:s.pc_scene->unported_leaves)std::fprintf(stderr," %x x%u",k,n);
                 std::fprintf(stderr,"\n  preview car: displays=%u bank_failures=%u preview_inits=%u controls=%u select(46C090)=%u",s.pc_scene->car_displays,s.pc_scene->bank_failures,
                     r.event_function36.car_select.preview_inits,r.event_function36.car_select.preview_controls,s.pc_scene->select_car_draws());
-                std::fprintf(stderr,"\n  race car: inits=%u displays=%u car_fault=%x error=%s",r.event_function36.car_select.race_inits,
-                    s.pc_scene->race_car_displays,r.event_function36.car_select.fault,s.pc_scene->last_error.c_str());
+                std::fprintf(stderr,"\n  race car: inits=%u displays=%u car_fault=%x bad_matrix=%u bad_lights=%u error=%s",r.event_function36.car_select.race_inits,
+                    s.pc_scene->race_car_displays,r.event_function36.car_select.fault,s.pc_scene->race_car_bad_matrix,s.pc_scene->race_car_bad_lights,s.pc_scene->last_error.c_str());
+                // Above 60 Hz: display-only frames whose displays moved state the ticks read (undone).
+                for(const auto& p:enhancements::display_preserve_stats())
+                    std::fprintf(stderr,"\n  display-only frames undone: %s %llu",p.name,(unsigned long long)p.changes);
+                if(enhancements::display_frames())std::fprintf(stderr,"\n  cars drawn unblended: stale previous point %llu; camera replays %u, skipped %u",
+                    (unsigned long long)enhancements::display_stale_previous_count(),s.pc_scene->camera_replays,s.pc_scene->camera_replays_skipped);
                 std::fprintf(stderr,"\n  car shadows: allocs=%u draws=%u failures=%u unserved=%u error=%s",s.pc_scene->shadow_allocs,s.pc_scene->shadow_draws,
                     s.pc_scene->shadow_failures,r.event_function36.car_select.shadow_unported,s.pc_scene->shadow_error.c_str());
                 {const auto& cw=r.race.car_world;const auto& car=r.event_function36.car_select.car_799d18;

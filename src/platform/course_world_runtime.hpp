@@ -49,6 +49,8 @@ public:
     const CourseWorldSourceIdentity& source_identity(std::uint32_t lane) const;
     std::uint64_t generation() const { return generation_; }
     const driving::EasyLctPredictionState& prediction() const { return prediction_; }
+    // For enhancements::display_preserve (frames without a tick above 60 Hz).
+    driving::EasyLctPredictionState& prediction_storage() { return prediction_; }
     // Views expire on admission, transform replacement, reset or destruction.
     // They are rebuilt against this owner's storage after every copy/move.
     driving::CourseWorldTables tables() const;

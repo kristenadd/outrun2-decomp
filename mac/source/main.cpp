@@ -105,8 +105,14 @@ const char* const OptionsDefault=
     "# OutRun 2006 macOS options (edit and restart)\n"
     "reflections=1\nwidescreen=0\nresolution=1920x1440\nantialiasing=off\n";
 void load_options(){
-#ifdef OR2_IOS
+#if defined(OR2_IOS)&&!defined(OR2_VISIONOS)
     g_options.video.fit_screen=true;   // fill the device screen unless options.ini says fit_screen=0
+#endif
+#ifdef OR2_VISIONOS
+    // visionOS: a window (no full screen), stereoscopic unless stereo_depth=0.
+    // 60 frames per second until the 90 fps interpolation fault is fixed
+    // (CLAUDE.md, visionOS port); 90 stays selectable.
+    g_options.video.stereo_depth=3;
 #endif
     const std::string path=rt::home()+"/options.ini";
     std::FILE* f=std::fopen(path.c_str(),"rb");
@@ -135,13 +141,20 @@ void load_options(){
 // Touch-pad performance overlay, drawn by the native 2D flush (pc_screen.hpp).
 struct Overlay {
     bool on{};std::uint64_t last{},sum_dt{},sum_wait{},sum_gpu_ns{};unsigned n{},toast_frames{};
+    std::uint32_t frames_at{};   // the renderer's frame count when the window began (frames shown, not 60 Hz ticks)
     std::string stats,toast;
 } g_overlay;
+// The overlay's last line: the 3D resolution, anti-aliasing, aspect and frame rate in use.
 std::string video_settings(){
 #ifdef OR2_MAC_OPENGL
     return "OpenGL 640x480 4:3";
 #else
-    return "CPU 640x480 4:3";
+    const auto* b=outrun::enhancements::video_backend();
+    if(!b)return "Metal";
+    const auto v=b->current();
+    const char* aspect=v.fit_screen&&b->screen_aspect()>0?"FULL":v.widescreen?"16:9":"4:3";
+    return "Metal "+outrun::enhancements::resolution_label(v.resolution)+" "+outrun::enhancements::antialiasing_label(v.antialiasing)+
+        " "+aspect+" "+std::to_string(v.frame_rate)+"Hz";
 #endif
 }
 void overlay_frame(const rt::GameHost& s,const outrun::mac_runtime::MacRenderer* renderer){
@@ -154,8 +167,14 @@ void overlay_frame(const rt::GameHost& s,const outrun::mac_runtime::MacRenderer*
     }
     o.last=now;
     if(o.n>=20u){
-        const double frame_ms=double(o.sum_dt)*1000.0/double(freq)/o.n;
-        const double cpu_ms=double(o.sum_dt-o.sum_wait)*1000.0/double(freq)/o.n;
+        // This runs once per 60 Hz game tick; at 90 / 120 fps a tick shows more than one
+        // frame, so FPS counts the frames the renderer drew over the window instead.
+        const double window_ms=double(o.sum_dt)*1000.0/double(freq);
+        const std::uint32_t frames_now=renderer?outrun::mac_runtime::mac_renderer_stats(*renderer).frames:0u;
+        const unsigned shown=renderer&&frames_now>o.frames_at?frames_now-o.frames_at:o.n;
+        o.frames_at=frames_now;
+        const double frame_ms=window_ms/shown;
+        const double cpu_ms=double(o.sum_dt-o.sum_wait)*1000.0/double(freq)/shown;
         const double gpu_ms=double(o.sum_gpu_ns)/1e6/o.n;
         char t[512];
         std::snprintf(t,sizeof t,"FPS %.1f %.1fms\nCPU %.1fms %.0f%%\nGPU %.1fms %.0f%%\n",
@@ -345,9 +364,16 @@ int main(int argc,char** argv){
     // screens, switched live. The SDL Metal renderer presents with vsync; at 60
     // on a faster screen it spaces presents 1/60 s apart (renderer_present.inc).
     const unsigned screen_hz=outrun::mac_runtime::screen_max_frames_per_second();
+#ifdef OR2_VISIONOS
+    // Apple Vision Pro refreshes at 90 Hz: 60 frames per second would alternate
+    // 1 and 2 refreshes (judder); 90 shows one interpolated frame per refresh.
+    video.set_frame_rates({60,90},[](std::uint32_t fps){std::fprintf(stderr,"[frame-rate] presenting at %u fps\n",unsigned(fps));});
+    (void)screen_hz;
+#else
     if(screen_hz>=100u||host_frame_hz)
         video.set_frame_rates({60,120},[](std::uint32_t fps){std::fprintf(stderr,"[frame-rate] presenting at %u fps\n",unsigned(fps));});
     else video.set_frame_rates({60});
+#endif
 #endif
     if(!outrun::mac_runtime::mac_renderer_initialize(renderer,nullptr,error,&data.start_loading,nullptr,nullptr,nullptr)){
         consoleInit(nullptr);console_live=true;std::printf("OutRunMac r001 renderer initialization failed.\n\n%s\n\nPress Options to exit.\n",error.c_str());write_failure_log(5u,"renderer",error.c_str());consoleUpdate(nullptr);wait_for_plus(pad);
@@ -365,12 +391,22 @@ int main(int argc,char** argv){
 #ifndef OR2_MAC_OPENGL
     // The window may have opened on another screen: below 100 Hz, frames follow the 60 Hz ticks as on the PC.
     {const unsigned window_hz=outrun::mac_runtime::screen_max_frames_per_second();
+#ifndef OR2_VISIONOS
      if(outrun::enhancements::display_rate()>60u&&window_hz<100u&&!host_frame_hz)outrun::enhancements::set_display_rate(60u);
+#endif
+#ifdef OR2_MAC_HOST
+     // Host checks: OR2_HOST_FRAME_HZ also sets the frames shown per second (90 = the headset's interpolation).
+     if(host_frame_hz)outrun::enhancements::set_display_rate(std::uint32_t(std::max(60.0,std::strtod(host_frame_hz,nullptr))));
+#endif
      std::fprintf(stderr,"[frame-rate] launch rate %u fps (screen %u Hz)\n",unsigned(outrun::enhancements::display_rate()),window_hz);}
     // The OpenGL validation build keeps the PC's 640x480 4:3 at 60 Hz (no rows).
 #ifdef OR2_IOS
     // ASPECT RATIO offers FULL SCREEN (the default) at the device screen's aspect.
     video.set_screen_aspect(outrun::mac_runtime::mac_renderer_screen_aspect(renderer));
+#endif
+#ifdef OR2_VISIONOS
+    // 3D DEPTH: OFF, 1 .. 5 (stereoscopic frames in the window, visionos/README.md).
+    video.set_stereo_depths(5,[&renderer](std::uint32_t level){outrun::mac_runtime::mac_renderer_set_stereo_depth(renderer,level);});
 #endif
     video.attach([&renderer](std::uint32_t w,std::uint32_t h,bool wide,unsigned msaa,bool fxaa){outrun::mac_runtime::mac_renderer_set_video(renderer,w,h,wide,msaa,fxaa);});
     outrun::enhancements::set_video_backend(&video);

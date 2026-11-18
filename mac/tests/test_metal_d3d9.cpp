@@ -119,6 +119,44 @@ int main(){
         wide.set_msaa(1);
         check(wide.errors.empty(),"enhancement paths without D3D errors");
     }
+    // Stereo (visionOS 3D DEPTH): both eyes in one layered pass. A quad at
+    // w = 4 moves by -/+ s * (w - C) / w NDC per eye (4 pixels here); a
+    // screen-space quad (w = 1) stays put; MSAA resolves each eye.
+    {
+        MetalD3D9Device eyes(64,48);setup(eyes);eyes.set_stereo(0.25f,2.f);
+        const V far[]{{4,3,.5f,.25f,0xffff0000},{60,3,.5f,.25f,0xffff0000},{4,45,.5f,.25f,0xffff0000},{60,45,.5f,.25f,0xffff0000}};
+        const auto left=[&](unsigned x,unsigned y,unsigned c=0){return eyes.rgba()[(std::size_t(y)*64+x)*4+c];};
+        const auto right=[&](unsigned x,unsigned y,unsigned c=0){return eyes.rgba_right()[(std::size_t(y)*64+x)*4+c];};
+        for(unsigned samples:{1u,4u}){
+            eyes.set_msaa(samples);
+            eyes.begin_frame();
+            if(!eyes.stereo()){std::printf("stereo: GPU without vertex amplification, skipped\n");break;}
+            eyes.clear(7,0xff000000,1,0);eyes.set_fvf(0x44);eyes.draw_primitive_up(5,2,far,sizeof(V));eyes.end_frame();
+            check(eyes.rgba_right().size()==eyes.rgba().size(),"right eye read back");
+            check(left(1,24)==255&&left(57,24)==0&&left(30,24)==255,"left eye: the far quad moves left");
+            check(right(1,24)==0&&right(62,24)==255&&right(30,24)==255,"right eye: the far quad moves right");
+            eyes.begin_frame();eyes.clear(7,0xff000000,1,0);quad(eyes,0xff00ff00);eyes.end_frame();
+            bool same=true;for(unsigned y=0;y<48;++y)for(unsigned x=0;x<64;++x)same&=left(x,y,1)==right(x,y,1);
+            check(same&&left(5,24,1)==255&&left(3,24,1)==0,"screen-space draws have no parallax");
+        }
+        eyes.set_msaa(1);eyes.set_stereo(0,0);eyes.begin_frame();
+        check(!eyes.stereo()&&eyes.rgba_right().empty(),"stereo off: mono again");
+        eyes.clear(7,0xff000000,1,0);eyes.set_fvf(0x44);eyes.draw_primitive_up(5,2,far,sizeof(V));eyes.end_frame();
+        check(left(5,24)==255&&left(2,24)==0&&left(58,24)==255,"mono draw unshifted");
+        check(eyes.errors.empty(),"stereo paths without D3D errors");
+        // visionOS GPU frames: pipelined, the shown frame stays on the GPU (a ring of three copies).
+        eyes.set_pipelined(true);eyes.set_gpu_frames(true);eyes.set_stereo(0.25f,2.f);
+        check(eyes.gpu_frame(0)==nullptr,"no GPU frame before the first one");
+        void* seen[4]{};
+        for(unsigned frame=0;frame<4;++frame){
+            eyes.begin_frame();eyes.clear(7,0xff000000,1,0);eyes.set_fvf(0x44);eyes.draw_primitive_up(5,2,far,sizeof(V));eyes.end_frame();
+            seen[frame]=eyes.gpu_frame(0);
+            check(seen[frame]&&eyes.gpu_frame(1)&&(!eyes.stereo()||eyes.gpu_frame(1)!=seen[frame]),"GPU frame per eye");
+        }
+        // Frame 0 is shown at once and again while the pipeline fills; then one copy behind, through the ring.
+        check(seen[0]==seen[1]&&seen[2]!=seen[1]&&seen[3]!=seen[2]&&seen[3]!=seen[1],"GPU frames rotate through three copies");
+        eyes.set_pipelined(false);eyes.set_gpu_frames(false);
+    }
     // Retail point-sprite particles: compare real GPU output against an
     // explicitly sized screen quad, including eye-distance scaling/clamping.
     struct Point {float x,y,z;unsigned colour;};

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleDevelopmentRegion</key><string>en</string>
+<key>CFBundleExecutable</key><string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
+<key>CFBundleIdentifier</key><string>${MACOSX_BUNDLE_GUI_IDENTIFIER}</string>
+<key>CFBundleName</key><string>OutRun</string>
+<key>CFBundleDisplayName</key><string>OutRun 2006</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
+<key>CFBundleVersion</key><string>0.2</string>
+<key>CFBundleShortVersionString</key><string>0.2</string>
+<key>CFBundleSupportedPlatforms</key><array><string>${OR2_VISIONOS_PLATFORM_NAME}</string></array>
+<key>MinimumOSVersion</key><string>2.0</string>
+<key>UIDeviceFamily</key><array><integer>7</integer></array>
+<key>UIRequiredDeviceCapabilities</key><array><string>arm64</string><string>metal</string></array>
+<!-- SwiftUI life cycle (visionos/source/OutRunApp.swift): one window, no
+     immersive space (the game is never full screen). -->
+<key>UIApplicationSceneManifest</key><dict>
+  <key>UIApplicationSupportsMultipleScenes</key><false/>
+  <key>UIApplicationPreferredDefaultSceneSessionRole</key><string>UIWindowSceneSessionRoleApplication</string>
+  <key>UISceneConfigurations</key><dict/></dict>
+<key>UILaunchScreen</key><dict/>
+<!-- The game files are copied into Documents (Files app: On My Apple Vision Pro > OutRun). -->
+<key>UIFileSharingEnabled</key><true/>
+<key>LSSupportsOpeningDocumentsInPlace</key><true/>
+<!-- Controller-only game. -->
+<key>GCSupportsControllerUserInteraction</key><true/>
+<key>GCSupportedGameControllers</key><array><dict><key>ProfileName</key><string>ExtendedGamepad</string></dict></array>
+<key>NSLocalNetworkUsageDescription</key><string>OutRun looks for other players on your local network for LAN races.</string>
+<key>LSApplicationCategoryType</key><string>public.app-category.racing-games</string>
+</dict></plist>

@@ -19,11 +19,11 @@ constexpr int field_width=0x97;
 constexpr std::uint32_t LabelFont=9;
 constexpr float LabelScaleX=1.f,LabelScaleY=1.1f,LabelX=-152,LabelY=-9;   // 4D7440 formats text rows at -150, -7
 
-enum class Option { Aspect, Resolution, Antialiasing, FrameRate };
+enum class Option { Aspect, Resolution, Antialiasing, FrameRate, StereoDepth };
 struct Rows {
     std::vector<Option> options;
     VideoSettings edit;
-    std::array<std::array<std::uint8_t,0x8c>,4> values{};   // 4EDAF0 value labels
+    std::array<std::array<std::uint8_t,0x8c>,5> values{};   // 4EDAF0 value labels
     Bytes value(std::size_t i){return {values[i].data(),values[i].size()};}
 };
 Rows& rows(){static Rows r;return r;}
@@ -34,9 +34,10 @@ std::vector<Option> available(const VideoBackend& b){
     if(b.heights().size()>1)o.push_back(Option::Resolution);
     if(b.antialiasing_modes().size()>1)o.push_back(Option::Antialiasing);
     if(b.frame_rates().size()>1)o.push_back(Option::FrameRate);
+    if(b.stereo_depths()>0)o.push_back(Option::StereoDepth);
     return o;
 }
-const char* label(Option o){return o==Option::Aspect?"ASPECT RATIO":o==Option::Resolution?"RESOLUTION":o==Option::FrameRate?"FRAME RATE":"ANTI-ALIASING";}
+const char* label(Option o){return o==Option::Aspect?"ASPECT RATIO":o==Option::Resolution?"RESOLUTION":o==Option::FrameRate?"FRAME RATE":o==Option::StereoDepth?"3D DEPTH":"ANTI-ALIASING";}
 // The choices of a row and the index of the edited value among them.
 std::vector<std::string> choices(const VideoBackend& b,const VideoSettings& s,Option o,int& index){
     std::vector<std::string> out;index=0;
@@ -49,6 +50,9 @@ std::vector<std::string> choices(const VideoBackend& b,const VideoSettings& s,Op
             out.push_back(resolution_label(resolution_at(heights[i],aspect)));
             if(heights[i]==s.resolution.height)index=int(i);
         }
+    }else if(o==Option::StereoDepth){
+        out.push_back("OFF");for(std::uint32_t d=1;d<=b.stereo_depths();++d)out.push_back(std::to_string(d));
+        index=int(std::min(s.stereo_depth,b.stereo_depths()));
     }else if(o==Option::FrameRate){
         const auto rates=b.frame_rates();
         for(std::size_t i=0;i<rates.size();++i){out.push_back(std::to_string(rates[i])+" FPS");if(rates[i]==s.frame_rate)index=int(i);}
@@ -66,6 +70,7 @@ bool step(const VideoBackend& b,VideoSettings& s,Option o,bool next){
         s.widescreen=to>=1;s.fit_screen=to==2;s.resolution=resolution_at(s.resolution.height,video_aspect(s,b.screen_aspect()));}
     else if(o==Option::Resolution)s.resolution=resolution_at(b.heights()[std::size_t(to)],video_aspect(s,b.screen_aspect()));
     else if(o==Option::FrameRate)s.frame_rate=b.frame_rates()[std::size_t(to)];
+    else if(o==Option::StereoDepth)s.stereo_depth=std::uint32_t(to);
     else s.antialiasing=b.antialiasing_modes()[std::size_t(to)];
     return true;
 }

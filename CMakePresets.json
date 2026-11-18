@@ -88,6 +88,51 @@
         "CMAKE_OSX_SYSROOT": "iphoneos",
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "visionos-base",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_SYSTEM_NAME": "visionOS",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "2.0",
+        "OR2_X87_FAST": "ON",
+        "PKG_CONFIG_EXECUTABLE": "${sourceDir}/build/ios-dependencies/host/bin/pkgconf"
+      }
+    },
+    {
+      "name": "visionos-simulator",
+      "displayName": "visionOS Simulator ARM64 / Metal (Xcode project)",
+      "inherits": "visionos-base",
+      "generator": "Xcode",
+      "binaryDir": "${sourceDir}/build/visionos-simulator",
+      "environment": {
+        "PKG_CONFIG_PATH": "${sourceDir}/build/ios-dependencies/xrsimulator/lib/pkgconfig",
+        "PKG_CONFIG_LIBDIR": "${sourceDir}/build/ios-dependencies/xrsimulator/lib/pkgconfig"
+      },
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "${sourceDir}/build/ios-dependencies/xrsimulator",
+        "CMAKE_FIND_ROOT_PATH": "${sourceDir}/build/ios-dependencies/xrsimulator",
+        "CMAKE_OSX_SYSROOT": "xrsimulator",
+        "CMAKE_CONFIGURATION_TYPES": "Release"
+      }
+    },
+    {
+      "name": "visionos-device",
+      "displayName": "Apple Vision Pro (Xcode project, signed)",
+      "inherits": "visionos-base",
+      "generator": "Xcode",
+      "binaryDir": "${sourceDir}/build/visionos-device",
+      "environment": {
+        "PKG_CONFIG_PATH": "${sourceDir}/build/ios-dependencies/xros/lib/pkgconfig",
+        "PKG_CONFIG_LIBDIR": "${sourceDir}/build/ios-dependencies/xros/lib/pkgconfig"
+      },
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "${sourceDir}/build/ios-dependencies/xros",
+        "CMAKE_FIND_ROOT_PATH": "${sourceDir}/build/ios-dependencies/xros",
+        "CMAKE_OSX_SYSROOT": "xros",
+        "CMAKE_CONFIGURATION_TYPES": "Release"
+      }
     }
   ],
   "buildPresets": [
@@ -120,6 +165,22 @@
       "targets": [
         "OutRunIOS"
       ]
+    },
+    {
+      "name": "visionos-simulator",
+      "configurePreset": "visionos-simulator",
+      "targets": [
+        "OutRunVision"
+      ],
+      "configuration": "Release"
+    },
+    {
+      "name": "visionos-device",
+      "configurePreset": "visionos-device",
+      "targets": [
+        "OutRunVision"
+      ],
+      "configuration": "Release"
     }
   ],
   "testPresets": [
