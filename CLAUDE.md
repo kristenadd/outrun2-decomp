@@ -125,6 +125,13 @@ for visionOS (`UIScreen`), so SDL2 is built with `SDL_VIDEO=OFF`
     `OR2_FPS_NO_CAR_REPLAYS`, `OR2_FPS_NO_CAMERA_REPLAY`,
     `OR2_FPS_NO_ROBOT_REPLAYS`, `OR2_FPS_TICKS_ONE` (43FA00 answers 1).
     About 13 minutes per run (the game runs at 2/3 speed on a 60 Hz screen).
+- **Stage-change birds jittering at 90 fps (2026-11-18), fixed; confirmed by the owner on
+  the Vision Pro.** The birds are animated course objects (`0x137xxxx` /
+  `0x1380000`, display `4A9DF0` in `race_traffic_objects.inc`). The traffic module's
+  `4493E0` always answered 1.0, and `4A9DF0` ends with `+E0 = +0`, so on a frame without a
+  tick the birds jumped to their tick position (steps 1.67 / 0.56 / 1.12 instead of an even
+  1.12). `4493E0` now answers `display_blend()`, and `anim_previous_between_ticks` puts
+  the tick's previous matrix back in `+E0` on frames without a tick.
 - visionOS holds the game only when the scene is in the **background**:
   `inactive` happens in ordinary use (system UI, focus) and holding there froze
   the game and its controller input.
@@ -501,6 +508,11 @@ sample rate.
   (`autoplay.txt`) and input replays (`replay.txt`) do **not** reliably
   reproduce their menu paths: menu timing depends on wall-clock movies and
   loads. Don't claim something works from autoplay alone; ask them to try it.
+- **When the owner wants to test on a device** (iPhone, iPad, Vision Pro), build and
+  install it for them without asking: Release build of that device's preset (`ios-device`
+  / `visionos-device`, signing is in the local cache), then `xcrun devicectl device install
+  app` to the device from `xcrun devicectl list devices`. Tell them it's installed; they
+  launch it from its icon.
 - Mac game windows launched for tests grab keyboard focus. The owner may be
   typing into them, so either ask them not to touch the windows or treat the
   results as contaminated.

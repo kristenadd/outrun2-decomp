@@ -1250,11 +1250,37 @@
         draw_leaf(0x405360u,{u32(w+0x60),1,0,0,0xffffffffu,0});
         pop();
     }
+    // Port, above 60 frames per second (frame_rate.hpp): 4A9DF0 ends with +E0 = +0, so on a
+    // frame without a tick it would blend the current matrix with itself and draw the object
+    // at its tick position, ahead of the blended camera, then back between the ticks on the
+    // next frame (the stage-change birds jittered at 90 fps). A tick frame's display keeps
+    // the previous matrix it blended from; a frame without a tick puts it back in +E0 (the
+    // display's own copy overwrites +E0 afterwards), unless the work has moved since (a
+    // reused slot). Nothing changes at 60 frames per second.
+    void anim_previous_between_ticks(std::uint32_t w){
+        if(!enhancements::display_frames())return;
+        struct Kept{std::array<std::uint8_t,0x40> previous;float position[3];};
+        static std::unordered_map<std::uint32_t,Kept> kept;
+        const auto before=m.bytes(w+0xe0,0x40);
+        const float now[3]{f32(w+0x30),f32(w+0x34),f32(w+0x38)};
+        if(enhancements::display_ticks()){
+            auto& k=kept[w];
+            std::memcpy(k.previous.data(),before.data(),0x40);std::memcpy(k.position,now,sizeof now);
+            return;
+        }
+        // The position is compared, not the whole matrix: its rotation can differ in the
+        // last bit between the frames.
+        const auto it=kept.find(w);
+        if(it==kept.end())return;
+        for(unsigned i=0;i<3;++i)if(!(std::fabs(it->second.position[i]-now[i])<=0.01f))return;
+        std::memcpy(before.data(),it->second.previous.data(),0x40);
+    }
     // 4A9DF0(w) (display 0x40 / 0x4D): the model between the previous (+E0) and current
     // matrix with the camera rate (4493E0); +90 word: opaque flag.
     void anim_disp_4a9df0(std::uint32_t w){
         if((u8(w+0x54)&2u)||!(u8(w+0x54)&1u))return;
         const float b=from_bits(call(0x4493e0u,{}));
+        anim_previous_between_ticks(w);
         Frame E(*this,0x30);
         const std::uint32_t La=E(0),Ea=E(0xc),Lb=E(0x18),Eb=E(0x24);
         copy3(La,w+0x30);copy3(Lb,w+0x110);

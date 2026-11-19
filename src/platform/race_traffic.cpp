@@ -1,4 +1,5 @@
 #include "platform/race_traffic.hpp"
+#include "enhancements/frame_rate.hpp"   // course object displays between ticks
 #include "platform/pc_screen.hpp"
 #include "driving/pc_matrix_stack.hpp"
 #include "driving/pc_d3dx.hpp"
@@ -9,10 +10,12 @@
 #include "platform/vehicle_body_init.hpp"   // 516E10 rigid body (course objects)
 #include "driving/pc_crash.hpp"            // 513650 motion channels (course objects)
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <unordered_map>
 #include <stdexcept>
 namespace outrun::platform {
 namespace {

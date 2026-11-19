@@ -710,7 +710,9 @@ struct Run {
         case 0x4493e0u:{routed(pc);   // camera blend rate (as 4A2650 binds it)
             const std::uint8_t autoscene=std::uint8_t(c.event_state.slots[6].flags);
             if((autoscene&3u)==2u)missing(0x4b5fd0u,"4B5FD0 needs the active AUTOSCENE work 799CA0");
-            driving::PcCameraBlend blend{c.race.camera_override.override_82e7d8,autoscene,0,1.0f};
+            // 634B34: 1.0 in the ticks (as on the PC); between ticks above 60 frames per second,
+            // the frame's time, so the animated course objects' display 4A9DF0 blends too.
+            driving::PcCameraBlend blend{c.race.camera_override.override_82e7d8,autoscene,0,enhancements::display_blend()};
             const float f=driving::camera_blend_4493e0(blend);std::uint32_t u;std::memcpy(&u,&f,4);return u;}
         case 0x44bdd0u:{routed(pc);   // bridge 4CC25F: [7D3188] (as the race manager binds it)
             const std::uint32_t sel=m().u32(0x7d3188u);
