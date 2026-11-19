@@ -90,9 +90,11 @@ const CourseWorldSourceIdentity& CourseWorldRuntime::source_identity(std::uint32
 driving::CourseWorldTables CourseWorldRuntime::tables() const {
     if(!query_ready())throw std::logic_error("collision world transform not initialized");
     driving::CourseWorldTables result{};
-    for(std::uint32_t i=0;i<lanes_.size();++i)if(loaded_[i]){
-        result.courses[i]=course_collision_tables(lanes_[i],i);
-        result.grids[i]=course_collision_grid(lanes_[i]);result.grids_present[i]=true;
+    for(std::uint32_t i=0;i<lanes_.size();++i){
+        if(loaded_[i]){
+            result.courses[i]=course_collision_tables(lanes_[i],i);
+            result.grids[i]=course_collision_grid(lanes_[i]);result.grids_present[i]=true;
+        }else result.courses[i].load_type=i;   // an empty root: the PC's lookups see a null header and return 0
     }
     for(std::size_t i=0;i<transforms_.size();++i)if(transform_known_[i])
         result.transforms[i]=driving::Bytes(const_cast<std::uint8_t*>(transforms_[i].data()),64u);

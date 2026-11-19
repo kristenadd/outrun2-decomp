@@ -136,6 +136,7 @@ void map_memory(NativeRuntimeContext& c,NativeRaceTraffic& t){
     m.map(0x79fb48u,t.flags_79fb48.data(),t.flags_79fb48.size());
     put32(t.cell_799d18.data(),c.event_state.slots[8].work_token);m.map(0x799d18u,t.cell_799d18.data(),4);
     if(const auto car=c.event_state.slots[8].work_token)m.map(car,c.event_function36.car_select.car_799d18.data(),c.event_function36.car_select.car_799d18.size());
+    m.map(0x82e7f0u,c.event_function36.car_select.body_82e7f0.data(),c.event_function36.car_select.body_82e7f0.size());   // the player's body work (a meteor hit 50B1xx scales its +5C)
     put32(t.cell_79f574.data(),c.event_state.slots[385].work_token);m.map(0x79f574u,t.cell_79f574.data(),4);
     if(const auto cam=c.event_state.slots[385].work_token)m.map(cam,c.event_function36.car_select.camera_79fe10.data(),0x3d0u);
     m.map(0x8367c0u,c.start_mode.scene_owner_models_8367c0.data(),c.start_mode.scene_owner_models_8367c0.size());
@@ -1135,7 +1136,7 @@ struct Run {
             if(!ui.call(pc,bytes,k.args.data(),n,value)||ui.missing_pc)
                 missing(ui.missing_pc?ui.missing_pc:pc,"sprite resource service");
             routed(pc);return value;}
-        if(bulk_translated(pc)&&ctx){routed(pc);return bulk_call(m(),ctx->service,k,&matrices,&c.event_function36.pc_crt_random_state);}
+        if(bulk_translated(pc)&&ctx){routed(pc);return bulk_call(m(),ctx->service,k,&matrices,&c.event_function36.pc_crt_random_state,requests_clock_module());}
         // A scalar deleting destructor (the request manager's objects, through their vtables):
         // the translated body on ECX, then free when [esp+4] & 1; returns ECX.
         if(std::uint32_t body;ctx&&translated_scalar_deleting_dtor(pc,body)&&bulk_translated(body)){
@@ -1293,6 +1294,17 @@ void requests_2d_481a40(NativeRuntimeContext& c,PcRaceContext& ctx,driving::PcMa
         return ctx.service(k);};
     if(m.u32(B+0x7604u)||m.u32(B+0x7628u)){call(0x4fe0d0u,{},B);call(0x4fe360u,{},B);call(0x4fc800u,{},B);return;}
     if(m.u32(0x78026cu)==0x14u){call(0x4fc800u,{},B);return;}
+    static const bool trace=std::getenv("OR2_TRACE")!=nullptr;
+    if(trace){   // port: [req] the score and each stage's request words (+3A18 records, +3A20 hearts, +3A24 shown) when they change
+        static std::string last;std::string o;char b[64];
+        const std::uint32_t rec=m.u32(B+0x80u),def=rec?m.u32(rec+0x58u):0u;   // the current record (50E9F0: active while +7660)
+        if(m.u32(B+0x7660u)&&def)std::snprintf(b,sizeof b,"[req] active %x/%x cs %u..%u",m.u32(def),m.u32(def+4u),m.u16(rec),m.u16(rec+2u));
+        else std::snprintf(b,sizeof b,"[req] none");
+        o+=b;std::snprintf(b,sizeof b," score=%d",m.i32(B+0x5800u));o+=b;
+        for(std::int32_t i=0;i<=m.i32(B+0x16cu)&&i<5;++i){const std::uint32_t cr=m.u32(B+0x100u+std::uint32_t(i)*4u);
+            std::snprintf(b,sizeof b," stage%d(course %u)=%u/%u/%u",i+1,cr,m.u32(cr*0x74u+B+0x3a18u),m.u32(cr*0x74u+B+0x3a20u),m.u32(cr*0x74u+B+0x3a24u));o+=b;}
+        if(o!=last){last=o;std::fprintf(stderr,"%s\n",o.c_str());}
+    }
     if(const std::uint32_t list=m.u32(B+0x78u)){                       // 481A6F
         std::uint32_t node=m.u32(list+0xcu);m.put32(list+0x14u,node);
         std::uint32_t obj=node?m.u32(node):0u;
@@ -1333,6 +1345,7 @@ bool native_race_traffic_heart(NativeRuntimeContext& c,driving::PcMatrixStack& m
     try{
         map_memory(c,t);racers_in(c,t);
         if(heart.map)heart.map(heart.user,t.memory);else outrun::driving::service_hole("native_race_traffic_heart","heart.map");
+        if(c.start_mode.scene_owner_course_world.query_ready())map_course_world_pc(t.memory,c.start_mode.scene_owner_course_world);   // the request code's course queries (780100.. roots)
         if(heart.renderer)t.memory.map(0x899b98u,heart.renderer->environment().lights_899b98.data(),heart.renderer->environment().lights_899b98.size());
         PcRaceContext ctx{t.memory,matrices,[&](const PcRaceCall& k){return run(k);},heart.display?heart.models:nullptr};
         run.ctx=&ctx;
@@ -1613,6 +1626,16 @@ std::uint32_t requests_stage_script_4829d0(NativeRuntimeContext& c,PcRaceContext
         const std::uint32_t v=m.u32(B+0x168u);
         m.put32(B+0x13cu,v);m.put32(B+0x16cu,service(0x44c940u,{v})-1u);
     }
+    // Testing only, OR2_DEBUG_REQUEST=course,set,record (tools/request_catalogue.py lists them):
+    // the first stage script of the process loads that course's Req_*.bin instead, and its
+    // first record of every set runs the def of that record (set 0..3 = REQUEST_NORMAL,
+    // SPECIAL1..3) in its own window; the other records never start.
+    static bool debug_request_used=false;
+    unsigned debug_course=0,debug_set=0,debug_record=0;
+    const char* debug_request=std::getenv("OR2_DEBUG_REQUEST");
+    const bool debug_force=debug_request&&!debug_request_used&&
+        std::sscanf(debug_request,"%u,%u,%u",&debug_course,&debug_set,&debug_record)==3&&debug_set<4u;
+    if(debug_force)m.put32(B+0x140u,debug_course);
     const std::uint32_t id=m.u32(B+0x140u);
     if(id>=0x42u)throw TrafficUnported(0x4829d0u,"course id outside the 64EF38 script names");
     const std::uint32_t name=m.u32(0x64ef38u+id*4u);
@@ -1623,6 +1646,19 @@ std::uint32_t requests_stage_script_4829d0(NativeRuntimeContext& c,PcRaceContext
     const std::uint32_t n=m.u32(B+0x170u)+1u;
     m.put32(B+0x168u,0xffffffffu);m.put32(B+0x170u,n);m.put32(B+0x100u+n*4u,m.u32(B+0x140u));
     if(m.u32(B+0x68u))m.put32(B+0x5810u,m.u32(B+0x70u));
+    if(debug_force){
+        debug_request_used=true;
+        auto records=[&](std::uint32_t set,std::uint32_t& count){   // 4F1A90 / 4F1BA0 (as 482820) of the set's name 64F080
+            const std::uint32_t nm=m.u32(0x64f080u+set*4u);
+            const std::uint32_t r=service(0x4f1a90u,{nm,B+0xa0u});count=r?service(0x4f1ba0u,{nm,B+0xa0u}):0u;return r;};
+        std::uint32_t count=0;const std::uint32_t chosen=records(debug_set,count);
+        if(!chosen||debug_record>=count)throw TrafficUnported(0x4829d0u,"OR2_DEBUG_REQUEST: no such record");
+        const std::uint32_t r0=chosen+debug_record*0x74u,def=m.u32(r0+0x58u),from=m.u16(r0),to=m.u16(r0+2u);
+        std::fprintf(stderr,"[dbg] request: course %u set %u record %u, type %x/%x, cs %u..%u\n",debug_course,debug_set,debug_record,m.u32(def),m.u32(def+4u),from,to);
+        for(std::uint32_t set=0;set<4u;++set){std::uint32_t k=0;const std::uint32_t r=records(set,k);
+            for(std::uint32_t i=0;i<k;++i){const std::uint32_t q=r+i*0x74u;m.put32(q+0x58u,def);
+                m.put16(q,std::uint16_t(i?0x7ff0u:from));m.put16(q+2u,std::uint16_t(i?0x7ff8u:to));}}
+    }
     {PcRaceCall k{};k.pc=0x482820u;k.ecx=B;(void)bulk_call(m,ctx.service,k,&matrices,&c.event_function36.pc_crt_random_state);}
     if(m.u32(B+0x148u))m.put32(B+0x170u,m.u32(B+0x170u)-1u);
     return 1u;
@@ -1745,6 +1781,49 @@ void leaf_40efd0(or2x86::Cpu& c){
     const X87 d=(fl(a+8u)*fl(b+8u)+fl(a+4u)*fl(b+4u))+fl(a)*fl(b);
     c.fpu.push(d.v);c.esp+=4u;
 }
+// 50E140(record), thiscall (ECX = the request's handler, from 50E9F0 at 50EA4D), RET 4: the
+// placements of the record's def D = [record+58] (D+7C, 0x2C each, until +26 == -1) become the
+// handler's two lists: kind [+20] 0 -> entries at +2C (count D+70), kind 1 -> entries at +8C4
+// (count D+72), each {kind, b[+24], pos, pos, 1}; a placement with a count b[+2A] > 1 and
+// +28 > +26 spreads that many over +26..+28 (SSE singles, truncated). pos is offset by the
+// record's i16 [+0] when D+80 is set. Then [+113C + 4i] = the kind-1 entries' pos (a do-while,
+// so D+74 = max(D+72, 1); the loops around it read only), and 50D600(this, this + 8A4 + 2C*i, 1)
+// for each of them.
+void leaf_50e140(or2x86::Cpu& c){
+    using namespace or2x86;
+    const u32 record=ld32(c,c.esp+4u),o=c.ecx,d=ld32(c,record+0x58u);
+    auto s16=[&](u32 a){return std::int32_t(std::int16_t(ld16(c,a)));};
+    if(d!=0u){
+        const std::int32_t offset=ld32(c,d+0x80u)?s16(record):0;
+        st16(c,d+0x70u,0);st16(c,d+0x72u,0);st16(c,d+0x76u,0);st16(c,d+0x74u,0);
+        auto add=[&](u32 e,std::int32_t pos){
+            const u32 kind=ld32(c,e+0x20u);
+            if(kind>1u)return;
+            const u32 count=kind?d+0x72u:d+0x70u;const std::int32_t i=s16(count);
+            const u32 at=o+(kind?0x8c4u:0x2cu)+u32(i)*0x2cu;
+            st32(c,at,kind);st8(c,at+4u,ld8(c,e+0x24u));st16(c,at+6u,u32(pos));st16(c,at+8u,u32(pos));st8(c,at+0xau,1);
+            st16(c,count,u32(i+1));
+        };
+        if(ld32(c,d+0x7cu))for(u32 k=0;;k+=0x2cu){
+            const u32 e=ld32(c,d+0x7cu)+k;
+            if(s16(e+0x26u)==-1)break;
+            const std::int32_t n=ld8(c,e+0x2au),from=s16(e+0x26u),to=s16(e+0x28u);
+            if(n>1&&to>from){
+                const float step=float(to-from)/float(n-1);
+                for(std::int32_t j=0;j<std::int32_t(ld8(c,e+0x2au));++j)add(e,from+(std::int32_t(float(j)*step)+offset));
+            }else add(e,from+offset);
+            if(!ld32(c,d+0x7cu))break;
+        }
+        std::int32_t j=0;
+        do{const std::int32_t n=s16(d+0x74u);st32(c,o+0x113cu+u32(n)*4u,u32(s16(o+0x8cau+u32(j)*0x2cu)));st16(c,d+0x74u,u32(n+1));++j;}
+        while(j<s16(d+0x72u));
+        for(std::int32_t i=0;i<s16(d+0x74u);++i){   // 50D600 (translated, RET 8)
+            c.esp-=4u;st32(c,c.esp,1u);c.esp-=4u;st32(c,c.esp,o+0x8a4u+u32(i)*0x2cu);
+            c.esp-=4u;st32(c,c.esp,0x50e44au);c.ecx=o;c.external(c,0x50d600u);
+        }
+    }
+    c.esp+=8u;
+}
 // 4AF500 (fld [842110]: the race clock in ST0, read by the manager's 482140 / 4812D5) is in
 // the network translation set: chained on the same CPU (its x87 result stays on the stack).
 const TranslatedModule* requests_clock_module(){
@@ -1756,7 +1835,7 @@ const TranslatedModule* requests_clock_module(){
                            TranslatedFunction{0x449360u,leaf_449360},TranslatedFunction{0x449370u,leaf_449370},
                            TranslatedFunction{0x449380u,leaf_449380},TranslatedFunction{0x449390u,leaf_449390},
                            TranslatedFunction{0x4493a0u,leaf_4493a0},TranslatedFunction{0x40eeb0u,leaf_40eeb0},
-                           TranslatedFunction{0x40efd0u,leaf_40efd0},TranslatedFunction{0x449800u,leaf_449800},TranslatedFunction{0x40f140u,leaf_40f140},TranslatedFunction{0x46d110u,leaf_46d110},TranslatedFunction{0x46d180u,leaf_46d180},TranslatedFunction{0x46d220u,leaf_46d220}})v.push_back(f);
+                           TranslatedFunction{0x40efd0u,leaf_40efd0},TranslatedFunction{0x449800u,leaf_449800},TranslatedFunction{0x40f140u,leaf_40f140},TranslatedFunction{0x46d110u,leaf_46d110},TranslatedFunction{0x46d180u,leaf_46d180},TranslatedFunction{0x46d220u,leaf_46d220},TranslatedFunction{0x50e140u,leaf_50e140}})v.push_back(f);
         v.push_back(TranslatedFunction{0,nullptr});return v;}();
     static const TranslatedModule module=[]{TranslatedModule m{functions.data(),nullptr,{}};m.code_data=network_code_data;return m;}();
     return &module;

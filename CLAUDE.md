@@ -234,6 +234,9 @@ and leaves (that's the original game's design, not a bug).
   stage change and the results only hold the stages driven. Bugs that need a
   stage change still need a real race. `OR2_HOST_GOAL_COURSE=10..14` picks the ending.
 - `OR2_IOS_ALLOW_NO_CONTROLLER=1`: skips the iOS controller gate (testing only).
+- `OR2_DEBUG_REQUEST=course,set,record`: forces one C2C passenger request
+  (testing only; see "Clarissa mode").
+- `OR2_HOST_FAULTS=1` (Mac host): caught faults of ported code on stderr.
 - `OR2_HD_TEXTURES=<0..16>`: texture-pack scale cap (overrides `hd_textures=`; 0 = off).
 - `OR2_MAC_SCREENSHOT_DIR` / `OR2_MAC_SCREENSHOT_FRAME`: dump frames (Mac).
   Frontend menus come out **blank white** in these dumps; use the simulator's
@@ -425,14 +428,67 @@ the scalar deleting destructors (`translated_scalar_deleting_dtor`: 187 in
 the EXE, `RET 4`). `46C2D0` (a new manager) clears traffic latches left by
 the last teardown, or the next START stalls.
 
-**Known issues** (as of 2026-11-17):
+**All three girls** are variant 5 with the same manager; only the course (and
+its `Req_*.bin`) and the voice set differ. From the title, 2 s apart (autoplay
+press frames 400, 520, … as above):
+- Clarissa: A ×3, Down, A ×5 (Beach, race at about frame 1527).
+- Jennifer: A ×3, Down, Right, A ×5 (Palm Beach, race at about 1648).
+- Holly: A ×3, Down, Right ×2, A ×5 (Easter Island **reverse**, race at about
+  1767; requests `10`/6 at cs 110 and `D` FOOD at cs 480).
+- Pause ▸ Quit: PLUS, Down ×2, A, then **A again** for "Are you sure? Yes"
+  (modes 18 → 34 → 27 → 28 → 32). Works in all three (autoplay, 2026-11-18).
+
+Fixed on 2026-11-18 (autoplay of all three girls, **not yet confirmed by the
+owner**):
+- **Holly's car never moved** (latched at the first tick, `road-info course
+  view mismatch`): the car's ground probe at init (`519300`, before the start
+  position is set) runs at (0, 0); Easter Island reverse has no road there, so
+  the miss answers course type 1, a lane START never loads. The native course
+  world handed such a lane a view with `load_type` 0; it now presents unloaded
+  lanes as empty roots of their own type (`CourseWorldRuntime::tables`), and
+  the lookups answer 0 as the PC's do with a null header (`43D6E0`, `43E3B0`).
+- **`50E140` not ported** (the owner's Vision Pro latch, really Holly's first
+  request `10`/6 at about 40 s): native `leaf_50e140` (the def's `+7C`
+  placements into the handler's two lists, then `50D600` for each), chained in
+  `requests_clock_module`; the traffic service's own bulk calls chain it too.
+- `405360 object bank not loaded: 01EE0007` (request display latch, every
+  course with road markers): `505CA0` drew straight on the renderer without
+  `448810`; it now loads the bank when resident and draws nothing otherwise
+  (`native_race_area_ensure_bank`), as the AREA's draw list does.
+- Meteors (`13`): a hit scales the player's body work `82E84C` (`50B226`); the
+  body `82E7F0` is now mapped in the traffic module.
+- The heart run (`46C220`, HUD) reads the course roots `780110`: mapped
+  (`map_course_world_pc`) as in the manager's other entries.
+
+**Forcing a request** (testing only): `OR2_DEBUG_REQUEST=course,set,record`
+loads that course's `Req_*.bin` for the first stage of the process and runs
+that record's def in its own cs window (other records never start);
+`python3 tools/request_catalogue.py "<game folder>"` lists one record per
+type / sub-kind. Use Clarissa's path (Beach), hold ZR; the window starts about
+3 cs per second after GO. `OR2_TRACE` prints `[req] active <type>/<sub> cs a..b
+score=N stageK(course c)=records/hearts/shown` whenever it changes, which tells
+"the request ran" apart from "autoplay failed it". Result of forcing all 33
+type / sub-kinds (2026-11-18): every one starts and ends without a latch except
+the photo (`18`). Hearts earned by a ZR-only drive: `3`/1, `4`, `5`/0..2, `6`,
+`C`, `D`, `10`/1, 2, 3, 5, `15`. The rest scored 0 (they need steering,
+drifting, coins, gates, the horn…); `16` honk scored 0 even with B pressed (the
+horn sounds) on Beach, a forward course: unconfirmed whether the request counts
+it. Parallel autoplay runs: pass `--home=<dir>` (saves in `<dir>/SaveGame`,
+`autoplay.txt` there; symlink the cache to `<dir>/OR2006C2C.cache`) with
+`OR2_GAME_ROOT=<game folder>`; `OR2_HOST_FAULTS=1` prints caught faults
+(`4a8330: …`).
+
+**Known issues** (as of 2026-11-18):
 - The race-end results screen calls `46C220` through its own binding
   (`race_end_runtime.cpp`), which still expects a translated `481A40` and
   lacks `4BB9E0` / `50ECC0`: expect it to latch at the end of a run.
-- `race traffic latched: PC 50E140: traffic service not ported` (owner's
-  Vision Pro run, 2026-11-18): about 4.5 minutes into a Clarissa race
-  (variant 5, mode 16); traffic and requests stop for the rest of that race.
-  Not investigated yet.
+- **Photo request (type `18`) is not ported** (latches the traffic module when
+  it starts: `race traffic latched: … 0x89bd60`). Its reset `507100` →
+  `507180` makes a 256x256 render target (`D3DXCreateTexture` `4393F4`,
+  `GetSurfaceLevel`) and its display `507DE0` re-renders the whole 3D scene
+  from a photo camera into it (`449220` mid-display, camera `483C10` /
+  `484DF0` / `484C90`), then the HUD shows it. Needs an offscreen scene pass in
+  the native renderer. The first real one is Palm Beach reverse.
 - Drifting on turns (owner, iPad): fixed on 2026-11-17, **not yet confirmed
   by the owner**. Slip-angle control (`4A3310`) reads `46C470` = `[800AAC]`,
   the manager's `+764C` (1.0); the port passed a stale 0, which drops the

@@ -988,6 +988,14 @@ bool native_race_area_event_invoke(NativeRuntimeContext& c,std::uint32_t callbac
     }
     return true;
 }
+// 448810 for a draw outside the AREA's draw list (the request manager's road markers 505CA0):
+// the bank of `id` on the renderer, loaded when it is resident; false (+0C = 0, nothing
+// drawn) when it is not.
+bool native_race_area_ensure_bank(NativeRuntimeContext& c,PcSceneRenderer& r,std::uint32_t id){
+    if(!c.race_area)return r.bank_loaded(id);
+    Service sv{c,*c.race_area,&r};
+    return sv.ensure_bank(id);
+}
 bool native_race_area_display(NativeRuntimeContext& c,PcSceneRenderer& r,std::uint32_t callback,std::uint32_t work,std::uint32_t){
     if(callback==0x44f830u){   // event 399 display: "LOADING" (debug font 42CA60..42CCE0) while [7D34C4] != 0
         // Every 44FCC0 caller of the build passes 0: the text is never drawn.

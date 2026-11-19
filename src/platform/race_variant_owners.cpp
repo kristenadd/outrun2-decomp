@@ -389,7 +389,8 @@ void road_marker_505ca0(NativeRuntimeContext& c,PcSceneRenderer& r,std::int32_t 
         driving::pc_matrix_rotate_z(st,angles[2]);                                       // 40A410 / 40A3E0 / 40A440
         std::array<float,16> k{sx,0,0,0, 0,sy,0,0, 0,0,1.0f,0, 0,0,0,1};                 // 40A360
         driving::pc_matrix_multiply_current(st,driving::Bytes(reinterpret_cast<std::uint8_t*>(k.data()),64));
-        render_object_405360(q,object,0,driving::Bytes(nullptr,0),0u,-1,0);
+        if(object!=0xffffffffu&&native_race_area_ensure_bank(c,r,object>>16))   // 448810: a bank not resident draws nothing
+            render_object_405360(q,object,0,driving::Bytes(nullptr,0),0u,-1,0);
     };
     road_place_4fb090(c,std::int16_t(segment),0u,-1,pos,angles);
     pos.y=pos.y+lift+4.0f;                                                               // [6280C0]

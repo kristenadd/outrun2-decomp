@@ -3,6 +3,7 @@
 #include "system/perf.hpp"
 #include "platform/pc_pmt_records.hpp"
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <stdexcept>
 #include <string>
@@ -200,7 +201,7 @@ void walk_descriptor(PcRenderContext& c,const PcModelBank& bank,const PmtObject&
 }
 const PcModelBank& bank_of(PcRenderContext& c,u32 id,const char* what){
     const auto* bank=c.bank(id>>16);
-    if(!bank)throw std::runtime_error(std::string(what)+" object bank not loaded");
+    if(!bank){char id_text[16];std::snprintf(id_text,sizeof id_text," %08X",id);throw std::runtime_error(std::string(what)+" object bank not loaded:"+id_text);}
     return *bank;
 }
 }

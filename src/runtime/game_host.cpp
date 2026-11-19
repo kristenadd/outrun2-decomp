@@ -987,6 +987,7 @@ bool bind_runtime(GameHost& host,pf::NativeRuntimeContext& context,RuntimeBindin
 #if defined(OR2_HOST_NRO)
      h.log_faults=true;
 #endif
+     if(std::getenv("OR2_HOST_FAULTS"))h.log_faults=true;   // caught faults of ported code on stderr
      h.fixed_clock=std::getenv("OR2_HOST_FIXEDCLOCK")!=nullptr;
      h.trace_glyphs=std::getenv("OR2_HOST_GLYPHS")!=nullptr;
      if(const char* v=std::getenv("OR2_HOST_VARIANT"))h.force_variant=std::uint32_t(std::strtoul(v,nullptr,0));
