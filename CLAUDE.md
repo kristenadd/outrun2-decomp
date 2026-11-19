@@ -247,6 +247,40 @@ unmapped address or unported service switches that robot off for the rest of
 the race, silently unless `OR2_TRACE` is set. Check for `[rob] latched` first
 when a race character stops doing something mid-race.
 
+## Testing frame rates on the Mac
+
+The game always ticks at 60 Hz; 90 / 120 show interpolated frames between
+ticks (`frame_rate.hpp`). On the Mac:
+
+- **60 / 120 for real:** Options ▸ Settings ▸ FRAME RATE offers 120 only when
+  the screen refreshes at 100 Hz or more at launch (a ProMotion built-in
+  display; a 60 Hz external monitor won't offer it). The launch line
+  `[frame-rate] launch rate N fps (screen M Hz)` says which you got; a window
+  moved to a 60 Hz screen drops back to 60. The choice is `framerate=` in
+  `options.ini` (back it up before a test changes it).
+- **Any rate on any screen (90 = the Vision Pro):** `OR2_HOST_FRAME_HZ=N` sets
+  the display rate to N and makes the game clock advance 1/N s per presented
+  frame, so the run is deterministic and the same on every Mac. Vsync still
+  caps the presents: on a 60 Hz screen a 90 run plays at 2/3 speed, a 120 run
+  at half speed (fine for checking the picture, not the feel). It overrides
+  `framerate=` at launch; don't change FRAME RATE in the menu during such a run.
+- **What it's showing:** `OR2_TRACE=1` logs `[present] N frames/s (rate R,
+  screen S Hz), present X ms/frame` every 5 s; the controller's select / Share button toggles
+  the overlay (FPS of frames shown, CPU, GPU, settings). `OR2_HOST_LIVE=1` adds
+  the frame profile, but its numbers are **per 60 Hz tick**: divide by the
+  frames per tick (`calls` / 300) for per-frame times; its "hitch" lines are
+  meaningless above 60.
+- **Comparing 60 against 90 / 120:** run the same autoplay script twice with
+  `OR2_HOST_FRAME_HZ=60` and `=90`, side by side (`OR2_HOST_WINDOW_TITLE`,
+  `OR2_HOST_WINDOW_RECT`), with `OR2_HOST_CAR_PIXELS=1` for car visibility. The
+  `OR2_FPS_*` switches (visionOS section) turn off the in-between replays one
+  kind at a time.
+
+```bash
+OR2_HOST_FRAME_HZ=90 OR2_TRACE=1 OR2_HOST_CAR_PIXELS=1 OR2_HOST_WINDOW_TITLE="90 fps" \
+  "build/macos/mac/OutRun2006 Coast 2 Coast.app/Contents/MacOS/OutRun2006 Coast 2 Coast" > run90.log 2>&1
+```
+
 ## Driving the Mac game unattended (autoplay)
 
 How the goal-ending fixes were reproduced and checked without the owner
