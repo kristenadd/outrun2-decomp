@@ -324,6 +324,114 @@ service from a trace can latch a fault (`4B5FC0` before the autoscene exists
 latched the race end), so only read state that exists; and remove the
 tracing before committing.
 
+**`tools/autoplay_shots.py`** does all of the above in one call: it writes
+`autoplay.txt`, runs the game in its **own home** (`build/autoplay-home`, a
+copy of the owner's saves, so theirs are never touched), screenshots the
+window at given input frames (it watches `trace.txt`), kills the game and
+deletes `autoplay.txt`. Shots and `run.log` go to `build/autoplay-shots/<name>/`.
+
+```bash
+tools/autoplay_shots.py c2c "@A A A RIGHT DOWN"      # a press every 120 frames from 400, a shot 100 after each
+RUN_X=820 tools/autoplay_shots.py ta "@A A RIGHT RIGHT RIGHT A"   # second window beside the first
+tools/autoplay_shots.py race "@A A A A A A A A A 300* PLUS DOWN" 1600,1700   # "300*" waits; extra shot frames
+```
+
+`ZR:600` holds ZR for 600 frames. Each line printed is `<shot frame> f=… mode=…
+child=…` (the frontend's child screen, listed in the menu map below). Grep
+`run.log` for `[stall] not ported` (a screen that isn't ported yet) and
+`[flow]`.
+
+## Menu map (Mac, mapped with autoplay on 2026-11-18)
+
+Mapped with the owner's save copied (everything unlocked, AAA ranks). Paths
+start at the **title screen** (logo; the attract movies before it skip to it);
+with autoplay the first press is at frame 400, one press every 120 frames
+(2 s). Pressing faster can lose presses during screen transitions. "mode" is
+`mode_state.current`, "child" the frontend child state (`trace.txt` /
+`autoplay_shots.py`; all frontend screens are mode 32 except the OutRun2SP
+screens, mode 10).
+
+**General rules.** A (or Start / PLUS) selects, B goes back one screen.
+Horizontal menus (big title + a row of items at the bottom) move with
+**Left/Right** and **do not wrap**; extra Rights stay on the last item. The
+pop-up lists (pause menu, Options, Showroom) move with **Up/Down** and wrap.
+Going back resets the parent's cursor to its first item (pause menu, Options)
+in some screens, so re-press from the top. Pad prompts drawn as PC keys:
+**Tab = ZR** (change class / original BGM / reverse, in menus), **F1 = X**
+(car colour, random music), **F2 = Y** (license / OutRun2 ⇄ 2SP page), as
+mapped in `game_host.cpp` `map_pad`.
+
+```text
+Title (mode 32 child 0)
+└─ A → MAIN MENU (child 1): SINGLE PLAYER · MULTIPLAYER · OUTRUN2SP · RANKINGS · OPTIONS
+   ├─ SINGLE PLAYER (A) → (child 2): COAST 2 COAST · OUTRUN · HEART ATTACK · TIME ATTACK · SHOWROOM
+   │  ├─ COAST 2 COAST (A) → driver grid (child 58)
+   │  │    top row (Left/Right):  FLAGMAN 1 (novice) · FLAGMAN 2 (intermediate) · FLAGMAN 3 (professional) · FLAGMAN 4 (OutRun)
+   │  │    Down → bottom row:     CLARISSA · JENNIFER · HOLLY   (Up/Down switch rows)
+   │  │  ├─ Flagman N (A) → route map (child 59): Left/Right walk the nodes ("1 NOVICE", "2 NOVICE", …;
+   │  │  │     Flagman 4 starts at "26 OUTRUN"); Up/Down pick a branch where the route forks.
+   │  │  │     A on a node → its mission icons (1–5, e.g. "Race the Rivals!", "Test your Drift!"), Left/Right
+   │  │  │     A on a mission → CAR SELECT (child 10) → A → TRANSMISSION pop-up (child 16: Left AT / Right MT)
+   │  │  │     → A → MUSIC SELECT (child 4) → A → START (mode 13) → race (mode 16)
+   │  │  └─ Girl (A) → request map (child 60): cursor on the "OUTRUN2SP COURSE" icon (the whole course);
+   │  │        Right → stages ("SUNNY BEACH", …). A on it → CAR SELECT directly (no mission icons)
+   │  │        → A → TRANSMISSION → A → MUSIC → A → START (variant 5, "Clarissa mode")
+   │  ├─ OUTRUN (A) → COURSE SELECT (child 36): OUTRUN2 · OUTRUN2SP · OUTRUN2 15 STAGE CONTINUOUS · OUTRUN2SP 15 STAGE CONTINUOUS
+   │  │     → A → CAR SELECT → A → TRANSMISSION → A → MUSIC → A → race
+   │  ├─ HEART ATTACK (A) → COURSE SELECT (child 36): OUTRUN2 · OUTRUN2SP → A → CAR → A → TRANSMISSION → A → MUSIC → A → race
+   │  ├─ TIME ATTACK (A) → COURSE SELECT (child 36): OUTRUN2 · OUTRUN2SP
+   │  │     → A → MODE SELECT (child 37): GOAL · STAGE
+   │  │        ├─ GOAL (A) → GOAL SELECT (child 38): GOAL A … GOAL E (+15 continuous; ZR = reverse)
+   │  │        │     → A → CAR → A → TRANSMISSION → A → MUSIC → A → race
+   │  │        └─ STAGE (A): NOT PORTED, hangs ([stall] frontend screen key 27, action 4450A0)
+   │  └─ SHOWROOM (A) → (child 43) Up/Down list: FERRARI CARS · STAGES · GOALS · BGM · CAR COLORS
+   │        → A → that list (e.g. STAGES: Sunny Beach, Palm Beach, … with SOLD / price), Up/Down
+   ├─ MULTIPLAYER (A) → (child 6): ONLINE · LAN
+   │     LAN (A) → (child 8): JOIN GAME · CREATE GAME   (not followed further: networking)
+   ├─ OUTRUN2SP (A) → mode 10, the 2SP-style screens:
+   │     SELECT YOUR CAR (Left/Right, 10 cars: F50, Enzo, 360 Spider, F40, Testarossa, 288GTO, 512BB,
+   │       Dino 246GTS, 365GTS/4 Daytona, 250GTO; X = colour) → A → SELECT TRANSMISSION (Left AT / Right MT)
+   │     → A → SELECT GAME MODE (Left/Right): OutRun · Heart Attack · Time Attack · OutRun 15 continuous ·
+   │       Time Attack 15 continuous (Y = OutRun2 ⇄ OutRun2SP course) → A → SELECT YOUR MUSIC → A
+   │     → mode 11 → 13 → race
+   ├─ RANKINGS (A) → (child 49): SINGLE PLAYER · OUTRUN2SP · MULTIPLAYER
+   │     SINGLE PLAYER (A) → (child 51): OUTRUN · HEART ATTACK · TIME ATTACK → A → table (child 57): OUTRUN2 · OUTRUN2SP
+   │     MULTIPLAYER (A): NOT PORTED, hangs ([stall] frontend screen key 16, action 4442A0); B still backs out
+   └─ OPTIONS (A) → (child 44) Up/Down: SETTINGS · CONTROLS · AUDIO OPTIONS · DONE
+         SETTINGS: CAMERA · SPEEDOMETER · OUTRUN2SP DIFF. · DISPLAY GHOST CARS · ASPECT RATIO ·
+                   RESOLUTION · ANTI-ALIASING · FRAME RATE   (Mac; iOS adds FULL SCREEN under ASPECT RATIO,
+                   visionOS 3D DEPTH); Left/Right change a value, A / Start save and leave
+         CONTROLS: CONFIGURATION · SENSITIVITY
+         AUDIO OPTIONS: SOUND VOLUME · MUSIC VOLUME
+```
+
+**Shared screens.** CAR SELECT (C2C / OutRun / Heart Attack / Time Attack):
+Left/Right cars (DINO 246 GTS first, then 365 GTS/4 DAYTONA, F50, 360 SPIDER,
+F355 SPIDER, …), ZR (Tab) changes class, X colour. MUSIC SELECT: Left/Right
+tracks (SPLASH WAVE first, MAGICAL SOUND SHOWER, …), ZR original BGM, X random.
+
+**In the race** (mode 16): ZR accelerates, ZL brakes (B too; B is also the
+horn), Left/Right steer, L/R shift (MT), X view. **PLUS = pause** (mode 18), Up/Down list (wraps):
+RETURN TO GAME · RETRY · QUIT · SETTINGS · CONTROLS · AUDIO OPTIONS.
+RETRY and QUIT ask "Are you sure?" (A = Yes, B = No). The pause SETTINGS has
+SPEEDOMETER · DISPLAY GHOST CARS · ASPECT RATIO · RESOLUTION · ANTI-ALIASING ·
+FRAME RATE. B closes the pause menu.
+
+**Ready-made paths from the title** (2 s apart, i.e. `autoplay_shots.py "@…"`;
+then hold ZR to drive):
+
+| Destination | Presses | Notes |
+| --- | --- | --- |
+| C2C Flagman 1, node 1, mission 1 | A ×9 | START (mode 13) ≈ frame 1363, race ≈ 1528 |
+| C2C Flagman 4 (OutRun routes) | A A A, Right ×3, A ×6 | node "26 OUTRUN" |
+| Clarissa / Jennifer / Holly | A ×3, Down, (Right ×0/1/2), A ×5 | see "Clarissa mode" |
+| OutRun mode, OutRun2 course, defaults | A A, Right, A ×5 | Right ×1–3 on the course page for 2SP / 15-stage |
+| Heart Attack, OutRun2 | A A, Right ×2, A ×5 | |
+| Time Attack, OutRun2, Goal A | A A, Right ×3, A ×7 | |
+| OutRun2SP menus, OutRun mode | A, Right ×2, A ×5 | mode 10 |
+| Pause ▸ Quit | PLUS, Down ×2, A, A | in a race |
+| Options ▸ Settings | A, Right ×4, A, A | |
+
 ## Testing
 
 ```bash
