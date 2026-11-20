@@ -44,7 +44,8 @@ std::uint32_t MetalD3D9Device::draw_indexed_primitive(std::uint32_t type,std::in
     if(!targets_consistent()){errors.push_back("draw with the depth surface smaller than the render target");return 1;}
     auto* decl=object(declaration);auto* vs=object(vertex_shader);
     if(!decl||!vs||vs->kind!=3)return 1;
-    bool supported=type!=6&&vs->program.blobs.size()<=32&&std::getenv("OR2_MAC_CPU_VERTEX")==nullptr;   // fans: CPU vertices
+    static const bool cpu_vertices=std::getenv("OR2_MAC_CPU_VERTEX")!=nullptr;   // testing: every draw through the CPU path
+    bool supported=type!=6&&vs->program.blobs.size()<=32&&!cpu_vertices;   // fans: CPU vertices
     for(const auto& field:decl->elements)if(field.stream!=PcDeclEndStream&&field.type>5)supported=false;
     if(supported){
         unsigned low=65535,high=0;

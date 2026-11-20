@@ -36,6 +36,11 @@ bool present_frame(RendererImpl& r){
 #ifdef OR2_VISIONOS
         // 3D DEPTH: the eye separation for the window's physical width (SdlDisplay::stereo, visionOS).
         {const auto eyes=r.display->stereo(r.stereo_depth);r.device->set_stereo(eyes.separation,eyes.convergence);}
+#else
+        // Testing (OR2_HOST_STEREO=1): render both eyes as on visionOS (the window shows the
+        // left one), to measure the headset's GPU work on the Mac.
+        {static const bool stereo=[]{const char* v=std::getenv("OR2_HOST_STEREO");return v&&*v&&*v!='0';}();
+         if(stereo)r.device->set_stereo(0.03f,2.f);}
 #endif
         r.device->begin_frame();
         if(!r.start_loading_visible&&r.scene){
@@ -45,6 +50,9 @@ bool present_frame(RendererImpl& r){
             if(!r.device->errors.empty())throw std::runtime_error(r.device->errors.back());
         }
         {ProfileScope fence(profile_key(ProfileRenderer,0,ProfPcFence));r.device->end_frame();}
+        // Diagnostics (OR2_TRACE): the device's live objects and their memory every 900 frames.
+        {static const bool trace=std::getenv("OR2_TRACE")!=nullptr;static unsigned n=0;
+         if(trace&&++n%900u==0u)std::fprintf(stderr,"[d3d objects] frame %u:%s\n",n,r.device->object_bytes().c_str());}
         if(rasterize)r.stats.last_gpu_ns=r.device->gpu_nanoseconds();
         if(rasterize)frame_profile().add(profile_key(ProfileRenderer,0,ProfPcGpu),r.stats.last_gpu_ns);
         r.device->count_only=false;

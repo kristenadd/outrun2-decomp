@@ -75,7 +75,7 @@ try:
         while True:
             l = last()
             if l and int(re.match(r"f=(\d+)", l).group(1)) >= fr: break
-            if p.poll() is not None or time.time() - t0 > 900: break
+            if p.poll() is not None or time.time() - t0 > float(os.environ.get("RUN_TIMEOUT", "900")): break
             time.sleep(0.05)
         shot = f"{out_dir}/{fr}.jpg"
         # The window's content starts 28 points under its top (title bar).

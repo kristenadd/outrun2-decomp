@@ -274,7 +274,11 @@ struct Service {
             queue_bank(a[0]);return 0u;}
         case 0x4299c0:case 0x42dfb0:routed(pc);return 0u;   // 2D / model bank release (area end): the runtime keeps its banks resident
         case 0x4f21c0:routed(pc);if(!native_rob_motion_group_release_4f21c0(c,a[0]))missing_value(pc,c.race.robots.motion_tables.error);return 0u;
-        case 0x448990:routed(pc);if(a[0]<0x223u){o.released.insert(a[0]);o.requested.erase(a[0]);}return 0u;
+        case 0x448990:routed(pc);if(a[0]<0x223u){
+            o.released.insert(a[0]);o.requested.erase(a[0]);
+            // 42EB30 frees the bank (its buffers and textures). START's own resources stay.
+            if(r&&!start_resident(a[0]))r->request_unload(a[0]);}
+            return 0u;
         case 0x448960:routed(pc);return resident(a[0])?1u:0u;
         case 0x448980:routed(pc);return 1u;                                 // requests complete synchronously
         case 0x448820:routed(pc);return resident(a[0])?1u:0u;               // +10 == 1 && +14 == 7

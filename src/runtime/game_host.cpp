@@ -451,6 +451,9 @@ std::uint32_t frame_call(void* user,std::uint32_t pc,const std::uint32_t*,std::s
                  (unsigned long long)s.game_frames,unsigned(s.runtime->mode_state.current),int(mixer.run),int(mixer.failed),(unsigned long long)mixer.pumps,
                  (unsigned long long)s.audio_drops,s.audio_output?s.audio_output->queued_frames():std::size_t(0),s.movie_error.c_str(),s.music_error.c_str(),ps.status().c_str());
              for(const auto& e:ps.errors)std::fprintf(stderr,"[trace] pc sound error: %s\n",e.c_str());
+             if(const auto* ra=s.runtime->event_function36.retail_assets;ra&&s.game_frames%1800u==0u){
+                 double pb=0,lb=0;for(const auto& [k,v]:ra->path_cache)pb+=double(v.size());for(const auto& [k,v]:ra->loader_cache)lb+=double(v.bytes.size());
+                 std::fprintf(stderr,"[trace] asset cache: %zu files %.0f MB, loader %zu records %.0f MB\n",ra->path_cache.size(),pb/1048576.0,ra->loader_cache.size(),lb/1048576.0);}
          }
      }}
     trace_mark("pc_scene");

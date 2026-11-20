@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 // Owner of the ported PC renderer state for the native runtime: renderer
 // globals, render queues, the 89B564 matrix stack, the SCN_ENV environment,
 // the frame targets and the scene display globals. It executes the event
@@ -98,6 +99,13 @@ public:
     bool queue_bank(std::uint32_t resource,std::vector<std::uint8_t> pmt,std::string& error);
     bool bank_queued(std::uint32_t resource)const;
     void step_banks(double budget_ms);
+    // PC 42EB30 (448990 release): frees a loaded or loading bank's device objects (buffers,
+    // textures) and memory; false when it is neither. A later request loads it again.
+    bool unload_bank(std::uint32_t resource);
+    // A release asked during the game's tick: unloaded when the next frame's rendering starts
+    // (nothing queued then refers to the bank); a request for it before then cancels it.
+    void request_unload(std::uint32_t resource){if(std::find(unload_requests_.begin(),unload_requests_.end(),resource)==unload_requests_.end())unload_requests_.push_back(resource);}
+    std::uint64_t banks_unloaded{};
     // Inflated PMT bytes of a resource ID (the display loads a missing bank
     // through it; false when the resource is not available).
     std::function<bool(std::uint32_t resource,std::vector<std::uint8_t>& pmt)> bank_source;
@@ -192,6 +200,9 @@ private:
     std::unique_ptr<Bank> open_bank(std::vector<std::uint8_t> pmt,std::string& error);
     bool step_bank(PendingBank& p);                  // one object or texture; true when the bank is complete
     void install_bank(std::uint32_t resource,std::unique_ptr<Bank> bank);
+    void release_bank_objects(Bank& bank,std::uint32_t objects,std::uint32_t textures);
+    std::vector<std::uint32_t> unload_requests_;
+    void cancel_unload(std::uint32_t resource){unload_requests_.erase(std::remove(unload_requests_.begin(),unload_requests_.end(),resource),unload_requests_.end());}
     PcShaderCache shader_cache_{};
     const driving::PcEventControlState* events_{};
     std::uint32_t current_mode_{};

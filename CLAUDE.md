@@ -110,6 +110,72 @@ for visionOS (`UIScreen`), so SDL2 is built with `SDL_VIDEO=OFF`
   meaningless at 90 fps**: they time 60 Hz ticks, which hold one or two frames
   (11 / 22 ms). GPU time per frame is about 8–9 ms stereo, 5–7 ms mono, and
   barely depends on resolution (1080 vs 900).
+- **visionOS halves the window to 45 Hz and keeps it there** (traced 2026-11-20, OutRun2SP at
+  1920x1440 stereo, glare on): the RealityKit updates themselves dropped from 90 to exactly 45
+  per second (`[visionos] 45 updates/s`) at stage 4 (Legend), and stayed 45 for the rest of
+  the session (later stages, the ending, the menus). The game was not the limit then (GPU ~9 ms
+  per frame), but the stretches before it ran 15–18 ms per frame for seconds at a time (stage 1's
+  start ~22 ms), so the system seems to demote the app after sustained overload, with no way back
+  seen. Keep the race's GPU frame well under 11 ms; check with `OR2_HOST_LIVE` (GPU time ÷
+  calls / 300). Not reproduced on the Mac or the visionOS simulator (its window updates ~115/s).
+  The drop came right at a stage change, while the app's memory climbed at every stage
+  (1152 MB in the menus, 1738 MB just before it). Two leaks found on the Mac (2026-11-20; **the
+  45 Hz drop not yet re-tested on the headset**):
+  - **Model banks were never freed.** `448990` (the PC's `42EB30`: a bank's buffers `42E9C0` and
+    textures `42EAC0`) only marked the bank released, so every stage's models and textures stayed
+    on the CPU and GPU. Now `PcSceneRenderer::unload_bank` frees them; the release is deferred to
+    the next `render_frame` (`request_unload`; a missing bank makes `405890` throw mid-frame), and
+    a request before then cancels it. START's own resources are kept.
+  - **`MetalD3D9Device::release` scanned every texture / buffer** on each destroying release, so
+    per-frame CPU grew with the leak (material setup `408C80` 0.3 → 1.2 ms per frame over 15
+    stages). It now drops only the destroyed object and its parents.
+  - OutRun2SP 15 continuous (stereo, 2560x1440 FXAA, `hd_textures=2`): memory at the goal 3.7 →
+    2.7 GB, CPU record per frame 3.6 → 6.4 ms before, flat 2.9–3.4 ms after. Live textures stay
+    ~1000–1160 (were 1490 after 4 stages). Still growing slowly: the retail asset cache
+    (`RetailAssetStore::path_cache`, every file read is kept: 172 MB at the goal) and ~1 GB of
+    heap / GPU memory not yet traced.
+  - `OR2_TRACE` logs `[d3d objects]` (live device objects per kind and their MB, every 900
+    frames) and `[trace] asset cache` (files and MB). `OR2_HOST_STEREO=1` (Mac) renders both eyes
+    as on visionOS, to time the headset's GPU work on the Mac (M3 Max: ~9 ms per frame in a race).
+  - Headset re-test with both fixes (2026-11-20): memory flat (~1540–1585 MB in a race); 90 Hz
+    through the first race and most of the second, then 45 for ~2.5 min after a stretch at ~17 ms
+    GPU per frame, and **back to 90 in the menus** (the first trace never came back). So the
+    remaining trigger is GPU overload.
+  - GPU per frame, OutRun2SP stage 1, Mac stereo (M3 Max), headset settings 2560x1440 FXAA, glare,
+    reflections: 8.63 ms. FXAA off 4.85, 1920x1080 4.34, glare off 7.66, reflections off 8.52,
+    MSAA 4x instead of FXAA 8.97, mono 3.79. FXAA cost ~45% of the frame (1.27 ms per eye in
+    Instruments; even a one-sample full-screen pass cost ~1 ms per eye). **Fixed (2026-11-20):**
+    `fxaa_fs` returns the pixel as soon as the 5 centre taps show no edge (the old shader took the
+    4 filtered samples first, then threw them away) and reads those taps with `read()` (texel
+    centres: same values). Frames byte-identical to the old shader; FXAA's cost 3.8 → 1.2 ms
+    (frame 8.63 → 6.05 ms). **Not yet confirmed on the headset.**
+  - **The Mac's GPU timings are at its minimum performance state** (Instruments' Metal System
+    Trace: "Minimum GPU Performance state" throughout): compare runs with each other, not with
+    the headset. `xcrun xctrace record --template "Metal System Trace" --attach <pid>
+    --time-limit 4s`, then `xctrace export --xpath '…table[@schema="metal-gpu-intervals"]'` gives
+    each encoder's GPU time (attach by the game's own pid, not `pgrep -f`, which also matches the
+    shell running it). Two identical autoplay runs can differ in a few frames: compare a third.
+    `OR2_METAL_LABELS=1` names the passes in the trace ("back both eyes", "back left eye",
+    "target N (WxH)", "FXAA", "StretchRect", "frame copy"). Instruments' "Time Profiler" template
+    the same way gives the CPU side (`time-profile` table).
+  - **Headset traces after the FXAA fix (2026-11-20):** GPU 8–10.4 ms per frame all race (no
+    more 15–18 ms stretches), 89–90 of 90 frames, yet the window still dropped to 45 after ~3–4
+    min of racing, mid-stage, at 9.4 ms. Every drop came after a similar time of play, and once
+    it recovered by itself after ~40 s on the title. **Likely thermal**, not overload: the
+    `[visionos] … updates/s` line now ends with `thermal nominal|fair|serious|critical`
+    (`ProcessInfo.thermalState`); the headset already read "fair" at a warm launch. Not yet
+    caught at the moment of a drop. Less GPU / CPU work per frame is the lever (heat), so:
+  - **Frame cost cuts (2026-11-20, all byte-identical frames):** FXAA draws from the back buffer
+    into `scene_copy` and the two swap (`finish_scene`; no full-picture copy, ~30 MB per frame);
+    `flush` builds its pipeline / depth / sampler keys in reused buffers and looks them up in
+    `unordered_map`s (CPU per frame 2.90 → 2.71 ms on the Mac); `draw_indexed_primitive` no
+    longer calls `getenv` per draw. Stereo frame on the Mac (M3 Max, Instruments): scene 1.5 +
+    0.7 ms, glare ~0.7, FXAA 0.48, frame copy for the compositor 0.17 (kept: rotating the back
+    buffer instead would hand screens a stale picture if any relies on its contents).
+  - **Overlay CPU % reads ~100% on visionOS:** it subtracts only the waits it profiles
+    (`ProfAcquire` / `ProfPcFence`), not `submit`'s wait for the headset's refresh.
+  - A launch from the Mac (`devicectl … --terminate-existing`) can leave the old window as a dead
+    placeholder; the controller then seems dead (no `[pad] tap` lines). Close the other window.
 - **Car / ending vanishing at 90 fps (2026-11-18), fixed on the Mac, not yet
   confirmed by the user on the headset.** At stage 4's end and in the goal
   ending the player car (traffic too) vanished, leaving only its shadow; the
@@ -162,6 +228,10 @@ for visionOS (`UIScreen`), so SDL2 is built with `SDL_VIDEO=OFF`
   picture with the modifier, rebuilt (`.id`) on every tap so the claim is made anew
   (`[pad] tap: controller claimed again`); the window interaction only before visionOS 26.
   **Confirmed by the user on the Vision Pro (2026-11-20): a tap brings the controller back.**
+  Later the same day the input froze again (ZR held at 255, `changes+0`, focused) right after the
+  scene went inactive → active (system UI, a resize), with no tap. The claim is now also made
+  anew on every return to `.active` (`GameView` `claims`, `[pad] active again: controller
+  claimed again`). **Not yet confirmed by the user.**
   `OR2_TRACE` logs `[pad]` presses, controller changes and focus.
 - `OR2_IOS` and `OR2_VISIONOS` are both defined. Shared files check
   `OR2_VISIONOS` where visionOS differs (`main.cpp`, `renderer_present.inc`,
@@ -401,7 +471,7 @@ RUN_X=820 tools/autoplay_shots.py ta "@A A RIGHT RIGHT RIGHT A"   # second windo
 tools/autoplay_shots.py race "@A A A A A A A A A 300* PLUS DOWN" 1600,1700   # "300*" waits; extra shot frames
 ```
 
-`ZR:600` holds ZR for 600 frames. `EXIT_FRAME=N` exits the game cleanly at input frame N (L+R+Plus)
+`ZR:600` holds ZR for 600 frames. `RUN_TIMEOUT=<s>` raises the 900 s limit (15 continuous stages take ~25 min). OutRun2SP 15 continuous from the title: `"@A RIGHT RIGHT A A A RIGHT RIGHT RIGHT A A 200* ZR:100000"` (race ends at input frame ~91,800 with `OR2_HOST_HOLD_TIME=1`). `EXIT_FRAME=N` exits the game cleanly at input frame N (L+R+Plus)
 so it writes its result log, `<home>/SaveGame/OutRunMac.log` (`hud variant=…` NAVI misses, the
 `race traffic … routed: … missing:` services), which a killed run never writes. Each line printed is `<shot frame> f=… mode=…
 child=…` (the frontend's child screen, listed in the menu map below). Grep

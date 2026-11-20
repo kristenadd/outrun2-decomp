@@ -65,6 +65,7 @@ bool PcSceneRenderer::step_bank(PendingBank& p){
     return pmt_textures_step_42e8c0(r,p.cursor,device_);
 }
 bool PcSceneRenderer::queue_bank(std::uint32_t resource,std::vector<std::uint8_t> pmt,std::string& error){
+    cancel_unload(resource);
     if(owned_banks_.count(resource)||bank_queued(resource)){error.clear();return true;}
     auto bank=open_bank(std::move(pmt),error);
     if(!bank)return false;
@@ -92,6 +93,7 @@ void PcSceneRenderer::step_banks(double budget_ms){
     }
 }
 bool PcSceneRenderer::load_bank(std::uint32_t resource,std::vector<std::uint8_t> pmt,std::string& error){
+    cancel_unload(resource);
     if(owned_banks_.count(resource)){error.clear();return true;}
     OR2_PERF_ZONE("bank load");
     PendingBank p;
@@ -106,6 +108,48 @@ bool PcSceneRenderer::load_bank(std::uint32_t resource,std::vector<std::uint8_t>
     catch(const std::exception& e){error=std::string("PMT loader: ")+e.what();return false;}
     install_bank(resource,std::move(p.bank));
     error.clear();return true;
+}
+// PC 42EB30 (448990): a released bank's vertex / index buffers (42E9C0) and textures (42EAC0).
+// `objects` / `textures`: how many the loader has created (a bank still being loaded).
+void PcSceneRenderer::release_bank_objects(Bank& bank,std::uint32_t objects,std::uint32_t textures){
+    auto& r=bank.resources;auto s=r.view();
+    objects=std::min(objects,r.object_count_0c);
+    for(std::uint32_t i=0;i<objects;++i){
+        const auto o=r.object_table_20+4u+i*0x3cu;                   // system+0x18 (pmt_objects_step_42e4f0)
+        const auto info=s.u32(o+0x18);
+        const auto groups=s.i32(info+0x24);
+        for(std::int32_t g=0;g<groups;++g){
+            const auto group=s.u32(o+0x30)+std::uint32_t(g)*0x2cu;
+            for(std::int32_t k=0;k<s.i32(group);++k)
+                if(const auto vb=s.u32(s.u32(o+0x08)+std::uint32_t(g)*16u+std::uint32_t(k)*4u))device_.release(vb);
+            if(const auto ib=s.u32(s.u32(o+0x04)+std::uint32_t(g)*4u))device_.release(ib);
+        }
+    }
+    if(r.texture_table_24){
+        const auto table=s.u32(r.texture_table_24);
+        textures=std::min(textures,s.u32(8));
+        for(std::uint32_t k=0;k<textures;++k)if(const auto t=s.u32(table+k*4u))device_.release(t);
+    }
+}
+bool PcSceneRenderer::unload_bank(std::uint32_t resource){
+    bool unloaded=false;
+    for(auto it=pending_banks_.begin();it!=pending_banks_.end();++it){
+        if(it->resource!=resource)continue;
+        // A bank still loading: what its loader created so far.
+        const auto& c=it->cursor;
+        release_bank_objects(*it->bank,it->textures?0xffffffffu:c.object_95b230,it->textures?c.texture_95b22c:0u);
+        pending_banks_.erase(it);unloaded=true;break;
+    }
+    if(auto it=owned_banks_.find(resource);it!=owned_banks_.end()){
+        release_bank_objects(*it->second,0xffffffffu,0xffffffffu);
+        banks_.erase(resource);owned_banks_.erase(it);unloaded=true;
+    }
+    for(std::size_t i=0;i<pending_swaps_406630.size();){
+        if((pending_swaps_406630[i].first>>16)==resource){device_.release(pending_swaps_406630[i].second);pending_swaps_406630.erase(pending_swaps_406630.begin()+std::ptrdiff_t(i));}
+        else ++i;
+    }
+    if(unloaded)++banks_unloaded;
+    return unloaded;
 }
 void PcSceneRenderer::install_bank(std::uint32_t resource,std::unique_ptr<Bank> bank){
     auto& r=bank->resources;
@@ -564,6 +608,8 @@ bool PcSceneRenderer::environment_map_46bbc0(driving::Bytes car){
 }
 void PcSceneRenderer::render_frame(driving::PcEventControlState& events,std::uint32_t mode_78026c){
     events_=&events;current_mode_=mode_78026c;
+    for(const auto id:unload_requests_)unload_bank(id);   // 448990 releases of the last ticks
+    unload_requests_.clear();
     if(clear_colour_89bd5c)frame_.clear_colour_89bd5c=*clear_colour_89bd5c;
     frame_.pause_7d2614=pause_7d2614?*pause_7d2614:0u;
     PcEnvironmentRenderTables tables{Bytes(environment_.lights_899b98.data(),environment_.lights_899b98.size()),

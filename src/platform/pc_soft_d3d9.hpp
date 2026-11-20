@@ -67,6 +67,12 @@ public:
     // per kind: created / live (host diagnostics)
     std::string object_kinds()const{std::uint32_t n[16]{},l[16]{};for(const auto& o:objects_){n[o.kind&15u]++;if(o.refs)l[o.kind&15u]++;}
         std::string r;for(unsigned k=0;k<16;++k)if(n[k]||released_kinds[k])r+=" k"+std::to_string(k)+"="+std::to_string(n[k])+"/"+std::to_string(l[k])+"/r"+std::to_string(released_kinds[k]);return r;}
+    // per kind: live objects and their CPU bytes in MB (compressed texels, RGBA texels, other bytes)
+    std::string object_bytes()const{double c[16]{},r[16]{},b[16]{};std::uint32_t l[16]{};
+        for(const auto& o:objects_){if(!o.refs)continue;const unsigned k=o.kind&15u;++l[k];b[k]+=double(o.bytes.size());
+            for(const auto& f:o.texture.faces)for(const auto& v:f)c[k]+=double(v.data.size());
+            for(const auto& f:o.rgba)for(const auto& v:f)r[k]+=double(v.size());}
+        std::string s;char t[96];for(unsigned k=0;k<16;++k)if(l[k]){std::snprintf(t,sizeof t," k%u=%u dds %.0f rgba %.0f bytes %.0f",k,l[k],c[k]/1048576.0,r[k]/1048576.0,b[k]/1048576.0);s+=t;}return s;}
     std::uint32_t released_kinds[16]{};
     std::size_t texture_bytes{};
     std::uint32_t draw_indexed_primitive(std::uint32_t,std::int32_t,std::uint32_t,std::uint32_t,std::uint32_t,std::uint32_t)override;

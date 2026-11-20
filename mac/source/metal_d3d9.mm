@@ -9,6 +9,8 @@
 #include <cstring>
 #include <cmath>
 #include <map>
+#include <unordered_map>
+#include <unordered_set>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -78,7 +80,7 @@ struct MetalD3D9Device::Impl {
     unsigned layers{1};
     bool amplification{};             // the GPU renders 2 views per draw
     bool pass_layered{},layered{};    // the last pass descriptor / the open encoder covers both layers
-    std::array<id<MTLTexture>,2> fxaa_views;   // scene_copy's layers as 2D textures
+    std::array<id<MTLTexture>,2> fxaa_views,back_views;   // scene_copy's / back's layers as 2D textures
     // Pipelined frames (set_pipelined): the frame the GPU still renders keeps
     // its own vertex arena, visibility results and readback copy (the spare
     // set) while the CPU records the next one in the current set.
@@ -112,7 +114,9 @@ struct MetalD3D9Device::Impl {
     id<MTLBuffer> default_vertex;
     std::map<std::uint32_t,id<MTLBuffer>> buffers;
     std::map<std::uint32_t,id<MTLTexture>> textures,depths;
-    std::map<std::string,id<MTLRenderPipelineState>> pipelines;
+    // Looked up on every draw: hashed (the keys are a few hundred bytes of state).
+    std::unordered_map<std::string,id<MTLRenderPipelineState>> pipelines;
+    std::string key_scratch,fixed_scratch,sampler_scratch;   // flush's keys, reused (no allocation per draw)
     // Specialised fixed-function pipelines (flush): requested once per state,
     // compiled by Metal in the background (FfpAsync, the default), at once
     // (FfpSync: OR2_METAL_FFP=sync, for tests) or never (OR2_METAL_FFP=generic).
@@ -122,7 +126,7 @@ struct MetalD3D9Device::Impl {
             std::lock_guard<std::mutex> g(lock);if(state)ready.emplace_back(key,state);else ++failed;++waiting;}
     };
     unsigned ffp_mode{FfpAsync},ffp_built{};
-    std::set<std::string> ffp_requested;
+    std::unordered_set<std::string> ffp_requested;
     std::shared_ptr<FfpResults> ffp_async=std::make_shared<FfpResults>();
     void collect_ffp(){
         if(!ffp_async->waiting.load(std::memory_order_acquire))return;
@@ -135,8 +139,8 @@ struct MetalD3D9Device::Impl {
         ffp_async->ready.clear();ffp_async->waiting=0;
     }
     std::map<std::string,id<MTLFunction>> vertex_functions;
-    std::map<std::string,id<MTLDepthStencilState>> depth_states;
-    std::map<std::string,id<MTLSamplerState>> samplers;
+    std::unordered_map<std::string,id<MTLDepthStencilState>> depth_states;
+    std::unordered_map<std::string,id<MTLSamplerState>> samplers;
     std::vector<id<MTLBuffer>> vertex_buffers;
     NSUInteger vertex_offset{};
     unsigned vertex_buffer_index{};
@@ -280,7 +284,14 @@ struct MetalD3D9Device::Impl {
         start();
         if(!encoder){const unsigned flags=clear_flags;clear_flags=0;encoder=[command renderCommandEncoderWithDescriptor:pass(flags,clear_colour,clear_z,clear_stencil)];require(encoder!=nil,"Cannot create Metal render encoder");
             layered=pass_layered;
-            if(layered){const MTLVertexAmplificationViewMapping views[2]{{0,0},{0,1}};[encoder setVertexAmplificationCount:2 viewMappings:views];}}
+            if(layered){const MTLVertexAmplificationViewMapping views[2]{{0,0},{0,1}};[encoder setVertexAmplificationCount:2 viewMappings:views];}
+            // Diagnostics (OR2_METAL_LABELS=1): names the pass for Instruments' Metal System Trace.
+            static const bool labels=std::getenv("OR2_METAL_LABELS")!=nullptr;
+            if(labels){
+                const auto target=owner.colour_target_;char name[96];
+                if(target==owner.BackBuffer)std::snprintf(name,sizeof name,"back %s%s",layered?"both eyes":owner.stereo_eye_>=0?(owner.stereo_eye_?"right eye":"left eye"):"mono",flags?" +clear":"");
+                else{auto* o=owner.object(target);std::snprintf(name,sizeof name,"target %u (%ux%u)%s",target,o?o->width:0u,o?o->height:0u,flags?" +clear":"");}
+                encoder.label=[NSString stringWithUTF8String:name];}}
         return encoder;
     }
     void allocate_back(unsigned w,unsigned h){
@@ -291,7 +302,7 @@ struct MetalD3D9Device::Impl {
         td.storageMode=MTLStorageModePrivate;td.usage=MTLTextureUsageShaderRead|MTLTextureUsageRenderTarget;back=[device newTextureWithDescriptor:td];
         td.pixelFormat=MTLPixelFormatDepth32Float_Stencil8;td.storageMode=MTLStorageModePrivate;back_depth=[device newTextureWithDescriptor:td];
         require(back&&back_depth,"Cannot allocate Metal back buffers");
-        scene_copy=nil;fxaa_views={};msaa_colour=msaa_depth=nil;readback_staging=spare_staging=nil;
+        scene_copy=nil;fxaa_views={};back_views={};msaa_colour=msaa_depth=nil;readback_staging=spare_staging=nil;
     }
     void ensure_msaa(unsigned samples){
         if(msaa_colour&&msaa_colour.sampleCount==samples&&msaa_colour.width==back.width&&msaa_colour.height==back.height&&msaa_colour.arrayLength==layers)return;
@@ -328,16 +339,22 @@ using namespace metal;
 struct V { float4 p [[position]]; };
 vertex V fxaa_vs(uint i [[vertex_id]]){ float2 p=float2(float((i<<1)&2),float(i&2)); V v; v.p=float4(p*2.0-1.0,0.0,1.0); return v; }
 static float4 at(texture2d<float> t,sampler s,float2 q,float2 size){ q=clamp(q,float2(0.5),size-0.5); return t.sample(s,q/size,level(0.0)); }
+// A texel centre (the pixel and its diagonal neighbours): the same value a linear sample there
+// gives, read without filtering (clamped to the edge as the sampler is).
+static float4 texel(texture2d<float> t,int2 p,int2 size){ return t.read(uint2(clamp(p,int2(0),size-1))); }
 static float luma(float3 c){ return dot(c,float3(0.299,0.587,0.114)); }
 fragment float4 fxaa_fs(V v [[stage_in]],texture2d<float> scene [[texture(0)]],sampler s [[sampler(0)]]){
-    const float2 size=float2(scene.get_width(),scene.get_height());
-    const float2 q=v.p.xy;
-    const float4 cM=at(scene,s,q,size);
-    const float lNW=luma(at(scene,s,q+float2(-1.0,-1.0),size).rgb),lNE=luma(at(scene,s,q+float2(1.0,-1.0),size).rgb);
-    const float lSW=luma(at(scene,s,q+float2(-1.0,1.0),size).rgb),lSE=luma(at(scene,s,q+float2(1.0,1.0),size).rgb);
+    const int2 isize=int2(scene.get_width(),scene.get_height());
+    const float2 size=float2(isize);
+    const float2 q=v.p.xy;const int2 p=int2(q);
+    const float4 cM=texel(scene,p,isize);
+    const float lNW=luma(texel(scene,p+int2(-1,-1),isize).rgb),lNE=luma(texel(scene,p+int2(1,-1),isize).rgb);
+    const float lSW=luma(texel(scene,p+int2(-1,1),isize).rgb),lSE=luma(texel(scene,p+int2(1,1),isize).rgb);
     const float lM=luma(cM.rgb);
     const float lMin=min(lM,min(min(lNW,lNE),min(lSW,lSE)));
     const float lMax=max(lM,max(max(lNW,lNE),max(lSW,lSE)));
+    // No edge here (most pixels): the pixel as it is, before the four filtered samples.
+    if(lMax-lMin<max(0.0312,lMax*0.125))return cM;
     float2 dir=float2(-((lNW+lNE)-(lSW+lSE)),(lNW+lSW)-(lNE+lSE));
     const float reduce=max((lNW+lNE+lSW+lSE)*(0.25/8.0),1.0/128.0);
     const float rcpMin=1.0/(min(abs(dir.x),abs(dir.y))+reduce);
@@ -345,8 +362,7 @@ fragment float4 fxaa_fs(V v [[stage_in]],texture2d<float> scene [[texture(0)]],s
     const float3 a=0.5*(at(scene,s,q+dir*(1.0/3.0-0.5),size).rgb+at(scene,s,q+dir*(2.0/3.0-0.5),size).rgb);
     const float3 b=a*0.5+0.25*(at(scene,s,q+dir*-0.5,size).rgb+at(scene,s,q+dir*0.5,size).rgb);
     const float lB=luma(b);
-    const float3 aa=(lB<lMin||lB>lMax)?a:b;
-    return float4((lMax-lMin<max(0.0312,lMax*0.125))?cM.rgb:aa,cM.a);
+    return float4((lB<lMin||lB>lMax)?a:b,cM.a);
 }
 // StretchRect (stretch_rect): the whole source over the whole destination.
 fragment float4 stretch_fs(V v [[stage_in]],texture2d<float> source [[texture(0)]],sampler s [[sampler(0)]],constant float2& size [[buffer(0)]]){
@@ -411,26 +427,31 @@ void MetalD3D9Device::finish_scene(){
     scene_finished_=true;
     @autoreleasepool {
         auto& m=*metal_;m.finish_encoder();m.start();
+        // FXAA draws from the back buffer into a second picture of the same kind, and the two
+        // then trade places: the result is the back buffer without copying the scene first.
+        auto views=[&](id<MTLTexture> t,std::array<id<MTLTexture>,2>& v){
+            for(unsigned layer=0;layer<m.layers&&m.layers>1;++layer){
+                v[layer]=[t newTextureViewWithPixelFormat:MTLPixelFormatRGBA8Unorm textureType:MTLTextureType2D levels:NSMakeRange(0,1) slices:NSMakeRange(layer,1)];
+                require(v[layer]!=nil,"Cannot view the FXAA source");
+            }
+        };
         if(!m.scene_copy){
             auto td=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:m.back.width height:m.back.height mipmapped:NO];
             if(m.layers>1){td.textureType=MTLTextureType2DArray;td.arrayLength=m.layers;}
-            td.storageMode=MTLStorageModePrivate;td.usage=MTLTextureUsageShaderRead;
-            m.scene_copy=[m.device newTextureWithDescriptor:td];require(m.scene_copy!=nil,"Cannot allocate the FXAA source");
-            for(unsigned layer=0;layer<m.layers&&m.layers>1;++layer){
-                m.fxaa_views[layer]=[m.scene_copy newTextureViewWithPixelFormat:MTLPixelFormatRGBA8Unorm textureType:MTLTextureType2D levels:NSMakeRange(0,1) slices:NSMakeRange(layer,1)];
-                require(m.fxaa_views[layer]!=nil,"Cannot view the FXAA source");
-            }
+            td.storageMode=MTLStorageModePrivate;td.usage=MTLTextureUsageShaderRead|MTLTextureUsageRenderTarget;   // as the back buffer
+            m.scene_copy=[m.device newTextureWithDescriptor:td];require(m.scene_copy!=nil,"Cannot allocate the FXAA target");
+            views(m.scene_copy,m.fxaa_views);
         }
-        auto blit=[m.command blitCommandEncoder];require(blit!=nil,"Cannot encode the FXAA copy");
-        [blit copyFromTexture:m.back toTexture:m.scene_copy];[blit endEncoding];
+        if(m.layers>1&&!m.back_views[0])views(m.back,m.back_views);
         for(unsigned layer=0;layer<m.layers;++layer){   // one eye per pass
             auto p=[MTLRenderPassDescriptor renderPassDescriptor];
-            p.colorAttachments[0].texture=m.back;p.colorAttachments[0].slice=layer;p.colorAttachments[0].loadAction=MTLLoadActionDontCare;p.colorAttachments[0].storeAction=MTLStoreActionStore;
-            auto e=[m.command renderCommandEncoderWithDescriptor:p];require(e!=nil,"Cannot encode FXAA");
-            [e setRenderPipelineState:m.fxaa];[e setFragmentTexture:m.layers>1?m.fxaa_views[layer]:m.scene_copy atIndex:0];[e setFragmentSamplerState:m.fxaa_sampler atIndex:0];
+            p.colorAttachments[0].texture=m.scene_copy;p.colorAttachments[0].slice=layer;p.colorAttachments[0].loadAction=MTLLoadActionDontCare;p.colorAttachments[0].storeAction=MTLStoreActionStore;
+            auto e=[m.command renderCommandEncoderWithDescriptor:p];require(e!=nil,"Cannot encode FXAA");e.label=@"FXAA";
+            [e setRenderPipelineState:m.fxaa];[e setFragmentTexture:m.layers>1?m.back_views[layer]:m.back atIndex:0];[e setFragmentSamplerState:m.fxaa_sampler atIndex:0];
             [e setViewport:MTLViewport{0,0,double(m.back.width),double(m.back.height),0,1}];
             [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];[e endEncoding];
         }
+        std::swap(m.back,m.scene_copy);std::swap(m.back_views,m.fxaa_views);
         ++fxaa_passes;
     }
 }
@@ -444,7 +465,7 @@ void MetalD3D9Device::end_frame(){
     const auto w=presentation_width(),h=presentation_height();const std::size_t row=std::size_t(w)*4;
     if(!m.readback_staging||m.readback_staging.length<row*h*m.layers){
         m.readback_staging=[m.device newBufferWithLength:row*h*m.layers options:MTLResourceStorageModeShared];require(m.readback_staging!=nil,"Cannot allocate the readback buffer");}
-    m.start();auto blit=[m.command blitCommandEncoder];require(blit!=nil,"Cannot encode the readback");
+    m.start();auto blit=[m.command blitCommandEncoder];require(blit!=nil,"Cannot encode the readback");blit.label=@"frame copy";
     const int present=gpu_frames_?int(m.copy_present(blit)):-1;   // GPU frames: no CPU readback
     if(present<0)m.copy_back(blit,m.readback_staging,w,h);
     [blit endEncoding];
@@ -531,7 +552,7 @@ bool MetalD3D9Device::stretch_rect(std::uint32_t source,std::uint32_t dest,std::
     auto p=[MTLRenderPassDescriptor renderPassDescriptor];
     p.colorAttachments[0].texture=dst;p.colorAttachments[0].level=dst_level;p.colorAttachments[0].slice=dst_slice;
     p.colorAttachments[0].loadAction=MTLLoadActionDontCare;p.colorAttachments[0].storeAction=MTLStoreActionStore;
-    auto e=[m.command renderCommandEncoderWithDescriptor:p];require(e!=nil,"Cannot encode StretchRect");
+    auto e=[m.command renderCommandEncoderWithDescriptor:p];require(e!=nil,"Cannot encode StretchRect");e.label=@"StretchRect";
     const float size[2]{float(std::max<NSUInteger>(1,dst.width>>dst_level)),float(std::max<NSUInteger>(1,dst.height>>dst_level))};
     [e setRenderPipelineState:m.stretch];[e setFragmentTexture:src atIndex:0];
     [e setFragmentSamplerState:filter==2u?m.fxaa_sampler:m.stretch_point atIndex:0];[e setFragmentBytes:size length:sizeof size atIndex:0];
@@ -572,13 +593,14 @@ std::uint32_t MetalD3D9Device::query_get_data(std::uint32_t h,std::uint32_t& sam
     samples=q.result;return 0u;
 }
 void MetalD3D9Device::release(std::uint32_t h){
+    // The handle and its parents (a surface's texture), which this release may destroy too.
+    std::uint32_t chain[8]{};unsigned n=0;
+    for(std::uint32_t c=h;c&&n<8;){const auto* o=object(c);if(!o)break;chain[n++]=c;c=o->parent;}
     PcSoftD3D9Device::release(h);
-    // Most releases only drop a reference (set_stream_source, set_texture): nothing was destroyed.
-    if(object(h))return;
-    // Releasing a surface can recursively release its parent texture.
-    for(auto it=metal_->textures.begin();it!=metal_->textures.end();)if(!object(it->first))it=metal_->textures.erase(it);else ++it;
-    for(auto it=metal_->depths.begin();it!=metal_->depths.end();)if(!object(it->first))it=metal_->depths.erase(it);else ++it;
-    for(auto it=metal_->buffers.begin();it!=metal_->buffers.end();)if(!object(it->first))it=metal_->buffers.erase(it);else ++it;
+    // Most releases only drop a reference (set_stream_source, set_texture): nothing was
+    // destroyed. Only the destroyed objects' GPU resources go (scanning every resource here
+    // cost time per release that grew with the textures held).
+    for(unsigned i=0;i<n&&!object(chain[i]);++i){metal_->textures.erase(chain[i]);metal_->depths.erase(chain[i]);metal_->buffers.erase(chain[i]);}
 }
 std::uint8_t* MetalD3D9Device::lock(std::uint32_t h,std::uint32_t offset,std::uint32_t size,std::uint32_t flags){
     auto* p=PcSoftD3D9Device::lock(h,offset,size,flags);
@@ -691,7 +713,7 @@ void MetalD3D9Device::flush(){
         const bool has_depth=depth_target_!=0;
         const bool separate=render[RS_SEPARATEALPHABLENDENABLE]!=0;
         auto e=m.render_encoder();const bool layered=m.layered;   // both eyes (stereo back buffer)
-        std::string key;auto word=[&](unsigned v){key.append(reinterpret_cast<const char*>(&v),sizeof v);};
+        auto& key=m.key_scratch;key.clear();auto word=[&](unsigned v){key.append(reinterpret_cast<const char*>(&v),sizeof v);};
         const unsigned samples=colour_target_==BackBuffer&&msaa_live_?msaa_:1;
         word(kind);word(has_depth);word(samples);word(layered);
         word(native_vertices_);
@@ -791,7 +813,7 @@ void MetalD3D9Device::flush(){
         auto pipeline=m.pipelines.end();
         if(!kind&&m.ffp_mode!=FfpGeneric){
             m.collect_ffp();
-            std::string fixed=key;fixed.push_back('F');fixed.append(reinterpret_cast<const char*>(ffp_state.data()),sizeof ffp_state);
+            auto& fixed=m.fixed_scratch;fixed.assign(key);fixed.push_back('F');fixed.append(reinterpret_cast<const char*>(ffp_state.data()),sizeof ffp_state);
             pipeline=m.pipelines.find(fixed);
             if(pipeline==m.pipelines.end()&&m.ffp_requested.size()<FfpLimit&&m.ffp_requested.insert(fixed).second){
                 auto d=describe(true);
@@ -802,11 +824,11 @@ void MetalD3D9Device::flush(){
                     auto p=[m.device newRenderPipelineStateWithDescriptor:d error:&error];if(!p)metal_error(error,"Metal D3D9 fixed-function pipeline");
                     pipeline=m.pipelines.emplace(fixed,p).first;++m.ffp_built;
                 }else{
-                    auto shared=m.ffp_async;id<MTLDevice> device=m.device;
+                    auto shared=m.ffp_async;id<MTLDevice> device=m.device;const std::string fixed_key=fixed;
                     [m.library newFunctionWithName:@"pc_ffp" constantValues:constants completionHandler:^(id<MTLFunction> function,NSError*){
-                        if(!function){shared->done(fixed,nil);return;}
+                        if(!function){shared->done(fixed_key,nil);return;}
                         d.fragmentFunction=function;
-                        [device newRenderPipelineStateWithDescriptor:d completionHandler:^(id<MTLRenderPipelineState> state,NSError*){shared->done(fixed,state);}];
+                        [device newRenderPipelineStateWithDescriptor:d completionHandler:^(id<MTLRenderPipelineState> state,NSError*){shared->done(fixed_key,state);}];
                     }];
                 }
             }
@@ -859,7 +881,7 @@ void MetalD3D9Device::flush(){
         for(unsigned s=0;s<6;++s){
             auto* o=object(textures[s]);auto texture=m.texture(textures[s]);const bool cube=o&&o->kind==5&&o->texture.cube;
             [e setFragmentTexture:texture&&!cube?texture:m.dummy2d atIndex:s];[e setFragmentTexture:texture&&cube?texture:m.dummycube atIndex:6+s];
-            const auto& state=sampler[s];std::string sk(reinterpret_cast<const char*>(state.data()),state.size()*sizeof(state[0]));
+            const auto& state=sampler[s];auto& sk=m.sampler_scratch;sk.assign(reinterpret_cast<const char*>(state.data()),state.size()*sizeof(state[0]));
             const unsigned levels=o&&o->kind==5?o->texture.levels:1;sk.append(reinterpret_cast<const char*>(&levels),sizeof levels);
             auto sample=m.samplers.find(sk);
             if(sample==m.samplers.end()){

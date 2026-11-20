@@ -23,6 +23,7 @@ struct OutRunApp: App {
 
 struct GameView: View {
     @Environment(\.scenePhase) private var phase
+    @State private var claims = 0   // GamepadClaim's generation: a new claim each time the window is active again
     @State private var screen = StereoScreen()
 
     var body: some View {
@@ -41,7 +42,7 @@ struct GameView: View {
         // made again on every tap; older visionOS, GCEventInteraction on the window.
         // Two claims (that layer's modifier and the window's interaction) left the
         // controller stuck on the wrong one, the game reading its last state.
-        .overlay { GamepadClaim() }
+        .overlay { GamepadClaim().id(claims) }
         .background { if #available(visionOS 26.0, *) { EmptyView() } else { GamepadInput() } }
         .onAppear { or2_vision_start() }
         .onChange(of: phase) { _, now in
@@ -51,6 +52,14 @@ struct GameView: View {
             // holding the game froze it and dropped the controller's presses.
             or2_vision_set_active(now != .background)
             or2_vision_set_focused(now == .active)
+            // Back from system UI, a look away or a resize, the controller's input sometimes stayed
+            // with whatever had it meanwhile (the game read it frozen, ZR still held): claim it
+            // anew, as a tap on the window does.
+            if now == .active {
+                claims += 1
+                trace("[pad] active again: controller claimed again (\(claims))")
+                or2_vision_gamepad_reclaim()
+            }
         }
     }
 }
@@ -103,7 +112,9 @@ final class StereoScreen {
         follow_aspect()
         updates += 1
         if tracing && Date().timeIntervalSince(since) >= 2 {
-            trace("[visionos] \(updates / 2) updates/s, \(taken / 2) frames/s")
+            // The thermal state too: visionOS lowers an app's rate when the device warms up.
+            let thermal = ["nominal", "fair", "serious", "critical"][min(ProcessInfo.processInfo.thermalState.rawValue, 3)]
+            trace("[visionos] \(updates / 2) updates/s, \(taken / 2) frames/s, thermal \(thermal)\(ProcessInfo.processInfo.isLowPowerModeEnabled ? ", low power" : "")")
             updates = 0; taken = 0; since = Date()
         }
         var w: Int32 = 0, h: Int32 = 0
