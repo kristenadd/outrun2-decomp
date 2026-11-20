@@ -283,8 +283,11 @@ void run_navi_draws(NativeRuntimeContext& c,NativeRaceHudRuntime& o,PcD3D9Device
     // In-race text 956BA0.. (42CA60 font, 42CC60 scale, 42CCA0 colour, 42CCB0 mode, 42CC00 cursor)
     // and 42CCE0 monospace text: 42C390 placement, then 42C720 glyphs / 42C5A0 advances.
     const FrontendFont* font{};FrontendTextStyle style{};FrontendTextCursor cursor{};
+    auto& sprite2d=native_sprite2d(c).state;
+    struct Depth{PcSprite2dState& s;~Depth(){s.stereo_depth=0.0f;}} depth_reset{sprite2d};
     for(const auto& d:o.navi_draws){
         ++o.draws_by_pc[d.pc];
+        sprite2d.stereo_depth=d.stereo_depth;                       // the 2D nodes this draw queues (markers over cars)
         const auto* a=d.args.data();
         switch(d.pc){
         case 0x42d280u:native_sprite2d_ensure_bank(c,device,(a[0]>>16)&0xffffu);

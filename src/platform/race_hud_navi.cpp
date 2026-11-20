@@ -55,8 +55,11 @@ struct N {
     bool faulted(){return false;}             // unmapped accesses throw PcRaceUnmapped (see guard)
     std::uint32_t u32(std::uint32_t a){return m.u32(a);}
     std::int32_t i32(std::uint32_t a){return m.i32(a);}
+    // Port (visionOS stereo): the view depth (-z) of the car the next draws mark; 0 = screen.
+    float stereo_depth{};
+    struct AtDepth{N& n;AtDepth(N& o,float z):n(o){n.stereo_depth=z<0.0f?-z:0.0f;}~AtDepth(){n.stereo_depth=0.0f;}};
     void emit(const RaceHudDraw& d){
-        if(s.draws)s.draws->push_back(d);
+        if(s.draws){s.draws->push_back(d);if(stereo_depth>0.0f&&s.draws->back().stereo_depth==0.0f)s.draws->back().stereo_depth=stereo_depth;}
         if(!s.scene_draws||!s.sprites||!s.matrices||!s.sprani||!s.blend_9564e0)return;
         const auto* a=d.args.data();
         if(d.pc==0x429530u||d.pc==0x429580u){
@@ -925,6 +928,7 @@ bool navi_rival_labels_4bad20_impl(NaviPubServices& s,std::uint32_t car){
         bool visible=false;
         if(!line_of_sight_4ba0e0(n,other,visible))return false;
         if(!visible)continue;
+        const N::AtDepth at(n,z);                           // port: the label at its car's stereo depth
         const std::uint8_t pos=m.u8(other+0xc36);
         std::int32_t esi=cvtt(px)+0x140;
         std::int32_t ebp=cvtt((240.0f-py)-32.0f);
@@ -1023,6 +1027,7 @@ bool marker_4bbc70(N& n,std::uint32_t target,std::uint32_t player,std::uint32_t 
     m.putf(0x8447e8,sc);m.putf(0x8446f0,px);m.putf(0x8446f4,py);
     m.put32(0x842bf4,f4);m.put32(0x842bf8,f8);m.put32(0x842bfc,fc);m.put32(0x842c00,c00);m.put32(0x842c04,c04);m.put32(0x842c08,c08);
     if(behind_far)return true;
+    const N::AtDepth at(n,side||clamped?0.0f:pz);          // port: over the car, at its stereo depth
     const float X=px+320.0f;const float Y=(240.0f-py)-32.0f;
     std::uint32_t rp,rt;
     if(!n.rank_45a2b0(m.u8(player+0x10),rp)||!n.rank_45a2b0(m.u8(target+0x10),rt))return false;
@@ -1225,6 +1230,7 @@ bool rival_markers_4bb640(N& n){
         const float X=p.x+320.0f;const float Y=(240.0f-p.y)-float(lift);
         std::uint32_t layer;
         if(first){first=false;near=z;layer=1;}else layer=z>near?2u:0u;
+        const N::AtDepth at(n,z);                           // port: the marker at its car's stereo depth
         n.draw(0x429580,{0x2c00cb,fb(X),fb(Y),layer,0,0x3f4ccccdu});
     }
     return true;
@@ -1264,6 +1270,7 @@ bool lan_markers_4bb300(N& n){
         const float X=p.x+320.0f,Y=(240.0f-p.y)-float(lift);
         std::uint32_t layer;
         if(!any){any=true;near=z;layer=1;}else layer=z>near?2u:0u;
+        const N::AtDepth at(n,z);                           // port: the marker and name at the car's stereo depth
         const float d=0.0f-z;
         float sprite=0.8f,text=0.0f;
         if(d>400.0f)sprite=(1.0f-(d-400.0f)*0.00999999977648258f)*0.8f;
@@ -1707,6 +1714,7 @@ bool target_marker_4bbaf0(N& n,std::uint32_t t){
     if(a>target){a-=0.05000000074505806f;if(target>a)a=target;}
     else{a+=0.05000000074505806f;if(a>target)a=target;}
     m.putf(0x8448ac,a);
+    const N::AtDepth at(n,p.z>0.0f||-240.0f>p.y?0.0f:p.z);   // port: over the car (not pinned), at its stereo depth
     n.draw(0x429580,{0x2c0023,fb(p.x+320.0f),fb((240.0f-py)-32.0f),0,0,fb(a)});
     return true;
 }

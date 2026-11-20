@@ -174,6 +174,11 @@ public:
     // not the widescreen device's centred 4:3 2D rectangle (the glare's
     // full-screen composite, 415ED0). No effect on devices without that rectangle.
     virtual void set_rhw_full_canvas(bool on){(void)on;}
+    // Port (visionOS stereo): the following screen-space draws get the stereo
+    // parallax of a 3D point at clip w `depth` (its view distance), so a HUD
+    // marker over a car appears at the car's depth; 0 = the 2D layer's zero
+    // parallax. No effect on mono devices.
+    virtual void set_stereo_screen_depth(float depth){(void)depth;}
     virtual std::uint32_t create_occlusion_query(){return 0;}
     virtual void query_issue(std::uint32_t query,std::uint32_t flags){(void)query;(void)flags;}
     virtual std::uint32_t query_get_data(std::uint32_t query,std::uint32_t& samples){(void)query;samples=0;return 1;}

@@ -57,6 +57,7 @@ public:
     // targets (reflections, shadows) stay mono. separation 0: mono. Applies at
     // the next begin_frame; a GPU without vertex amplification stays mono.
     void set_stereo(float separation,float convergence){stereo_separation_=separation>0?separation:0;stereo_convergence_=convergence;}
+    void set_stereo_screen_depth(float depth)override{stereo_screen_depth_=depth>0?depth:0;}
     // The current frame is drawn in stereo (rgba_right() holds the right eye).
     bool stereo()const{return stereo_live_;}
     // The right eye of the last frame shown (rgba() is the left eye).
@@ -94,6 +95,7 @@ private:
     bool rhw_full_canvas_{};   // set_rhw_full_canvas
     bool scene_in_ui_rect_{};   // 3D draws too go in the 4:3 rectangle (set_scene_in_ui_rect)
     float stereo_separation_{},stereo_convergence_{};
+    float stereo_screen_depth_{};   // set_stereo_screen_depth (0: screen-space draws at zero parallax)
     bool stereo_live_{},gpu_frames_{};
     std::vector<std::uint8_t> right_colour_;
 };

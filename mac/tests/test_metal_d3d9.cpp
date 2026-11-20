@@ -138,6 +138,11 @@ int main(){
             eyes.begin_frame();eyes.clear(7,0xff000000,1,0);quad(eyes,0xff00ff00);eyes.end_frame();
             bool same=true;for(unsigned y=0;y<48;++y)for(unsigned x=0;x<64;++x)same&=left(x,y,1)==right(x,y,1);
             check(same&&left(5,24,1)==255&&left(3,24,1)==0,"screen-space draws have no parallax");
+            // A screen-space draw given a depth (HUD markers over cars) moves like a 3D point there.
+            const V flat[]{{4,3,.5f,1,0xffff0000},{60,3,.5f,1,0xffff0000},{4,45,.5f,1,0xffff0000},{60,45,.5f,1,0xffff0000}};
+            eyes.begin_frame();eyes.clear(7,0xff000000,1,0);eyes.set_fvf(0x44);
+            eyes.set_stereo_screen_depth(4);eyes.draw_primitive_up(5,2,flat,sizeof(V));eyes.set_stereo_screen_depth(0);eyes.end_frame();
+            check(left(1,24)==255&&left(57,24)==0&&right(1,24)==0&&right(62,24)==255,"screen-space draw at a depth gets its parallax");
         }
         eyes.set_msaa(1);eyes.set_stereo(0,0);eyes.begin_frame();
         check(!eyes.stereo()&&eyes.rgba_right().empty(),"stereo off: mono again");

@@ -866,8 +866,14 @@ void MetalD3D9Device::flush(){
             }
             [e setFragmentSamplerState:sample->second atIndex:s];u.lod_bias[s]=f(state[SAMP_MIPMAPLODBIAS]);
         }
-        // Per-eye shift (pc_stereo in the vertex programs): left, right, convergence.
-        const float eyes[4]{layered?-stereo_separation_:0.f,layered?stereo_separation_:0.f,stereo_convergence_,0};
+        // Per-eye shift (pc_stereo in the vertex programs): left, right, convergence,
+        // and the screen-space draws' shift (set_stereo_screen_depth): a 3D point at
+        // clip w D moves max(1 - C / D, -1) NDC of the full canvas per unit of
+        // separation; a 2D draw in the narrower 4:3 rectangle needs it scaled up.
+        float screen_shift=0;
+        if(layered&&stereo_screen_depth_>0&&viewport.width>0)
+            screen_shift=std::max(1.f-stereo_convergence_/stereo_screen_depth_,-1.f)*float(double(presentation_width())/viewport.width);
+        const float eyes[4]{layered?-stereo_separation_:0.f,layered?stereo_separation_:0.f,stereo_convergence_,screen_shift};
         [e setVertexBytes:eyes length:sizeof eyes atIndex:7];
         // Metal copies set*Bytes immediately; large vertex batches need a buffer.
         if(native_vertices_){

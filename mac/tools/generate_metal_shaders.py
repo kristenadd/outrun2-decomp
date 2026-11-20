@@ -30,9 +30,11 @@ struct IO {
 };
 // Stereo (port enhancement, MetalD3D9Device::set_stereo): eye 0 / 1 of a
 // layered back-buffer pass moves by s.x / s.y * (w - s.z); 0 when mono.
-// Screen-space positions (w == 1) keep zero parallax; nearer than the
+// Screen-space positions (w == 1) move by s.x / s.y * s.w: 0 for the 2D
+// layer, or the NDC shift of a 3D point the draw is placed over (the HUD's
+// markers over rival cars, set_stereo_screen_depth). Nearer than the
 // convergence depth, the (crossed) parallax is capped at the far one's.
-static float4 pc_stereo(float4 p,ushort eye,float4 s){ if(fabs(p.w-1.0f)>1.0e-5f)p.x+=(eye?s.y:s.x)*max(p.w-s.z,-p.w); return p; }
+static float4 pc_stereo(float4 p,ushort eye,float4 s){ const float e=eye?s.y:s.x; if(fabs(p.w-1.0f)>1.0e-5f)p.x+=e*max(p.w-s.z,-p.w); else p.x+=e*s.w; return p; }
 vertex Varying pc_vertex(uint i [[vertex_id]],ushort eye [[amplification_id]],const device Input* v [[buffer(0)]],constant float4& stereo [[buffer(7)]]) {
  Varying o; o.p=pc_stereo(v[i].p,eye,stereo); o.d0=v[i].d0;o.d1=v[i].d1;
  o.t0=v[i].t0;o.t1=v[i].t1;o.t2=v[i].t2;o.t3=v[i].t3;

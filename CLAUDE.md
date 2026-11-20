@@ -81,9 +81,17 @@ for visionOS (`UIScreen`), so SDL2 is built with `SDL_VIDEO=OFF`
   buffer and vertex amplification, plus `pc_stereo` in the generated vertex
   shaders (`x ± s·max(w−C, −w)`, nothing at `w == 1`). The Mac test
   `mac_metal_d3d9_differential` checks it on the Mac GPU.
+- **HUD markers at their car's depth** (2026-11-20, confirmed by the user on the Vision Pro): the C2C
+  place labels (`4BAD20`), the OutRun2 / 2SP rival marker (`4BB640`), the tracked / rank
+  markers (`4BBC70`), the target marker (`4BBAF0`) and LAN markers (`4BB300`) tag their
+  draws with the car's view depth (`N::AtDepth`, `RaceHudDraw::stereo_depth`), carried per 2D
+  queue node (`PcSprite2dState::node_stereo_depth`) to the flush, which calls
+  `set_stereo_screen_depth`; the shader moves such w == 1 draws by `stereo.w` (the NDC shift of
+  a 3D point at that depth, scaled for the 4:3 rectangle). Size unchanged. Markers pinned to the
+  screen edge / bottom stay at zero parallax.
 - Options ▸ Settings ▸ **3D DEPTH** (OFF, 1..5, `stereo_depth=` in options.ini,
   default 3): `VideoBackend::stereo_depths()`, visionOS only.
-- **FRAME RATE 60 / 90** (default 60 until the owner confirms the fixes below): the headset refreshes at 90 Hz, and 60
+- **FRAME RATE 60 / 90** (default 60 until the user confirms the fixes below): the headset refreshes at 90 Hz, and 60
   judders there (1 and 2 refreshes alternate). 90 uses the 120 fps
   interpolation (`frame_rate.hpp`) and is paced by the window's RealityKit
   updates (`or2_vision_take_frame` counts refreshes; `submit` waits for one).
@@ -97,7 +105,7 @@ for visionOS (`UIScreen`), so SDL2 is built with `SDL_VIDEO=OFF`
   (11 / 22 ms). GPU time per frame is about 8–9 ms stereo, 5–7 ms mono, and
   barely depends on resolution (1080 vs 900).
 - **Car / ending vanishing at 90 fps (2026-11-18), fixed on the Mac, not yet
-  confirmed by the owner on the headset.** At stage 4's end and in the goal
+  confirmed by the user on the headset.** At stage 4's end and in the goal
   ending the player car (traffic too) vanished, leaving only its shadow; the
   ending had no characters.
   - **Cause:** the camera's between-tick replay (`note_camera_replay`,
@@ -125,7 +133,7 @@ for visionOS (`UIScreen`), so SDL2 is built with `SDL_VIDEO=OFF`
     `OR2_FPS_NO_CAR_REPLAYS`, `OR2_FPS_NO_CAMERA_REPLAY`,
     `OR2_FPS_NO_ROBOT_REPLAYS`, `OR2_FPS_TICKS_ONE` (43FA00 answers 1).
     About 13 minutes per run (the game runs at 2/3 speed on a 60 Hz screen).
-- **Stage-change birds jittering at 90 fps (2026-11-18), fixed; confirmed by the owner on
+- **Stage-change birds jittering at 90 fps (2026-11-18), fixed; confirmed by the user on
   the Vision Pro.** The birds are animated course objects (`0x137xxxx` /
   `0x1380000`, display `4A9DF0` in `race_traffic_objects.inc`). The traffic module's
   `4493E0` always answered 1.0, and `4A9DF0` ends with `+E0 = +0`, so on a frame without a
@@ -148,7 +156,7 @@ for visionOS (`UIScreen`), so SDL2 is built with `SDL_VIDEO=OFF`
   `sdl_backend.hpp`).
 - Xcode generator only (Swift). Presets `visionos-simulator` and
   `visionos-device` (`-DOR2_VISIONOS_TEAM`, `-DOR2_VISIONOS_BUNDLE_ID`).
-- The owner hasn't confirmed it on a Vision Pro yet. The stereo look (depth,
+- The user hasn't confirmed it on a Vision Pro yet. The stereo look (depth,
   comfort, HUD at zero parallax) is unverified on hardware; the simulator shows
   only the left eye.
 
@@ -175,7 +183,7 @@ iOS presets (`CMakePresets.json`):
   one scheme **OutRunIOS**, **Release only** (Debug is far too slow), GPU
   validation / frame capture off. Needs `-DOR2_IOS_TEAM=<team id>` and
   `-DOR2_IOS_BUNDLE_ID=<unique id>` on first configure (cached afterwards; the
-  owner's values are already in the local cache; never commit them).
+  user's values are already in the local cache; never commit them).
 - `ios-device-check`: unsigned device build, compile check only.
 
 Only the `OutRunIOS` target matters for iOS. The top-level CMake also defines
@@ -183,7 +191,7 @@ many host test targets; don't build them for iOS.
 
 ## Running on iOS
 
-The owner's devices are an iPhone 15 Pro Max and an iPad mini 6 (both iOS 27).
+The user's devices are an iPhone 15 Pro Max and an iPad mini 6 (both iOS 27).
 List them with `xcrun devicectl list devices`. Build, install and launch
 without Xcode:
 
@@ -294,11 +302,11 @@ OR2_HOST_FRAME_HZ=90 OR2_TRACE=1 OR2_HOST_CAR_PIXELS=1 OR2_HOST_WINDOW_TITLE="90
 
 ## Driving the Mac game unattended (autoplay)
 
-How the goal-ending fixes were reproduced and checked without the owner
+How the goal-ending fixes were reproduced and checked without the user
 playing. It works for one run of one known path; it is not proof that the
-owner's own path works (see "How to work with the owner").
+user's own path works (see "How to work with the user").
 
-**Game files for a dev build.** The owner's game lives inside
+**Game files for a dev build.** The user's game lives inside
 `/Applications/OutRun2006 Coast 2 Coast.app/Contents/Resources/Game`. A fresh
 `build/macos/mac/OutRun2006 Coast 2 Coast.app` has none and stops at the folder
 picker (no output, nothing happens). Link them in once:
@@ -324,7 +332,7 @@ The saves, cache, `options.ini` and `autoplay.txt` are all in
 - `trace=1`: writes `trace.txt` next to it, one line per frame (mode, child, start state).
 - Autoplay presses are added to the real pad, so a person touching the window
   changes the run.
-- **Delete `autoplay.txt` afterwards**, or the owner's next launch replays it.
+- **Delete `autoplay.txt` afterwards**, or the user's next launch replays it.
 
 The **OutRun 2SP** path from launch (title → Start → Right ×2 → A for the defaults):
 
@@ -357,7 +365,7 @@ much of the game, the ending included. Plain `screencapture -x -t jpg
 <file>` of the desktop works (the shell has screen-recording access). Take one
 every 1 to 2 s in a loop while the game runs in the background, then
 `sips -Z 700` and `sips -c <h> <w> --cropOffset <y> <x>` to shrink and crop
-before reading. Tell the owner first, because a game window will open over their work.
+before reading. Tell the user first, because a game window will open over their work.
 
 **Widescreen runs:** set `widescreen=1` in `options.ini` for the run, and
 copy the file back afterwards (back it up first).
@@ -371,7 +379,7 @@ tracing before committing.
 
 **`tools/autoplay_shots.py`** does all of the above in one call: it writes
 `autoplay.txt`, runs the game in its **own home** (`build/autoplay-home`, a
-copy of the owner's saves, so theirs are never touched), screenshots the
+copy of the user's saves, so theirs are never touched), screenshots the
 window at given input frames (it watches `trace.txt`), kills the game and
 deletes `autoplay.txt`. Shots and `run.log` go to `build/autoplay-shots/<name>/`.
 
@@ -390,7 +398,7 @@ child=…` (the frontend's child screen, listed in the menu map below). Grep
 
 ## Menu map (Mac, mapped with autoplay on 2026-11-18)
 
-Mapped with the owner's save copied (everything unlocked, AAA ranks). Paths
+Mapped with the user's save copied (everything unlocked, AAA ranks). Paths
 start at the **title screen** (logo; the attract movies before it skip to it);
 with autoplay the first press is at frame 400, one press every 120 frames
 (2 s). Pressing faster can lose presses during screen transitions. "mode" is
@@ -509,18 +517,18 @@ installed). Sound bank names, sound ids and rates are in tables in this image
 `{u32 id, u32 size, 16-bit mono PCM}` until id `0xFFFFFFFF`, at each id's own
 sample rate.
 
-## How to work with the owner
+## How to work with the user
 
-- **The owner tests on real devices and is the judge.** Autoplay scripts
+- **The user tests on real devices and is the judge.** Autoplay scripts
   (`autoplay.txt`) and input replays (`replay.txt`) do **not** reliably
   reproduce their menu paths: menu timing depends on wall-clock movies and
   loads. Don't claim something works from autoplay alone; ask them to try it.
-- **When the owner wants to test on a device** (iPhone, iPad, Vision Pro), build and
+- **When the user wants to test on a device** (iPhone, iPad, Vision Pro), build and
   install it for them without asking: Release build of that device's preset (`ios-device`
   / `visionos-device`, signing is in the local cache), then `xcrun devicectl device install
   app` to the device from `xcrun devicectl list devices`. Tell them it's installed; they
   launch it from its icon.
-- Mac game windows launched for tests grab keyboard focus. The owner may be
+- Mac game windows launched for tests grab keyboard focus. The user may be
   typing into them, so either ask them not to touch the windows or treat the
   results as contaminated.
 - When they report a regression ("it used to work"), believe it and bisect
@@ -575,11 +583,11 @@ Two traps found on 2026-11-17 (fixed):
   `FrontendSprites::bind_missing` (installed in `game_host`) binds a bank on a
   create's first miss.
 - The voice set `427DB0` reads `[535EF0()+208]`; `535EF0` is
-  `lea eax,[ecx+4]` on the frontend owner, i.e. the owner's `+20C`, not the
+  `lea eax,[ecx+4]` on the frontend owner object, i.e. its `+20C`, not the
   license. With the wrong word Clarissa got Holly's `ENGLISHH_` set, whose
   mission banks (`HAM_MIS_PASS`, `HCARS`) don't exist: no request voices.
 
-Also fixed on 2026-11-17 (owner's report: in "Keep passing cars" the cars
+Also fixed on 2026-11-17 (user's report: in "Keep passing cars" the cars
 slowed, had no collision, the request never ended, no more cars came, and
 Quit hung): the traffic module latched on `521350`'s statics at `85B32C..`
 (the manager's cell now starts at `85B324`). Quit from the pause menu (Down
@@ -600,7 +608,7 @@ press frames 400, 520, … as above):
   (modes 18 → 34 → 27 → 28 → 32). Works in all three (autoplay, 2026-11-18).
 
 Fixed on 2026-11-18 (autoplay of all three girls, **not yet confirmed by the
-owner**):
+user**):
 - **Holly's car never moved** (latched at the first tick, `road-info course
   view mismatch`): the car's ground probe at init (`519300`, before the start
   position is set) runs at (0, 0); Easter Island reverse has no road there, so
@@ -608,7 +616,7 @@ owner**):
   world handed such a lane a view with `load_type` 0; it now presents unloaded
   lanes as empty roots of their own type (`CourseWorldRuntime::tables`), and
   the lookups answer 0 as the PC's do with a null header (`43D6E0`, `43E3B0`).
-- **`50E140` not ported** (the owner's Vision Pro latch, really Holly's first
+- **`50E140` not ported** (the user's Vision Pro latch, really Holly's first
   request `10`/6 at about 40 s): native `leaf_50e140` (the def's `+7C`
   placements into the handler's two lists, then `50D600` for each), chained in
   `requests_clock_module`; the traffic service's own bulk calls chain it too.
@@ -650,19 +658,19 @@ it. Parallel autoplay runs: pass `--home=<dir>` (saves in `<dir>/SaveGame`,
   from a photo camera into it (`449220` mid-display, camera `483C10` /
   `484DF0` / `484C90`), then the HUD shows it. Needs an offscreen scene pass in
   the native renderer. The first real one is Palm Beach reverse.
-- Drifting on turns (owner, iPad): fixed on 2026-11-17, **not yet confirmed
-  by the owner**. Slip-angle control (`4A3310`) reads `46C470` = `[800AAC]`,
+- Drifting on turns (user, iPad): fixed on 2026-11-17, **not yet confirmed
+  by the user**. Slip-angle control (`4A3310`) reads `46C470` = `[800AAC]`,
   the manager's `+764C` (1.0); the port passed a stale 0, which drops the
   cornering force on any steering. Both road Mu and slip assist now read the
   manager's block.
-- Stopped request cars (owner): fixed on 2026-11-17, **not yet confirmed by
-  the owner**. Request cars (`+C5C` 0x40000) only drive once released:
+- Stopped request cars (user): fixed on 2026-11-17, **not yet confirmed by
+  the user**. Request cars (`+C5C` 0x40000) only drive once released:
   `46C3B0` = `[800AA0]` (manager `+7640`) in Clarissa mode, `45D820` =
   `[7F250C]` in Heart Attack. `45D820`, `45B510`, `45AFF0` and `45B810` were
   answered as constant 0 ("network globals"), so in Heart Attack's "Keep
   passing cars" request the cars stayed parked. In Clarissa mode a short
   stop is by design: cars wait for `+7640` and pull away together.
-- Fixed on 2026-11-17, **not yet confirmed by the owner**:
+- Fixed on 2026-11-17, **not yet confirmed by the user**:
   - Goal hang: mode 19 does nothing for variant 5 (as the PC); the manager's
     `4FEA00` ends the race through `43F8C0` (`0x22`; `0x18` without the C2C
     frontend flag), which the traffic service did not answer. Its start
@@ -681,7 +689,7 @@ it. Parallel autoplay runs: pass `--home=<dir>` (saves in `<dir>/SaveGame`,
     (`map_course_world_pc`, once the world is ready).
 - The race-end results (`46C220` from `race_end_runtime.cpp`) still expect a
   translated `481A40` (the native port is `requests_2d_481a40`).
-- Fixed on 2026-11-17, **not yet confirmed by the owner** (stage-3 stretched
+- Fixed on 2026-11-17, **not yet confirmed by the user** (stage-3 stretched
   bubble, then a freeze at the stage change; no beach ball):
   - A latched manager no longer holds the AREA's stage change: `46C240` /
     `46C4D0` answer 1 and the stage resets 0 (`latched_answer` in
@@ -715,7 +723,7 @@ it. Parallel autoplay runs: pass `--home=<dir>` (saves in `<dir>/SaveGame`,
   (sub-kinds), 11 HOLDLINE, 12 KEEPCONT, 13 METEOR, 14 CUTLINE, 15 UFO, 16 HHORN,
   17 DUCK, 18 PHOTO. Rank (`4FFE10`) = record `+28` (score) − `+2C` (penalty)
   against 0/10/20/30/45/60/80 (`6ADDAC`), capped by `+40/+44/+48`; 6 is best.
-- "Don't crash!" ranked E (owner, fixed 2026-11-17, **not yet confirmed**): its
+- "Don't crash!" ranked E (user, fixed 2026-11-17, **not yet confirmed**): its
   score is the per-frame progress `[7F9460+7690] − [+7694]` (`4FC490` from
   `4A6CF0`), and `4A6CF0` returns in **ST0**; the service answered EAX, so the
   bulk code read 0. `TranslatedModule::st0_results` (bulk: `4A6CF0`, `449940`)
@@ -728,9 +736,9 @@ it. Parallel autoplay runs: pass `--home=<dir>` (saves in `<dir>/SaveGame`,
   shorten the window. The def must be patched before `482820` (its `5053A0`
   prepares the def).
 
-**Holly 2 ("MIX 2 COURSE", 2026-11-19, not yet confirmed by the owner).** Not in the retail
-game: OutRun2006Tweaks' `EnableHollyCourse2` (owner's setting 3) turns on the PSP version's second
-Holly course, and the owner's PC videos ("Holly Mode B") are of it. Port option `holly_course2=`
+**Holly 2 ("MIX 2 COURSE", 2026-11-19, not yet confirmed by the user).** Not in the retail
+game: OutRun2006Tweaks' `EnableHollyCourse2` (user's setting 3) turns on the PSP version's second
+Holly course, and the user's PC videos ("Holly Mode B") are of it. Port option `holly_course2=`
 (0..3, default 3, as Tweaks). The EXE still holds its whole eighth entry (5CE480 position 274/365,
 icons 14/15, pictures 4/5, nav row 7, title frame 73, footer 2) and START already loads
 `Req_Course_MIX_PSP` (lane 3 of 84B7E0); it's group 7 in root `+20C` bits 8..10, and 4EEB50
@@ -741,7 +749,7 @@ to a port-side `+674` slot (`picture_674`, as Tweaks grows the object), lane 3 i
 Coniferous Forest). It follows the PC video's timing (the same requests at the same times).
 
 **Request objects drawn in 3D (food, math numbers, answer boards; 2026-11-19, not yet
-confirmed by the owner).** They are `4295D0` sprites from the request objects' 2D displays
+confirmed by the user).** They are `4295D0` sprites from the request objects' 2D displays
 (`481A40`), replayed in the NAVI display. `4295D0` writes `[780068]` (read-only EXE here) and reads
 the projection `95D8A0` (unmapped): the fault ended the whole NAVI display, so no request sprites
 and, from the first one on, no HUD (TIME digits, speedometer). Both now mapped by the HUD
@@ -771,7 +779,7 @@ sub-kind, `all` = all ~370 records), or real Holly 2 stages from the map with `-
 5). `SWEEP_STEER="LEFT:20,RIGHT:20"` adds a repeating steering pattern. Results on 2026-11-20:
 every type / sub-kind and all 104 type-`10` records run without a latch or NAVI miss except the
 photo (`18`, unported); the 7 Holly 2 stages with math, ZR-only and with 4 steering patterns, and
-4 whole-course runs to stage 4: no NAVI miss. **Not reproduced:** the owner saw a Holly 2 math
+4 whole-course runs to stage 4: no NAVI miss. **Not reproduced:** the user saw a Holly 2 math
 stage lose its objects and HUD on the iPhone (after the 780068 / 95D8A0 fixes). `OR2_TRACE` now
 prints a `[hud] first miss <pc> at frame N` line the moment the NAVI display first misses something
 (devices never write the exit summary), so a traced device session shows it.
@@ -781,7 +789,7 @@ Right ×2, A ×3, Right, A ×2. Autoplay:
 `script=400-403:A,520-523:RIGHT,640-643:RIGHT,760-763:A,880-883:A,1000-1003:A,1120-1123:RIGHT,1240-1243:A,1360-1363:A,1700-7400:ZR`
 (race at about frame 1573).
 
-## Sun, lens flare and glare (2026-11-18, not yet confirmed by the owner)
+## Sun, lens flare and glare (2026-11-18, not yet confirmed by the user)
 
 **Lens flare** (sun pass `40CBC0`, `race_course_passes.cpp`) was ported but never
 showed. Four causes, all fixed:
@@ -796,7 +804,7 @@ showed. Four causes, all fixed:
   `44A8DF` update now runs over the course records
   (`PcSceneRenderer::update_course_environment`, bound by `game_host`), which also
   gives the race the **course's own sun and fog** (and stage blends). Watch for
-  lighting / fog changes the owner may notice.
+  lighting / fog changes the user may notice.
 - Occlusion queries: Metal had none (the base device answers "pending"), and the
   sun's occlusion object `570010` is an **indexed triangle fan** (type 6), which
   neither device drew. Metal queries now sum the per-draw visibility counts
@@ -806,9 +814,9 @@ showed. Four causes, all fixed:
   `95AEF8` is occlusion *samples* / `73E2AC` (11500, raised only once a ratio
   passes 0.22, capped at 0.22). MSAA multiplies the samples: at the OutRun2SP
   start (16:9, 1920x1080) AA off gives 1437 samples (0.125, flare 0.034), MSAA 4x
-  5748 (0.22, flare 0.059). The owner's PC reference shots are anti-aliased.
-  **Port change (owner's call):** Metal reports query samples as a 2560x1440, 4x MSAA
-  target would count them (the owner's modded Windows build: Tweaks sets 2560x1440,
+  5748 (0.22, flare 0.059). The user's PC reference shots are anti-aliased.
+  **Port change (user's call):** Metal reports query samples as a 2560x1440, 4x MSAA
+  target would count them (the user's modded Windows build: Tweaks sets 2560x1440,
   antialiasing 2), scaled by MSAA, resolution and eye count, so the start reaches 0.22
   on every device and setting (1920x1080 AA off: 10204 samples). The software device is
   unscaled.
@@ -818,42 +826,42 @@ showed. Four causes, all fixed:
   3.0) the sun counts as near the centre, so the flare isn't faded at the edges; at 1.0
   the ghosts were ~2.4x weaker (start: flare 0.059 instead of 0.141) and invisible. The
   sun pass now uses 4.0 / 3.0 (the global stays 1.0 for everything else). The green
-  ring left of the car at the OutRun2SP start then matches the owner's shot.
-- **Car brightness strobing (owner, iPad, 2026-11-19; fixed, confirmed by the owner on the iPad).** The car's
+  ring left of the car at the OutRun2SP start then matches the user's shot.
+- **Car brightness strobing (user, iPad, 2026-11-19; fixed, confirmed by the user on the iPad).** The car's
   sun light (record `899CD8`) is scaled by its light rate `+58` (`46BD30`), which `4A45F0`
   sets from the road polygon's baked corner shades (`43D130`, root `780160`). The port read
   that table from the wrong place: `CourseCollisionPack::pc_coli0200` starts with a 4-byte
   size prefix, and the PC roots (`43DC06`) are `header + [header + field]` with the header
   after it. Reading `data + [data + 0x30]` gave another table (noise, the "repeating start
-  shade" the owner saw), which the course lighting (diffuse 0.6) made a strobe. Fixed with
+  shade" the user saw), which the course lighting (diffuse 0.6) made a strobe. Fixed with
   `pc_coli0200_section` (player car shade, its surface codes `+0x24` for the wall code, and
-  traffic shade, which all had it). Checked against the owner's PC video (OutRun2SP start,
+  traffic shade, which all had it). Checked against the user's PC video (OutRun2SP start,
   ZR held): per-frame car red change 1.15 mean / 5.0 p95 vs the PC's 1.22 / 3.7 (was 5.8 /
   34.7). `OR2_HOST_CAR_SHADE=1` logs `[car-shade]` (mean red of the car's pixels, every
   frame) for such comparisons. Port option `car_shade=0` keeps `+58` at 1.0 (no road shade).
   Also ported on the way: Tweaks' `FixIncorrectShading` (`fix_incorrect_shading=`, default
   1): double-sided lighting kinds 2 / 3 link the `VSULT_DOUBLE_*` fragments (cutscene
   characters, some stage models; the player car doesn't use them).
-- **Sky / whole-screen flicker with the glare on (owner, iPad and Mac, 2026-11-19; fixed, confirmed
-  by the owner on the iPad).** The bloom switched fully on and off for stretches of
+- **Sky / whole-screen flicker with the glare on (user, iPad and Mac, 2026-11-19; fixed, confirmed
+  by the user on the iPad).** The bloom switched fully on and off for stretches of
   13 to 37 frames (presented frames, glare on minus glare off: +2 then exactly 0). Cause: the
   Metal device folds the constant `D3DRS_DEPTHBIAS` into clip z, and a bias left set by an
   earlier draw (-1.06e-5) pushed the glare composite (`415ED0`, a pretransformed quad at z 0,
   depth off) out of the clip volume. D3D9 biases after clipping, so on the PC it never removes a
   draw. The bias is now folded in only while `ZENABLE` is on with a depth surface
   (`metal_d3d9.mm` `flush`). Not the sun: its glow follows each occlusion result as on the PC
-  (checked in the disassembly and against the owner's video: the PC's glow shrinks when palm
+  (checked in the disassembly and against the user's video: the PC's glow shrinks when palm
   fronds cover the sun), and an eased visibility tried first was taken out again.
   `OR2_HOST_SKY_SHADE=1` logs `[sky-shade]` (blue sky level and the top band's mean, every
   frame), but it reads the 3D frame, which missed this; compare presented frames instead
   (`OR2_MAC_SCREENSHOT_RANGE`, below). The probe frame numbers equal the autoplay input frames.
-- **No fog in races (owner, 2026-11-19; fixed on the Mac, not yet confirmed).** Distant land
-  (OutRun2SP's Golden Gate bridge at about 1'30" in the owner's video) was hazy on the PC and
+- **No fog in races (user, 2026-11-19; fixed on the Mac, not yet confirmed).** Distant land
+  (OutRun2SP's Golden Gate bridge at about 1'30" in the user's video) was hazy on the PC and
   clear in the port. The fog records 7D3A10 / 7D3A2C / 7D3A48 have an on word at +0 that
   START's `4518A0` sets (`4518C0` clears it in the menu scenes); the port's START kept it in
   `start_mode.first_race_flags_7d3a10` only, so `40D870` never enabled fog. The course
   environment update now copies it into the records (`CourseEnvironmentBinding::fog_on_7d3a10`).
-  Also `740C88` (the PC's DX/FOG setting, on in the owner's Tweaks build) is now 1
+  Also `740C88` (the PC's DX/FOG setting, on in the user's Tweaks build) is now 1
   (`g_pc_pixel_fog`, options.ini `pixel_fog=`): the stages' fog is exponential (mode 1,
   density ~0.0003), drawn as table fog; 0 takes `40D870`'s linear fallback.
 - The sun pass also draws with the projection's near plane at 0.05 (Tweaks'
@@ -880,10 +888,10 @@ surface, `set_rhw_full_canvas` (the composite covers the widescreen canvas).
 **Look:** the bright pass keys on the back buffer's alpha, and opaque geometry
 writes alpha 1 (sky 0), so on many stretches (OutRun2SP Palm Beach) the road and
 buildings bloom to near white; that follows the PC code and data, with no
-reference to compare against. The warm road glow in the owner's Tweaks shots (Legend) is the
+reference to compare against. The warm road glow in the user's Tweaks shots (Legend) is the
 sun pass's own full-screen glow sprite `570008` and the course lighting, not this pass.
 **Why it washes out, and how Tweaks fixed it** (OutRun2006Tweaks `RestoreSkyGlow`,
-`src/hooks_graphics.cpp`, 2026-10, newer than the owner's DLL). Frame alpha is meant to be
+`src/hooks_graphics.cpp`, 2026-10, newer than the user's DLL). Frame alpha is meant to be
 an HDR *exposure* per material (`clamp(((intensity+1)*0.25)*glow_param[1]*255)`, 63 for
 ordinary scenery), written by the alpha-op fragment for key `10101230`/`4C00` (stage 4,
 `c7.a`). On PC that fragment is **empty** in both tables (`61F240` entry 0 → `61ED30`,
@@ -913,11 +921,11 @@ Switch / PS5 shader outputs changed too (new blobs) but were not built here.
 
 ## Outstanding issues
 
-See the Clarissa mode list above. The owner confirmed on 2026-11-16 that the
+See the Clarissa mode list above. The user confirmed on 2026-11-16 that the
 earlier list is resolved: passenger reactions in big crashes (ORC 345–365),
 off-road comments (ORC 110–119), occasional 60–100 ms hitches, 1080p frame
 time on the iPhone 15 Pro Max, and `FE.PAK` effects counted as unmapped after
-a race. Don't chase them again unless the owner reports one.
+a race. Don't chase them again unless the user reports one.
 
 ## Done in this fork (for context)
 
@@ -931,7 +939,7 @@ a race. Don't chase them again unless the owner reports one.
 - **Hi-res texture packs** (2026-11-18, `src/platform/texture_pack.cpp`): OutRun2006Tweaks
   packs in `<game>/textures/load/` (`<XXH32 of the original DDS>_<w>x<h>.dds`, any
   folders; the bank's own XST / PMT folder wins, the `Keyboard/Xbox/PlayStation/Switch`
-  folders are prompts only). The owner's pack is the OR2006Sprites "HD GUI" pack (UI
+  folders are prompts only). The user's pack is the OR2006Sprites "HD GUI" pack (UI
   only: 289 files, 3 GB, mostly 4x DXT5 / A8B8G8R8; their copy is in
   `~/Projects/OutRun 2006 Coast 2 Coast Hi-Res/textures`, whose EXE differs from the
   Steam one, so test with the normal game files plus that `textures` folder).
@@ -948,7 +956,7 @@ a race. Don't chase them again unless the owner reports one.
     divisor of the file's scale. Banks are never unloaded, so memory grows with the
     menus visited: the frontend bank `sumo_fe` is ~320 MB RGBA at 2x, 1.3 GB at 4x.
   - `[tex]` lines under `OR2_TRACE` (one per replaced texture, failures with the reason).
-  - Owner-tested at 2x on iPhone 15 Pro Max, iPad mini 6 (menus, a race to the goal
+  - User-tested at 2x on iPhone 15 Pro Max, iPad mini 6 (menus, a race to the goal
     ending, no jetsam) and Vision Pro (three races, 87–90 of 90 frames): 201–211
     textures replaced, none failed. Copy a pack to a device with `xcrun devicectl
     device copy to … --source <folder> --destination "Documents/[<game folder>/]textures/load/<folder>"`
@@ -958,7 +966,7 @@ a race. Don't chase them again unless the owner reports one.
   GPU-private back buffer, and **pipelined frames** (CPU builds frame N+1 while
   the GPU draws N; one frame of latency). 1080p FXAA went from 26–28 to 60 fps
   on the iPhone.
-- **Specialised fixed-function pipelines** (2026-11-18, owner's report: Casino
+- **Specialised fixed-function pipelines** (2026-11-18, user's report: Casino
   Town choppy once the road is wet, worst on Vision Pro). The wet road's spray
   (PART_EFC water, 419DC0 billboards behind the car) shades ~1.5 screens of
   blended fragments per frame, which is authentic, and every fixed-function draw ran
@@ -970,7 +978,7 @@ a race. Don't chase them again unless the owner reports one.
   Same arithmetic, so the same pixels (`mac_metal_d3d9_differential_ffp`).
   M3 Max, 1920x1440: race GPU 3.9 → 1.35 ms/frame, Casino Town 5.1 → 1.75 ms,
   the spray 0.6–1.0 → 0.2 ms. `OR2_TRACE` logs `[metal] N fixed-function
-  pipelines specialised`. Confirmed by the owner on the Vision Pro (2026-11-18):
+  pipelines specialised`. Confirmed by the user on the Vision Pro (2026-11-18):
   a solid 90 fps through Casino Town (84.7 of 90 refreshes got a new frame in the log, min 77).
 - Announcer voices: `4489C0` / `44C3D0` / `4F2210` no longer fall through to
   unload-all in `race_end_runtime.cpp` (it was emptying `FE.PAK` in the menus).

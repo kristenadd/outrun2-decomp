@@ -79,6 +79,10 @@ struct PcSprite2dState {
     std::uint32_t mask_986b28{},mask_986b2c{},mask_986b30{};
     std::vector<std::uint8_t> masks_986b34;                  // 0x30 * 0xB8
     std::int32_t id_7551b4{-1};
+    // Port (visionOS stereo, PcD3D9Device::set_stereo_screen_depth): the view
+    // depth given to the nodes queued from now on (0 = screen), kept per node.
+    float stereo_depth{};
+    std::vector<float> node_stereo_depth;                     // Pc2dNodeCount
     // ---- flush ----
     std::uint32_t blend_956bf8{},blend_956b94{},blend_956b98{},w956bfc{};
     // Render-state shadow 8606F0 ([893D20]): saved words and dirty bytes the flush uses.
