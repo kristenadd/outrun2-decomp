@@ -381,7 +381,9 @@ RUN_X=820 tools/autoplay_shots.py ta "@A A RIGHT RIGHT RIGHT A"   # second windo
 tools/autoplay_shots.py race "@A A A A A A A A A 300* PLUS DOWN" 1600,1700   # "300*" waits; extra shot frames
 ```
 
-`ZR:600` holds ZR for 600 frames. Each line printed is `<shot frame> f=… mode=…
+`ZR:600` holds ZR for 600 frames. `EXIT_FRAME=N` exits the game cleanly at input frame N (L+R+Plus)
+so it writes its result log, `<home>/SaveGame/OutRunMac.log` (`hud variant=…` NAVI misses, the
+`race traffic … routed: … missing:` services), which a killed run never writes. Each line printed is `<shot frame> f=… mode=…
 child=…` (the frontend's child screen, listed in the menu map below). Grep
 `run.log` for `[stall] not ported` (a screen that isn't ported yet) and
 `[flow]`.
@@ -412,7 +414,8 @@ Title (mode 32 child 0)
    ├─ SINGLE PLAYER (A) → (child 2): COAST 2 COAST · OUTRUN · HEART ATTACK · TIME ATTACK · SHOWROOM
    │  ├─ COAST 2 COAST (A) → driver grid (child 58)
    │  │    top row (Left/Right):  FLAGMAN 1 (novice) · FLAGMAN 2 (intermediate) · FLAGMAN 3 (professional) · FLAGMAN 4 (OutRun)
-   │  │    Down → bottom row:     CLARISSA · JENNIFER · HOLLY   (Up/Down switch rows)
+   │  │    Down → bottom row:     CLARISSA · JENNIFER · HOLLY · HOLLY 2   (Up/Down switch rows; HOLLY 2 = MIX 2 COURSE,
+   │  │                           shown once Holly 1 is rank A, see "Holly 2")
    │  │  ├─ Flagman N (A) → route map (child 59): Left/Right walk the nodes ("1 NOVICE", "2 NOVICE", …;
    │  │  │     Flagman 4 starts at "26 OUTRUN"); Up/Down pick a branch where the route forks.
    │  │  │     A on a node → its mission icons (1–5, e.g. "Race the Rivals!", "Test your Drift!"), Left/Right
@@ -724,6 +727,54 @@ it. Parallel autoplay runs: pass `--home=<dir>` (saves in `<dir>/SaveGame`,
   Niagara `166C`×6 / UFO def `1578`); patch the records' u16 start / end to
   shorten the window. The def must be patched before `482820` (its `5053A0`
   prepares the def).
+
+**Holly 2 ("MIX 2 COURSE", 2026-11-19, not yet confirmed by the owner).** Not in the retail
+game: OutRun2006Tweaks' `EnableHollyCourse2` (owner's setting 3) turns on the PSP version's second
+Holly course, and the owner's PC videos ("Holly Mode B") are of it. Port option `holly_course2=`
+(0..3, default 3, as Tweaks). The EXE still holds its whole eighth entry (5CE480 position 274/365,
+icons 14/15, pictures 4/5, nav row 7, title frame 73, footer 2) and START already loads
+`Req_Course_MIX_PSP` (lane 3 of 84B7E0); it's group 7 in root `+20C` bits 8..10, and 4EEB50
+selector 7 gives `event_config_7f94c4` {2, …, 2} (MIX_PSP course list, Holly's voices). Port
+pieces: `frontend_category_count`, the categories screen's 8th icon with the large picture moved
+to a port-side `+674` slot (`picture_674`, as Tweaks grows the object), lane 3 in
+`LicenseProgressTables`. From the title: A ×3, Down, Right ×3, A ×5 (Metropolis, then
+Coniferous Forest). It follows the PC video's timing (the same requests at the same times).
+
+**Request objects drawn in 3D (food, math numbers, answer boards; 2026-11-19, not yet
+confirmed by the owner).** They are `4295D0` sprites from the request objects' 2D displays
+(`481A40`), replayed in the NAVI display. `4295D0` writes `[780068]` (read-only EXE here) and reads
+the projection `95D8A0` (unmapped): the fault ended the whole NAVI display, so no request sprites
+and, from the first one on, no HUD (TIME digits, speedometer). Both now mapped by the HUD
+(`sprite_zbias_780068`, `projection_95d8a0`). Holly 1 (Easter Island, stage 0) had no HUD at all:
+the NAVI init `45E050` reads quest 44, past 5A94D8's 41 records; the PC reads on into 5AC818.
+
+**Request scoring, checked 2026-11-20.** The scoring is the bulk-translated PC code; what
+matters is the services it reads. Findings:
+- Math / memory / count (`10`/x) decide "correct" in `50BFD0`: the car's position across the road
+  (43D920 run, 43D1D0 corners, 40EFA0) against the answer slot; each correct board adds 80 × 1.1 /
+  count to the record's `+28`. The hearts shown are about 1.4 × the score at AAA (88 → 123). ZR-only
+  runs differ from the PC's because the paths differ (different gates collected: the PC's answer
+  boards read 11 | 7, the port's 12 | 8); with steering the port scores 0..108, so the check is
+  not stuck.
+- A stage with no mistakes earns `4FFAA0`'s bonus (10 × up to 5, plus 2 × (top speed − 250)): it
+  needs the per-course mistake counters 0. They come from `4FB390`, which reads the player car's
+  `+4` bits (0x100000 / 0x400000 car hit, 0x4000000, 0x80000), `+2F0` (crash) and `+DD4` (the car
+  hit); the native car code sets them (`race_traffic.cpp` collisions, `pc_crash_entry`), and the
+  manager sees them live at 7804B0.
+- Penalties (`4FB4xx`) subtract hearts from the stage (`+3A20`), so the stage hearts can go down.
+
+**`tools/request_sweep.py`** (2026-11-20) forces requests in parallel games (own homes under
+`build/request-sweep/`) and reports per run the request's [req] states, latches, NAVI misses
+and the traffic module's missing services: `--one-per-type`, `--type 10/3` (`10/` = every
+sub-kind, `all` = all ~370 records), or real Holly 2 stages from the map with `--holly2
+"node,list;…"` (node 0 = the whole course; `OR2_HOST_HOLD_TIME=1 SWEEP_END_CS=3000` to reach stage
+5). `SWEEP_STEER="LEFT:20,RIGHT:20"` adds a repeating steering pattern. Results on 2026-11-20:
+every type / sub-kind and all 104 type-`10` records run without a latch or NAVI miss except the
+photo (`18`, unported); the 7 Holly 2 stages with math, ZR-only and with 4 steering patterns, and
+4 whole-course runs to stage 4: no NAVI miss. **Not reproduced:** the owner saw a Holly 2 math
+stage lose its objects and HUD on the iPhone (after the 780068 / 95D8A0 fixes). `OR2_TRACE` now
+prints a `[hud] first miss <pc> at frame N` line the moment the NAVI display first misses something
+(devices never write the exit summary), so a traced device session shows it.
 
 **Heart Attack** (OutRun 2SP, variant 2), from the title, 2 s apart: A,
 Right ×2, A ×3, Right, A ×2. Autoplay:

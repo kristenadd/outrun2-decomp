@@ -217,10 +217,17 @@ bool quest_45e050(N& n){
     std::uint32_t quest;
     if(m.u8(e)!=0xff){quest=quest_table_45c160(n,m.u8(e),stage);m.put32(e+4,quest);}
     else quest=special_quest_45c2c0(n,stage);
-    const std::uint8_t* table=(m.u32(0x78024c)==0?Exe5a94d8:Exe5ac818);
-    const std::size_t base=std::size_t(quest)*0x140;
+    // The quest's record in 5A94D8 (78024C == 0) or 5AC818. The PC doesn't bound the quest:
+    // Holly's Easter Island (variant 5, stage 0) gives quest 44, past 5A94D8's 41 records,
+    // so it reads on into 5AC818 (the two tables are adjacent in the EXE).
+    const std::uint32_t at=(m.u32(0x78024c)==0?0x5a94d8u:0x5ac818u)+std::uint32_t(quest)*0x140u;
     bool bad=false;
-    auto word=[&](std::size_t o){if(base+o+2>sizeof(Exe5a94d8)){bad=true;return std::int16_t(0);}std::int16_t v;std::memcpy(&v,table+base+o,2);return v;};
+    auto word=[&](std::size_t o){
+        const std::uint32_t a=at+std::uint32_t(o);std::int16_t v;
+        if(a>=0x5a94d8u&&a+2u<=0x5a94d8u+sizeof(Exe5a94d8))std::memcpy(&v,Exe5a94d8+(a-0x5a94d8u),2);
+        else if(a>=0x5ac818u&&a+2u<=0x5ac818u+sizeof(Exe5ac818))std::memcpy(&v,Exe5ac818+(a-0x5ac818u),2);
+        else{bad=true;return std::int16_t(0);}
+        return v;};
     std::uint32_t count=0;m.put32(0x7f24cc,0);
     if(word(0)>0){
         std::size_t p=4;

@@ -14,6 +14,7 @@
 #include "platform/race_variant_owners.hpp"
 #include "driving/pc_wall_rebound.hpp"
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <sstream>
 namespace outrun::platform {
@@ -34,7 +35,12 @@ constexpr std::uint32_t ModelOffsetRows=20u;                 // rows verified ab
 constexpr std::uint32_t HudRacersBase=0x44000000u,HudRankBase=0x44100000u;   // synthetic: [80FB00], [80FB1C]
 void note(NativeRaceHudRuntime& o,std::uint32_t pc){
     if(!pc)return;
-    if(o.missing[pc]++==0)o.missing_order.push_back({pc,o.frame});
+    if(o.missing[pc]++==0){o.missing_order.push_back({pc,o.frame});
+        // OR2_TRACE: the first miss of each kind at once (a NAVI miss ends the HUD for that frame:
+        // no request sprites, no TIME digits). Devices never write the exit summary.
+        static const bool trace=std::getenv("OR2_TRACE")!=nullptr;
+        if(trace)std::fprintf(stderr,"[hud] first miss %x at frame %u%s%s\n",unsigned(pc),unsigned(o.frame),
+            o.last_error.empty()?"":": ",o.last_error.c_str());}
     if(o.frame_missing_frame!=o.frame){o.frame_missing.clear();o.frame_missing_frame=o.frame;}
     ++o.frame_missing[pc];
 }
@@ -159,6 +165,11 @@ void rebuild(NativeRuntimeContext& c,NativeRaceHudRuntime& o){
     map_word(m,0x95b214u,&c.event_function36.title_pause_flag_95b214,4);
     map_word(m,0x84210cu,&c.race.clock,sizeof(c.race.clock));
     m.map(0x956bb4u,o.text_cursor_956bb4.data(),o.text_cursor_956bb4.size());
+    // [780068] (4295D0, the 3D request sprites: food, gate and answer numbers) sits in the EXE's
+    // read-only image here; the write faulted and ended the NAVI display (no sprites, and no
+    // HUD after the first one in that frame).
+    map_word(m,0x780068u,&o.sprite_zbias_780068,4);
+    m.map_const(0x95d8a0u,reinterpret_cast<const std::uint8_t*>(o.projection_95d8a0.data()),64);   // 4295D0's z (mode < 0)
     // NAVI_PUB globals, then the words of other owners inside those blocks.
     o.navi.map(m);
     // CommRace block 7DE418 (the ranks table 7DF118 is inside it).
@@ -490,6 +501,7 @@ bool native_race_hud_display(NativeRuntimeContext& c,PcSceneRenderer& r,std::uin
         case 0x4beb00u:{
             ++o.navi_displays;
             if(!o.navi_initialized||o.navi_init_failed){note(o,0x4beb00u);break;}
+            o.projection_95d8a0=r.flush_context().g.matrix(0x95d8a0u);
             rebuild(c,o);
             GroundUser g{&c,&r};
             o.navi_draws.clear();o.navi_scene_draws.clear();o.navi_blend=native_sprite2d(c).state.blend_9564e0;

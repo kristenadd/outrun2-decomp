@@ -129,7 +129,7 @@ bool frontend_category_grade_4e81d0(const PcLicense& p,const LicenseProgressTabl
         grade=int(total/count);return true;
 }
 bool frontend_group_grade_4e82a0(const PcLicense& p,const LicenseProgressTables& tables,unsigned group,int& grade){
-    if(group>=7)return false;
+    if(group>=8||(group==7&&!g_holly_course2))return false;   // 7: Holly 2 (Tweaks: lane 3)
     constexpr unsigned boundaries[]={0,5,14,25,40};
         grade=7;
         if(group<4){int sum=0;
@@ -153,9 +153,11 @@ bool frontend_group_grade_4e82a0(const PcLicense& p,const LicenseProgressTables&
     return true;
 }
 bool frontend_category_unlocked_4e8410(const PcLicense& p,const LicenseProgressTables& tables,unsigned group,bool& unlocked){
-    unlocked=false;if(group>=7)return true;
+    unlocked=false;if(group>=8||(group==7&&!g_holly_course2))return true;
     if(group==0||group==4){unlocked=true;return true;}
-    int grade{};if(!frontend_group_grade_4e82a0(p,tables,group-1,grade))return false;
+    // Holly 2 (Tweaks' 4E8414 / 4E8537 hooks): as Holly 1 (Jennifer's rank), or Holly 1's rank.
+    const unsigned previous=group==7?(g_holly_course2==1?5u:6u):group-1;
+    int grade{};if(!frontend_group_grade_4e82a0(p,tables,previous,grade))return false;
     unlocked=grade!=7&&grade>=4;return true;
 }
 std::int32_t frontend_unlock_notice_499730(PcLicense& p,const std::array<int,7>& grades){
@@ -170,11 +172,16 @@ std::int32_t frontend_unlock_notice_499730(PcLicense& p,const std::array<int,7>&
     put32(p.data()+0x11c,seen|bit);p[0x3f4]|=2u;return notice;
 }
 bool frontend_category_picture_4e8b20(const PcLicense& p,const LicenseProgressTables& tables,unsigned selected,unsigned& result){
-    if(selected>=7)return false;
+    if(selected>=8)return false;
     result=0;for(int group=2;group>=0;--group){int grade{};
         if(!frontend_group_grade_4e82a0(p,tables,unsigned(group),grade))return false;
         if(grade!=7&&grade>=4){result=unsigned(group+1)*4;break;}}
     if(selected<=3)result+=selected;return true;
+}
+unsigned frontend_category_count(const PcLicense& p,const LicenseProgressTables& tables){
+    if(!g_holly_course2||!tables.championship_present[3])return 7;
+    if(g_holly_course2!=3)return 8;
+    bool shown{};return frontend_category_unlocked_4e8410(p,tables,7,shown)&&shown?8:7;
 }
 bool frontend_license_completion_447400(const PcLicense& p,const LicenseProgressTables& tables,double& result){
     result=0;if(tables.mode!=32)return true; // original non-SUMO_FE branch

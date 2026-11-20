@@ -4236,7 +4236,7 @@ bool runtime_route_mode_4eead0(std::uint32_t selector,PcRuntimePrepareState& sta
 bool runtime_route_config_4eeb50(std::uint32_t selector,std::uint32_t arg2,std::uint32_t arg3,
                                  PcRuntimePrepareState& state,
                                  const PcRuntimePrepareServices& services){
-    if(selector>6u)return false;
+    if(selector>7u)return false;   // 7: the port's Holly 2 (Tweaks' 4EEB54 / 4EEC0B hooks)
     if(selector<=3u){
         const auto count=services.count_entries?services.count_entries(services.user,arg2):(outrun::driving::service_hole("runtime_route_config_4eeb50","services.count_entries"),0u);
         const auto max_index=count-1u; // original DEC wraps when count==0
@@ -4251,6 +4251,7 @@ bool runtime_route_config_4eeb50(std::uint32_t selector,std::uint32_t arg2,std::
     std::array<std::uint32_t,5> cfg{};
     if(selector==4u){cfg[0]=1u;cfg[4]=1u;}
     else if(selector==6u){cfg[0]=3u;cfg[4]=2u;}
+    else if(selector==7u){cfg[0]=2u;cfg[4]=2u;}   // Req_Course_MIX_PSP (64F040[2]), Holly's voices
     if(arg2!=0u){cfg[1]=1u;cfg[2]=arg2-1u;}
     cfg[3]=(arg3<4u)?arg3:0u;
     state.event_config_7f94c4=cfg;

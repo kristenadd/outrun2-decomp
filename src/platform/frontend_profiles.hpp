@@ -45,8 +45,10 @@ FrontendProfileList frontend_profiles_list_4e1c00(FrontendProfiles&);
 // Counts/types must be obtained from loaded PC data before SUMO_FE completion.
 struct LicenseProgressTables {
     std::array<std::uint8_t,40> category_counts{};
-    std::array<std::array<std::uint32_t,15>,3> championship_types{};
-    std::array<bool,3> championship_present{};
+    // Lanes 84B7E0..84B7EC: Request_Course_SP (Clarissa), _OR2 (Jennifer), Req_Course_MIX_PS2
+    // (Holly), Req_Course_MIX_PSP (Holly 2, group 7: see g_holly_course2).
+    std::array<std::array<std::uint32_t,15>,4> championship_types{};
+    std::array<bool,4> championship_present{};
     bool categories_ready{};
     std::uint32_t mode{32};
 };
@@ -57,6 +59,15 @@ bool frontend_group_grade_4e82a0(const PcLicense&,const LicenseProgressTables&,u
 // then record its bit in licence +11C and the dirty bit in +3F4.
 std::int32_t frontend_unlock_notice_499730(PcLicense&,const std::array<int,7>& grades);
 bool frontend_category_unlocked_4e8410(const PcLicense&,const LicenseProgressTables&,unsigned,bool&);
+// Port option (options.ini holly_course2=, default 3), OutRun2006Tweaks' EnableHollyCourse2:
+// the PSP version's second Holly course ("MIX 2 COURSE", Req_Course_MIX_PSP) as an eighth
+// driver on the C2C categories screen (group 7). The PC tables already hold its entry
+// (position, icons, pictures, title 73, footer 2); retail never selects it. 0 = off;
+// 1 = shown, unlocked as Holly 1 is; 2 = shown, unlocked once Holly 1 reaches rank A;
+// 3 = hidden until Holly 1 reaches rank A.
+inline unsigned g_holly_course2=3;
+// The number of drivers on the categories screen: 8 while Holly 2 is shown.
+unsigned frontend_category_count(const PcLicense&,const LicenseProgressTables&);
 bool frontend_category_picture_4e8b20(const PcLicense&,const LicenseProgressTables&,unsigned,unsigned&);
 // Explicit writes only. The caller supplies its save directory; loading never
 // writes. A checked temporary + backup replacement preserves the previous save

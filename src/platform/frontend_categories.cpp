@@ -3,8 +3,12 @@
 namespace outrun::platform {
 using driving::Bytes;
 namespace {
+constexpr unsigned Picture=PcCategoryOwnerBytes;   // +674: Tweaks' moved large picture (see the header)
+Bytes slot(FrontendCategoryState& c,unsigned off){
+    return off==Picture?Bytes(c.picture_674.data(),c.picture_674.size()):Bytes(c.object.data()+off,0xa0);
+}
 bool resource(FrontendCategoryState& c,FrontendCategoryServices& s,unsigned off,unsigned pc,const unsigned* args=nullptr,unsigned n=0){
-    unsigned result{};if(!s.ui.call(pc,Bytes(c.object.data()+off,0xa0),args,n,result)||s.ui.missing_pc){
+    unsigned result{};if(!s.ui.call(pc,slot(c,off),args,n,result)||s.ui.missing_pc){
         s.missing=s.ui.missing_pc?s.ui.missing_pc:pc;return false;}return true;
 }
 unsigned bits(float v){unsigned r;std::memcpy(&r,&v,4);return r;}
@@ -12,8 +16,9 @@ bool configure(FrontendCategoryState& c,FrontendCategoryServices& s,unsigned off
     const unsigned args[]{token,first,last,layer,mode,bits(x),bits(y),0x3f800000,0x3f800000,0x3f800000,0};
     return resource(c,s,off,0x465250)&&resource(c,s,off,0x465860,args,11)&&resource(c,s,off,0x465970);
 }
-bool selection(FrontendCategoryState& c,FrontendCategoryServices& s){ // 4E8580, table5CE3A0
-    if(c.selected_84b7f0>=7){s.missing=0x4e8580;return false;}
+unsigned count(FrontendCategoryServices& s){return frontend_category_count(s.profile,s.progress);}
+bool selection(FrontendCategoryState& c,FrontendCategoryServices& s){ // 4E8580, table5CE3A0 (8 rows)
+    if(c.selected_84b7f0>=count(s)){s.missing=0x4e8580;return false;}
     const unsigned first=c.selected_84b7f0*30;
     return configure(c,s,0x5d4,0x4400b6,first,first+29,4,0);
 }
@@ -41,6 +46,7 @@ bool frontend_categories_construct_4e8130(FrontendCategoryState& c,unsigned& rep
     if(!title_base_construct_48f480(c.object.data(),c.object.size(),repeat))return false;
     for(unsigned off=0x34;off<0x674;off+=0xa0)
         if(!title_ui_resource_construct_465160(c.object.data()+off,c.object.size()-off))return false;
+    if(!title_ui_resource_construct_465160(c.picture_674.data(),c.picture_674.size()))return false;
     Bytes b(c.object.data(),c.object.size());b.put32(0,0x5ce4c0);b.put32(8,0x3a);c.constructed=true;return true;
 }
 bool frontend_categories_init_4e8760(FrontendCategoryState& c,FrontendCategoryServices& s){
@@ -49,18 +55,22 @@ bool frontend_categories_init_4e8760(FrontendCategoryState& c,FrontendCategorySe
 }
 bool frontend_categories_control_4e8780(FrontendCategoryState& c,FrontendCategoryServices& s,unsigned& result){
     result=0;unsigned action{};
-    if(c.selected_84b7f0>=7){s.missing=0x4e8780;return false;}
+    const unsigned n=count(s);
+    if(c.selected_84b7f0>=n){s.missing=0x4e8780;return false;}
     if(!frontend_input_action_48f5f0(c.object.data(),c.object.size(),s.input,0,s.repeat,&s,
         [](void* p,unsigned key,int arg){auto& svc=*static_cast<FrontendCategoryServices*>(p);return svc.ui.input_feedback(svc.root,key,arg);},action)){
         s.missing=s.ui.missing_pc?s.ui.missing_pc:0x48f5f0;return false;}
     if(action==0){bool ready{};if(!unlocked(s,c.selected_84b7f0,ready)||!sound(s,ready?64:3))return false;
         if(!ready)return true;
-        s.root.put32(0x20c,(s.root.u32(0x20c)&~0x700u)|(c.selected_84b7f0<<8));
+        s.root.put32(0x20c,(s.root.u32(0x20c)&~0x700u)|(c.selected_84b7f0<<8));   // 7: Holly 2 (Tweaks' 4E8928)
         Bytes(c.object.data(),c.object.size()).put32(4,c.selected_84b7f0<4?0x3b:0x3c);result=1;
     }else if(action==1){s.root.put32(0x20c,s.root.u32(0x20c)&0xffe008ffu);result=2;
     }else if(action>=2&&action<=5){
-        // 5CE400: action2=up, action3=left, action4=down, action5=right.
-        constexpr int neighbors[7][4]={{-1,4,1,-1},{-1,5,2,0},{-1,6,3,1},{-1,-1,-1,2},{0,-1,5,-1},{1,-1,6,4},{2,-1,-1,5}};
+        // 5CE400: action2=up, action3=left, action4=down, action5=right. Row 7 (Holly 2) is
+        // the PC's own; with it shown, Tweaks links it in (Flagman 4 down, Holly 1 right) and
+        // wraps the rows (Flagman 1 left, Flagman 4 right, Clarissa left, Holly 2 right).
+        int neighbors[8][4]={{-1,4,1,-1},{-1,5,2,0},{-1,6,3,1},{-1,-1,-1,2},{0,-1,5,-1},{1,-1,6,4},{2,-1,-1,5},{3,-1,-1,6}};
+        if(n==8){neighbors[3][1]=7;neighbors[6][2]=7;neighbors[0][3]=3;neighbors[3][2]=0;neighbors[4][3]=7;neighbors[7][2]=4;}
         constexpr unsigned columns[]{0,3,1,2};
         const int next=neighbors[c.selected_84b7f0][columns[action-2]];
         if(next>=0){c.selected_84b7f0=unsigned(next);if(!sound(s,1))return false;}
@@ -71,30 +81,35 @@ bool frontend_categories_control_4e8780(FrontendCategoryState& c,FrontendCategor
 bool frontend_categories_suspend_4e8a30(FrontendCategoryState& c,FrontendCategoryServices& s){
     c.glyphs.clear();if(!c.constructed)return true;
     if(!resource(c,s,0x5d4,0x465250))return false;
-    for(unsigned off=0x34;off<0x494;off+=0xa0)if(!resource(c,s,off,0x465250))return false;
-    return resource(c,s,0x494,0x465250)&&resource(c,s,0x534,0x465250);
+    for(unsigned off=0x34;off<0x534;off+=0xa0)if(!resource(c,s,off,0x465250))return false;   // 8 icons
+    return resource(c,s,Picture,0x465250)&&resource(c,s,0x534,0x465250);
 }
 bool frontend_categories_display_4e8c60(FrontendCategoryState& c,FrontendCategoryServices& s){
-    c.glyphs.clear();if(c.selected_84b7f0>=7){s.missing=0x4e8c60;return false;}
-    constexpr float xs[]{87,149,212,274,87,149,212};
-    for(unsigned i=0;i<7;++i){bool available{};if(!unlocked(s,i,available))return false;
+    const unsigned n=count(s);
+    c.glyphs.clear();if(c.selected_84b7f0>=n){s.missing=0x4e8c60;return false;}
+    constexpr float xs[]{87,149,212,274,87,149,212,274};   // 5CE480 (8 entries)
+    for(unsigned i=0;i<8;++i){
+        if(i>=n){if(!resource(c,s,0x34+0xa0*i,0x465250))return false;continue;}   // Holly 2 hidden
+        bool available{};if(!unlocked(s,i,available))return false;
         const unsigned frame=i*2+unsigned(available);
         if(!configure(c,s,0x34+0xa0*i,0x4400b7,frame,frame,available?2:1,0,xs[i]-320,(i<4?303.f:365.f)-240))return false;
     }
     unsigned picture{};if(!frontend_category_picture_4e8b20(s.profile,s.progress,c.selected_84b7f0,picture)){s.missing=0x4e8b20;return false;}
     bool available{};if(!unlocked(s,c.selected_84b7f0,available))return false;
     if(c.selected_84b7f0<4){if(!configure(c,s,0x534,0x4400b5,picture,picture,1,0))return false;}
-    else {constexpr unsigned frames[]{0,6,2};const auto frame=frames[c.selected_84b7f0-4]+unsigned(!available);
+    else {constexpr unsigned frames[]{0,6,2,4};const auto frame=frames[c.selected_84b7f0-4]+unsigned(!available);
         if(!configure(c,s,0x534,0x4400cb,frame,frame,1,0))return false;}
     if(available){int grade{};if(!frontend_group_grade_4e82a0(s.profile,s.progress,c.selected_84b7f0,grade)){s.missing=0x4e82a0;return false;}
-        constexpr unsigned normal[]{0x382,0x383,0x384,0x385,0x38d,0x38e,0x38f};
-        constexpr unsigned complete[]{0x386,0x387,0x388,0x389,0x391,0x392,0x393};
+        // Holly 2 (past the PC tables): Tweaks' 4E8E3D / 4E8E4D give Holly 1's text, and
+        // 0x394 ("Holly's got chills!") once complete.
+        constexpr unsigned normal[]{0x382,0x383,0x384,0x385,0x38d,0x38e,0x38f,0x38f};
+        constexpr unsigned complete[]{0x386,0x387,0x388,0x389,0x391,0x392,0x393,0x394};
         constexpr const char* ranks[]{"E","D","C","B","A","AA","AAA",""};
         if(!localized(c,s,grade==6?complete[c.selected_84b7f0]:normal[c.selected_84b7f0])||
            !text(c,s,ranks[grade],0xff4d5559,4,520,363))return false;
-    }else{constexpr int locked[]{-1,0x38a,0x38b,0x38c,-1,0x395,0x396};
+    }else{constexpr int locked[]{-1,0x38a,0x38b,0x38c,-1,0x395,0x396,0x396};   // 7: Tweaks' 4E8EED
         if(locked[c.selected_84b7f0]>0&&!localized(c,s,unsigned(locked[c.selected_84b7f0])))return false;}
     const unsigned frame=available?c.selected_84b7f0:c.selected_84b7f0<5?c.selected_84b7f0+8:12;
-    return configure(c,s,0x494,0x4400b4,frame,frame,1,0);
+    return configure(c,s,Picture,0x4400b4,frame,frame,1,0);   // Tweaks: +494 -> +674
 }
 }

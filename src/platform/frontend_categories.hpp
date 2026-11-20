@@ -12,6 +12,10 @@ struct FrontendCategoryState {
     unsigned fault{};
     bool constructed{};
     std::vector<FrontendGlyph> glyphs;
+    // Port (Holly 2, g_holly_course2): OutRun2006Tweaks grows the object by one resource
+    // (0x674 + 0xA0) and moves the large picture from +494 to +674, so the eighth icon
+    // takes +494. The PC factory still allocates 0x674, so the extra slot lives here.
+    std::array<std::uint8_t,0xa0> picture_674{};
 };
 struct FrontendCategoryServices {
     FrontendUiResources& ui;

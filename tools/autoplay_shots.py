@@ -10,7 +10,8 @@
 
 Runs in its own home (build/autoplay-home[X]/SaveGame, a copy of the owner's
 saves made on first use), so the owner's saves and options are never touched.
-RUN_X=<x> places the window (and the capture) at x, for two runs side by side
+EXIT_FRAME=<n> exits the game cleanly at input frame n (L+R+Plus), so it writes its result
+log (<home>/<log file>, with the traffic / request summary). RUN_X=<x> places the window (and the capture) at x, for two runs side by side
 (RUN_X=0 and RUN_X=820). Shots and run.log go to build/autoplay-shots/<name>/.
 """
 import os, re, shutil, subprocess, sys, time
@@ -50,7 +51,8 @@ env = dict(os.environ, OR2_GAME_ROOT=GAME, OR2_HOST_WINDOW_RECT=f"{X},40,800,600
 for a in sys.argv[3:]:
     if "=" in a:
         k, v = a.split("=", 1); env[k] = v
-open(SG + "/autoplay.txt", "w").write("trace=1\nscript=" + script + "\n")
+EXIT = os.environ.get("EXIT_FRAME")   # EXIT_FRAME=N: the exit combination at N, then wait for a clean exit (writes the result log)
+open(SG + "/autoplay.txt", "w").write("trace=1\nscript=" + script + "\n" + (f"frames={EXIT}\n" if EXIT else ""))
 if os.path.exists(SG + "/trace.txt"):
     os.remove(SG + "/trace.txt")
 out_dir = ROOT + "/build/autoplay-shots/" + name
@@ -81,5 +83,8 @@ try:
         subprocess.run(["sips", "-Z", "480", shot], capture_output=True)
         print(fr, l, flush=True)
 finally:
+    if EXIT:
+        try: p.wait(timeout=120)
+        except subprocess.TimeoutExpired: pass
     p.kill(); p.wait()
     os.remove(SG + "/autoplay.txt")

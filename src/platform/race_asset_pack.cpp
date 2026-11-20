@@ -278,6 +278,8 @@ bool frontend_license_progress_tables(const RaceAssetPack* races,
     next.categories_ready=true;
     for(std::size_t lane=0;lane<next.championship_types.size();++lane){
         const auto& table=courses[lane];
+        // Lane 3 (MIX_PSP) only serves the port's Holly 2 (g_holly_course2): absent, it's off.
+        if(lane==3u&&table.count==0u)continue;
         if(table.count<15u||table.count>table.records.size()/CourseRecordBytes)return false;
         for(std::size_t i=0;i<15u;++i){
             const auto type=u32(table.records.data()+i*CourseRecordBytes+0x1cu);

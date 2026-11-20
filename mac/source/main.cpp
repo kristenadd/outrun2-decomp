@@ -19,6 +19,7 @@
 #include "platform/pc_glare.hpp"
 #include "platform/pc_render_flush.hpp"   // g_pc_pixel_fog
 #include "platform/pc_vertex_shader_setup.hpp"
+#include "platform/frontend_profiles.hpp"    // g_holly_course2
 #include "driving/pc_common_control.hpp"
 #include "platform/race_hud_runtime.hpp"
 #include "platform/race_area_runtime.hpp"
@@ -117,6 +118,9 @@ u64 dualsense_mapped(){u64 m=0;for(const auto& e:PadMap)m|=e.first;return m;}
 //                       740C88; OutRun2006Tweaks' default); 0 = the linear fallback
 //   car_shade=1         the car darkens under the road's baked shades (4A45F0, the
 //                       car's light rate); 0 = the car always fully lit
+//   holly_course2=3     the PSP's second Holly course (MIX 2 COURSE) on the C2C driver screen,
+//                       as OutRun2006Tweaks' EnableHollyCourse2: 0 off, 1 unlocked with Holly 1,
+//                       2 unlocked at Holly 1 rank A, 3 hidden until Holly 1 rank A
 struct Options {bool reflections{true},resolution_set{};unsigned render_scale{3};outrun::enhancements::VideoSettings video;} g_options;
 const char* const OptionsDefault=
     "# OutRun 2006 macOS options (edit and restart)\n"
@@ -148,6 +152,10 @@ void load_options(){
         else if(k=="glare")outrun::platform::g_pc_glare=v!=0;
         else if(k=="pixel_fog")outrun::platform::g_pc_pixel_fog=v!=0;
         else if(k=="car_shade")outrun::driving::g_car_road_shade=v!=0;
+        else if(k=="holly_course2"){
+            if(v>3)throw std::runtime_error("holly_course2 must be between 0 and 3");
+            outrun::platform::g_holly_course2=v;
+        }
         else if(k=="fix_incorrect_shading")outrun::platform::g_pc_fix_incorrect_shading=v!=0;
         else if(k=="hd_textures"){
             if(v>16)throw std::runtime_error("hd_textures must be between 0 and 16");

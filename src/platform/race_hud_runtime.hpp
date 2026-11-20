@@ -61,6 +61,8 @@ struct NativeRaceHudRuntime {
     std::vector<std::uint8_t> event_flags_79fb48=std::vector<std::uint8_t>(410u);
     std::array<std::uint32_t,8> mirrors{};                  // read-only mode/route words (see rebuild)
     std::array<std::uint8_t,8> text_cursor_956bb4{};         // 42CC00 (written by 4BA9D0)
+    std::array<float,16> projection_95d8a0{};                  // the renderer's projection (4295D0 with a depth mode), copied per NAVI display
+    std::uint32_t sprite_zbias_780068{};                       // 4295D0 writes it, nothing reads it (the PC's only reference)
     std::array<std::uint8_t,0x14> race_clock_84210c{};       // copy of race.clock (read-only)
     bool navi_initialized{},navi_init_failed{};
     // ---- 496A30 race part ----
