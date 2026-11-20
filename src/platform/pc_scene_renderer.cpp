@@ -360,6 +360,9 @@ bool PcSceneRenderer::update_course_environment(const CourseEnvironmentBinding& 
     live.time_7d2934=time_7d2934_;live.duration_7d28d8=duration_7d28d8_;
     live.saved_sun_7d26d0=saved_sun_7d26d0_;live.saved_fog_7d28e0=saved_fog_7d28e0_;
     live.fog_7d3a10=environment_.fog_7d3a10;live.nearest_7d2d58=nearest_7d2d58_;
+    // The fog records' on words from START (4518A0): without them 40D870 never
+    // enabled fog in races, and distant scenery stayed clear.
+    if(b.fog_on_7d3a10)for(unsigned r=0;r<3;++r)std::memcpy(live.fog_7d3a10.data()+r*0x1c,b.fog_on_7d3a10,4);
     static_assert(sizeof live.lights_899b98<=sizeof environment_.lights_899b98,"light table size");   // 899B98..89A138
     std::memcpy(live.lights_899b98.data(),environment_.lights_899b98.data(),live.lights_899b98.size());
     std::string error;

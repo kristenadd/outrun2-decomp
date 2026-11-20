@@ -224,6 +224,9 @@ public:
     struct CourseEnvironmentBinding {
         CourseEnvironmentRuntime* records{};const CourseWorldRuntime* world{};
         std::array<std::uint32_t,6>* flags_7d28b0{};std::uint32_t* phase_7d28c8{};
+        // 7D3A10 / 7D3A2C / 7D3A48 +0, the three fog records' on words: START's
+        // 4518A0 sets them (4518C0 clears them), kept in the START state.
+        const std::uint32_t* fog_on_7d3a10{};
     };
     std::function<CourseEnvironmentBinding()> course_environment;
     std::uint32_t course_environment_updates{},course_environment_failures{};

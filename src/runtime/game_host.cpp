@@ -1094,7 +1094,7 @@ void attach_pc_scene(GameHost& host,pf::NativeRuntimeContext& context,pf::Retail
     scene.course_environment=[&context]{
         auto& start=context.start_mode;
         return pf::PcSceneRenderer::CourseEnvironmentBinding{&start.scene_owner_environment,&start.scene_owner_course_world,
-            &start.environment_flags_7d28b0,&start.environment_phase_7d28c8};};
+            &start.environment_flags_7d28b0,&start.environment_phase_7d28c8,&start.first_race_flags_7d3a10};};
     // Car stencil shadows (422550 / 422740): on (host 2026-10-01: the darkening lands
     // under and left of the car, 2.7k pixels); OR2_SHADOW_OFF (host) turns them off.
     scene.shadow_draw_enabled=std::getenv("OR2_SHADOW_OFF")==nullptr&&pf::g_pc_car_shadows;

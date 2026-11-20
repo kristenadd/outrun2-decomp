@@ -796,6 +796,15 @@ showed. Four causes, all fixed:
   `OR2_HOST_SKY_SHADE=1` logs `[sky-shade]` (blue sky level and the top band's mean, every
   frame), but it reads the 3D frame, which missed this; compare presented frames instead
   (`OR2_MAC_SCREENSHOT_RANGE`, below). The probe frame numbers equal the autoplay input frames.
+- **No fog in races (owner, 2026-11-19; fixed on the Mac, not yet confirmed).** Distant land
+  (OutRun2SP's Golden Gate bridge at about 1'30" in the owner's video) was hazy on the PC and
+  clear in the port. The fog records 7D3A10 / 7D3A2C / 7D3A48 have an on word at +0 that
+  START's `4518A0` sets (`4518C0` clears it in the menu scenes); the port's START kept it in
+  `start_mode.first_race_flags_7d3a10` only, so `40D870` never enabled fog. The course
+  environment update now copies it into the records (`CourseEnvironmentBinding::fog_on_7d3a10`).
+  Also `740C88` (the PC's DX/FOG setting, on in the owner's Tweaks build) is now 1
+  (`g_pc_pixel_fog`, options.ini `pixel_fog=`): the stages' fog is exponential (mode 1,
+  density ~0.0003), drawn as table fog; 0 takes `40D870`'s linear fallback.
 - The sun pass also draws with the projection's near plane at 0.05 (Tweaks'
   `FixZBufferPrecision` does this around `40BE70`); no visible change measured.
 - Trap when tracing: the first frames of a race have the flare at strength 0 (no

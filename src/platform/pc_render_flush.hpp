@@ -154,10 +154,15 @@ void render_light_add_4107a0(PcFlushContext&,driving::Bytes desc);
 // 40D870 fog render states from 7D3A10+env*0x1C, 40DD70 light colours
 // 95DC20/95DC30 and 40DB80 lights 0..4 (899B98+env*0xA0, 89A138/89A1D8 and
 // 899D78/899E18 + env*0x140): LightEnable/SetLight and 4107A0 each.
+// 740C88 is the PC's DX/FOG setting (fog enabled in the launcher; OutRun2006Tweaks
+// turns it on by default, so the owner's reference has it): the stages' exponential
+// fog records are drawn as table fog with their density. Off, 40D870 replaces them
+// by a linear ramp that leaves distant hills nearly clear. Port option pixel_fog=.
+inline bool g_pc_pixel_fog=true;
 struct PcEnvironmentRenderTables {
     driving::Bytes lights_899b98{nullptr,0}; // 0x960 bytes, 899B98..89A4F8
     driving::Bytes fog_7d3a10{nullptr,0};    // 0x54 bytes, three 0x1C fog records
-    std::uint8_t pixel_fog_740c88{};// non-zero: table fog density modes
+    std::uint8_t pixel_fog_740c88{g_pc_pixel_fog};// non-zero: table fog density modes (g_pc_pixel_fog)
 };
 void render_environment_40d840(PcFlushContext&,std::int32_t env,std::uint8_t flags_79fcca,const PcEnvironmentRenderTables&);
 // 4089A0: environment matrix 95C018 (inverse of 7D2DA0 for environment 1,

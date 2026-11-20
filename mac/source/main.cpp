@@ -17,6 +17,7 @@
 #include "platform/native_race_effects.hpp"   // scn-efc
 #include "platform/sprite_2d_runtime.hpp"
 #include "platform/pc_glare.hpp"
+#include "platform/pc_render_flush.hpp"   // g_pc_pixel_fog
 #include "platform/pc_vertex_shader_setup.hpp"
 #include "driving/pc_common_control.hpp"
 #include "platform/race_hud_runtime.hpp"
@@ -112,6 +113,8 @@ u64 dualsense_mapped(){u64 m=0;for(const auto& e:PadMap)m|=e.first;return m;}
 //   fix_incorrect_shading=1  double-sided lighting (the player's car, cutscene characters,
 //                       some stage models) lit as OutRun2006Tweaks' FixIncorrectShading
 //                       does; 0 = the PC's flipped TWOSIDE lighting
+//   pixel_fog=1         the stages' exponential fog as on the PC with fog enabled (DX/FOG,
+//                       740C88; OutRun2006Tweaks' default); 0 = the linear fallback
 //   car_shade=1         the car darkens under the road's baked shades (4A45F0, the
 //                       car's light rate); 0 = the car always fully lit
 struct Options {bool reflections{true},resolution_set{};unsigned render_scale{3};outrun::enhancements::VideoSettings video;} g_options;
@@ -143,6 +146,7 @@ void load_options(){
         const std::string k=l.substr(0,eq);const unsigned v=unsigned(std::strtoul(l.c_str()+eq+1,nullptr,10));
         if(k=="reflections")g_options.reflections=v!=0;
         else if(k=="glare")outrun::platform::g_pc_glare=v!=0;
+        else if(k=="pixel_fog")outrun::platform::g_pc_pixel_fog=v!=0;
         else if(k=="car_shade")outrun::driving::g_car_road_shade=v!=0;
         else if(k=="fix_incorrect_shading")outrun::platform::g_pc_fix_incorrect_shading=v!=0;
         else if(k=="hd_textures"){
