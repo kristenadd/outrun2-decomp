@@ -37,10 +37,12 @@ struct GameView: View {
         // (540 pt), the picture and the window's grip / resize corners 40 cm apart.
         .frame(depth: 0)
         // Game controller input goes to the game (GameController), not to the window as
-        // pinches: the whole view, the RealityKit picture included (visionOS 26), and the
-        // window (GCEventInteraction, older visionOS).
-        .gamepadEvents()
-        .background(GamepadInput())
+        // pinches. One claim per window: a layer over the whole picture (visionOS 26),
+        // made again on every tap; older visionOS, GCEventInteraction on the window.
+        // Two claims (that layer's modifier and the window's interaction) left the
+        // controller stuck on the wrong one, the game reading its last state.
+        .overlay { GamepadClaim() }
+        .background { if #available(visionOS 26.0, *) { EmptyView() } else { GamepadInput() } }
         .onAppear { or2_vision_start() }
         .onChange(of: phase) { _, now in
             trace("[visionos] scene phase \(now)")
@@ -196,6 +198,25 @@ struct GamepadInput: UIViewRepresentable {
     }
     func makeUIView(context: Context) -> Host { Host() }
     func updateUIView(_ view: Host, context: Context) {}
+}
+
+// The controller claim (visionOS 26): a transparent layer over the picture that
+// takes the gamepad's events. A tap on the window (a pinch, or a controller press
+// that visionOS turned into one because the game wasn't getting it) makes the
+// claim again: the layer is rebuilt, so its interaction is registered anew.
+struct GamepadClaim: View {
+    @State private var claim = 0
+    var body: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .gamepadEvents()
+            .onTapGesture {
+                claim += 1
+                trace("[pad] tap: controller claimed again (\(claim))")
+                or2_vision_gamepad_reclaim()
+            }
+            .id(claim)
+    }
 }
 
 // Device diagnostics on stderr (unbuffered; Swift's print is buffered in a pipe).

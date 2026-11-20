@@ -104,6 +104,9 @@ bool gamepad_read(ps5::PadSample& p,int& sdl_type){
 std::string gamepad_names(){watch();std::lock_guard lock(g_mutex);return g_names;}
 }
 
+extern "C" void or2_vision_gamepad_reclaim(void){
+    outrun::vision::watch();outrun::vision::pick();   // main thread (the tap)
+}
 extern "C" void or2_vision_set_focused(bool focused){
     if(outrun::vision::g_focused.exchange(focused)!=focused&&outrun::vision::g_trace)
         std::fprintf(stderr,"[pad] input %s\n",focused?"focused":"not focused: all released");

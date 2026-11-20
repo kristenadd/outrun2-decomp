@@ -156,6 +156,12 @@ for visionOS (`UIScreen`), so SDL2 is built with `SDL_VIDEO=OFF`
   RealityKit picture, so input froze mid-race (R2 stuck on: the car kept
   driving). Now the whole view opts in (`handlesGameControllerEvents`, visionOS
   26), and while the scene isn't `active` every control reads released.
+  **Still froze while active (user, 2026-11-20)**, and tapping the window didn't bring it back.
+  The window then had two claims (the view's `handlesGameControllerEvents` and a
+  `GCEventInteraction` on the UIWindow). Now one: `GamepadClaim`, a clear layer over the
+  picture with the modifier, rebuilt (`.id`) on every tap so the claim is made anew
+  (`[pad] tap: controller claimed again`); the window interaction only before visionOS 26.
+  **Confirmed by the user on the Vision Pro (2026-11-20): a tap brings the controller back.**
   `OR2_TRACE` logs `[pad]` presses, controller changes and focus.
 - `OR2_IOS` and `OR2_VISIONOS` are both defined. Shared files check
   `OR2_VISIONOS` where visionOS differs (`main.cpp`, `renderer_present.inc`,

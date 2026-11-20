@@ -20,6 +20,8 @@ void or2_vision_start(void);
 void or2_vision_set_active(bool active);
 // The scene is active (it has the controller's input): false reads every control released.
 void or2_vision_set_focused(bool focused);
+// The window claimed the controller again (a tap): the controller is picked anew.
+void or2_vision_gamepad_reclaim(void);
 // The physical width of the window's game picture, in meters (the stereo
 // shift keeps far objects' disparity under the distance between the eyes).
 void or2_vision_set_window_width(float meters);
