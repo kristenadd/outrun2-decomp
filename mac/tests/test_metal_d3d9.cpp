@@ -143,6 +143,26 @@ int main(){
             eyes.begin_frame();eyes.clear(7,0xff000000,1,0);eyes.set_fvf(0x44);
             eyes.set_stereo_screen_depth(4);eyes.draw_primitive_up(5,2,flat,sizeof(V));eyes.set_stereo_screen_depth(0);eyes.end_frame();
             check(left(1,24)==255&&left(57,24)==0&&right(1,24)==0&&right(62,24)==255,"screen-space draw at a depth gets its parallax");
+            // One eye picked (the glare, per eye): a StretchRect from the back buffer reads that
+            // eye, and draws go to that eye only. The right eye's copy drawn into the left eye
+            // makes the left eye show the right eye's picture.
+            {
+                const auto copy=eyes.create_texture(64,48,1,1,0x15,0),surface=eyes.get_surface_level(copy,0);
+                eyes.begin_frame();eyes.clear(7,0xff000000,1,0);eyes.set_fvf(0x44);eyes.draw_primitive_up(5,2,far,sizeof(V));
+                eyes.set_stereo_eye(1);const auto back=eyes.get_back_buffer();
+                check(eyes.stretch_rect(back,surface,0),"StretchRect from one eye");eyes.release(back);
+                quad(eyes,0xff00ff00,.4f);                                      // right eye only
+                eyes.set_stereo_eye(0);
+                struct T{V v;float u,t;};
+                const T full[]{{{0,0,.3f,1,0xffffffff},0,0},{{64,0,.3f,1,0xffffffff},1,0},{{0,48,.3f,1,0xffffffff},0,1},{{64,48,.3f,1,0xffffffff},1,1}};
+                eyes.set_texture(0,copy);eyes.set_texture_stage_state(0,2,2);eyes.set_texture_stage_state(0,5,2);
+                eyes.set_fvf(0x144);eyes.draw_primitive_up(5,2,full,sizeof(T));
+                eyes.set_texture(0,0);eyes.set_texture_stage_state(0,2,0);eyes.set_texture_stage_state(0,5,0);
+                eyes.set_stereo_eye(-1);eyes.end_frame();
+                check(right(30,24,1)==255&&right(1,24,1)==0,"a draw with the right eye picked lands in the right eye");
+                check(left(30,24,1)==0&&left(1,24)==0&&left(62,24)==255,"the left eye shows the right eye's copy (no green)");
+                eyes.release(surface);eyes.release(copy);
+            }
         }
         eyes.set_msaa(1);eyes.set_stereo(0,0);eyes.begin_frame();
         check(!eyes.stereo()&&eyes.rgba_right().empty(),"stereo off: mono again");

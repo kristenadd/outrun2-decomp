@@ -89,6 +89,12 @@ for visionOS (`UIScreen`), so SDL2 is built with `SDL_VIDEO=OFF`
   `set_stereo_screen_depth`; the shader moves such w == 1 draws by `stereo.w` (the NDC shift of
   a 3D point at that depth, scaled for the 4:3 rectangle). Size unchanged. Markers pinned to the
   screen edge / bottom stay at zero parallax.
+- **Glare per eye** (2026-11-20, confirmed by the user on the Vision Pro): the glare copied the left eye
+  only (StretchRect of a layered back buffer) and composited that glow over both eyes, so in
+  the right eye the bloom floated beside its objects (ghosting). Now `pc_glare.cpp` captures
+  each eye (`copy_8a8c14`, `copy_right`) and runs bright / blur / composite once per eye with
+  `PcD3D9Device::set_stereo_eye` (Metal: back-buffer passes on that layer only, StretchRect
+  reads that layer, MSAA resolves it). Mono: unchanged.
 - Options ▸ Settings ▸ **3D DEPTH** (OFF, 1..5, `stereo_depth=` in options.ini,
   default 3): `VideoBackend::stereo_depths()`, visionOS only.
 - **FRAME RATE 60 / 90** (default 60 until the user confirms the fixes below): the headset refreshes at 90 Hz, and 60

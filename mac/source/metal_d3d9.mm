@@ -254,6 +254,8 @@ struct MetalD3D9Device::Impl {
         const bool msaa=owner.colour_target_==owner.BackBuffer&&owner.msaa_live_;
         id<MTLTexture> target=msaa?msaa_colour:back;unsigned level=0,slice=0;
         if(owner.colour_target_!=owner.BackBuffer){auto* o=owner.object(owner.colour_target_);require(o&&o->parent,"Invalid Metal colour surface");target=texture(o->parent);level=o->level;slice=o->face;}
+        const bool one_eye=layers>1&&owner.colour_target_==owner.BackBuffer&&owner.stereo_eye_>=0;   // set_stereo_eye
+        if(one_eye)slice=unsigned(owner.stereo_eye_);
         require(target!=nil,"Metal colour attachment missing");
         p.colorAttachments[0].texture=target;p.colorAttachments[0].level=level;p.colorAttachments[0].slice=slice;
         p.colorAttachments[0].loadAction=flags&1?MTLLoadActionClear:MTLLoadActionLoad;
@@ -263,9 +265,11 @@ struct MetalD3D9Device::Impl {
         if(msaa){require(owner.depth_target_==owner.DepthBuffer||!d,"MSAA scene with a separate depth surface");if(d)d=msaa_depth;}
         // Both eyes when the target is the layered back buffer (with its own
         // depth or none); a separate depth surface keeps the pass mono (left eye).
-        pass_layered=layers>1&&owner.colour_target_==owner.BackBuffer&&(!d||d==back_depth||d==msaa_depth);
+        pass_layered=!one_eye&&layers>1&&owner.colour_target_==owner.BackBuffer&&(!d||d==back_depth||d==msaa_depth);
         if(pass_layered)p.renderTargetArrayLength=layers;
+        if(d&&one_eye&&d!=back_depth&&d!=msaa_depth)d=nil;   // a mono depth surface: the eye's pass goes without it
         if(d){
+            if(one_eye){p.depthAttachment.slice=slice;p.stencilAttachment.slice=slice;}
             require(d.width>=std::max(NSUInteger(1),target.width>>level)&&d.height>=std::max(NSUInteger(1),target.height>>level),"Metal depth attachment smaller than target");
             p.depthAttachment.texture=d;p.depthAttachment.loadAction=flags&2?MTLLoadActionClear:MTLLoadActionLoad;p.depthAttachment.storeAction=MTLStoreActionStore;p.depthAttachment.clearDepth=z;
             p.stencilAttachment.texture=d;p.stencilAttachment.loadAction=flags&4?MTLLoadActionClear:MTLLoadActionLoad;p.stencilAttachment.storeAction=MTLStoreActionStore;p.stencilAttachment.clearStencil=s&255;
@@ -488,9 +492,14 @@ std::string MetalD3D9Device::device_name()const{return metal_->device.name.UTF8S
 // The pass ends only when a target really changes (the PC sets the same one again and again).
 void MetalD3D9Device::set_render_target(std::uint32_t i,std::uint32_t h){if(h!=colour_target_)metal_->finish_encoder();PcSoftD3D9Device::set_render_target(i,h);}
 void MetalD3D9Device::set_depth_stencil_surface(std::uint32_t h){if(h!=depth_target_)metal_->finish_encoder();PcSoftD3D9Device::set_depth_stencil_surface(h);}
+void MetalD3D9Device::set_stereo_eye(int eye){
+    eye=eye<0?-1:eye>0?1:0;
+    if(eye!=stereo_eye_){metal_->finish_encoder();stereo_eye_=eye;}
+}
 // StretchRect on the GPU: a pass drawing the source over the destination
 // (linear or nearest). The back buffer as source is the scene: resolved first
-// while it is multisampled, its left eye when it is layered (stereo).
+// while it is multisampled, its left eye when it is layered (stereo), or the
+// eye set_stereo_eye picked.
 bool MetalD3D9Device::stretch_rect(std::uint32_t source,std::uint32_t dest,std::uint32_t filter){
     if(source==dest||dest==BackBuffer)return false;
     auto& m=*metal_;
@@ -501,6 +510,7 @@ bool MetalD3D9Device::stretch_rect(std::uint32_t source,std::uint32_t dest,std::
     if(!surface(dest,dst,dst_level,dst_slice))return false;
     m.finish_encoder();m.start();
     id<MTLTexture> src=nil;unsigned src_level=0,src_slice=0;
+    const unsigned eye=m.layers>1&&stereo_eye_>0?1u:0u;   // set_stereo_eye: the right eye's layer
     if(source==BackBuffer){
         if(msaa_live_&&m.msaa_colour){
             if(!m.scene_resolve||m.scene_resolve.width!=m.back.width||m.scene_resolve.height!=m.back.height){
@@ -509,11 +519,11 @@ bool MetalD3D9Device::stretch_rect(std::uint32_t source,std::uint32_t dest,std::
                 m.scene_resolve=[m.device newTextureWithDescriptor:td];require(m.scene_resolve!=nil,"Cannot allocate the scene resolve");
             }
             auto p=[MTLRenderPassDescriptor renderPassDescriptor];
-            p.colorAttachments[0].texture=m.msaa_colour;p.colorAttachments[0].slice=0;p.colorAttachments[0].loadAction=MTLLoadActionLoad;
+            p.colorAttachments[0].texture=m.msaa_colour;p.colorAttachments[0].slice=eye;p.colorAttachments[0].loadAction=MTLLoadActionLoad;
             p.colorAttachments[0].storeAction=MTLStoreActionStoreAndMultisampleResolve;p.colorAttachments[0].resolveTexture=m.scene_resolve;
             auto e=[m.command renderCommandEncoderWithDescriptor:p];require(e!=nil,"Cannot encode the scene resolve");[e endEncoding];
             src=m.scene_resolve;
-        }else src=m.back;
+        }else{src=m.back;src_slice=eye;}
     }else if(!surface(source,src,src_level,src_slice))return false;
     if(src.textureType!=MTLTextureType2D||src_level||src_slice)
         src=[src newTextureViewWithPixelFormat:MTLPixelFormatRGBA8Unorm textureType:MTLTextureType2D levels:NSMakeRange(src_level,1) slices:NSMakeRange(src_slice,1)];

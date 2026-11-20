@@ -179,6 +179,12 @@ public:
     // marker over a car appears at the car's depth; 0 = the 2D layer's zero
     // parallax. No effect on mono devices.
     virtual void set_stereo_screen_depth(float depth){(void)depth;}
+    // Port (visionOS stereo): the eyes the back buffer holds this frame (1: mono),
+    // and one eye picked for the back buffer (-1: both, the default): draws on it
+    // go to that eye only, and a StretchRect from it reads that eye. Effects that
+    // copy the screen (the glare) run once per eye with it.
+    virtual unsigned stereo_eyes()const{return 1;}
+    virtual void set_stereo_eye(int eye){(void)eye;}
     virtual std::uint32_t create_occlusion_query(){return 0;}
     virtual void query_issue(std::uint32_t query,std::uint32_t flags){(void)query;(void)flags;}
     virtual std::uint32_t query_get_data(std::uint32_t query,std::uint32_t& samples){(void)query;samples=0;return 1;}

@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 #include <stdexcept>
 #include <vector>
 namespace outrun::platform {
@@ -111,16 +112,26 @@ bool ensure_objects(Pass& p){
     return true;
 }
 // 414E50: the back buffer into 8A8C14 (StretchRect, linear), shown by default.
-void capture_414e50(Pass& p){
-    auto& s=p.s;
-    std::uint32_t viewport[6];p.d.get_viewport(viewport);                     // read and unused, as the PC
-    const auto dst=p.d.get_surface_level(s.copy_8a8c14,0);
+// Port (stereo): each eye into its own copy (the right eye's in copy_right).
+bool copy_eye(Pass& p,std::uint32_t copy,int eye){
+    if(eye>=0)p.d.set_stereo_eye(eye);
+    const auto dst=p.d.get_surface_level(copy,0);
     const auto src=p.d.get_back_buffer();
     const bool done=dst&&src&&p.d.stretch_rect(src,dst,2);
     if(src)p.d.release(src);
     if(dst)p.d.release(dst);
+    if(eye>=0)p.d.set_stereo_eye(-1);
+    return done;
+}
+void capture_414e50(Pass& p){
+    auto& s=p.s;
+    std::uint32_t viewport[6];p.d.get_viewport(viewport);                     // read and unused, as the PC
+    unsigned eyes=p.d.stereo_eyes()>1?2u:1u;
+    if(eyes==2&&!s.copy_right){try{s.copy_right=target_4393f4(p.d);}catch(const std::exception&){}if(!s.copy_right)eyes=1;}
+    bool done=copy_eye(p,s.copy_8a8c14,eyes==2?0:-1);
+    if(done&&eyes==2)done=copy_eye(p,s.copy_right,1);
     if(!done){++s.skipped;s.error="glare: StretchRect from the back buffer unsupported";return;}
-    s.current_8a8c08=s.copy_8a8c14;++s.copies;s.captured=true;
+    s.current_8a8c08=s.copy_8a8c14;++s.copies;s.captured=true;s.captured_eyes=eyes;
 }
 // 4152E0: the bright pass, 8A8C14 through 622348 into 8A8C10, then copied to 8A8C68.
 void bright_4152e0(Pass& p){
@@ -248,9 +259,18 @@ void glare_414f00(Pass& p,std::uint32_t layer){
     p.tss_save(0,0xb,0);p.tss_save(0,0x18,0);p.tss_save(0,1,4);p.tss_save(0,2,0);p.tss_save(0,3,2);p.tss_save(0,4,1);
     p.rs(0x1b,1);p.rs(0x0f,0);p.rs(0xab,1);p.rs(0x13,2);p.rs(0x14,2);p.rs(0x07,0);p.rs(0x0e,0);
     p.rs(0x16,1);p.rs(0xa8,0xf);p.rs(0x89,0);p.rs(0x1c,0);
-    bright_4152e0(p);
-    blur_415630(p);
-    composite_415ed0(p);
+    // Port (stereo): the bright pass, blur and composite once per eye, each from
+    // that eye's copy into that eye only; one composite over both eyes put the
+    // left eye's glow at the wrong place in the right eye.
+    const unsigned eyes=p.s.captured_eyes==2u&&d.stereo_eyes()>1?2u:1u;
+    for(unsigned eye=0;eye<eyes;++eye){
+        struct Eye{Pass& p;unsigned eye,eyes;
+            Eye(Pass& o,unsigned e,unsigned n):p(o),eye(e),eyes(n){if(eye==1)std::swap(p.s.copy_8a8c14,p.s.copy_right);if(eyes==2)p.d.set_stereo_eye(int(eye));}
+            ~Eye(){if(eyes==2)p.d.set_stereo_eye(-1);if(eye==1)std::swap(p.s.copy_8a8c14,p.s.copy_right);}} at{p,eye,eyes};
+        bright_4152e0(p);
+        blur_415630(p);
+        composite_415ed0(p);
+    }
     for(std::uint32_t k=0;k<4;++k)d.set_texture(k,0);
     d.set_pixel_shader(0);
     p.rs(0x1b,1);p.rs(0x89,1);

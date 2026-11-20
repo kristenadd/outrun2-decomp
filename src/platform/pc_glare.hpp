@@ -29,6 +29,10 @@ struct PcGlareState {
     std::uint32_t copy_8a8c14{},bright_8a8c10{},blur_8a8c68[2]{};   // 640x480 A8R8G8B8 render targets
     std::uint32_t ps_8a8c70{},ps_8a8c64{},ps_8a8c0c{},ps_8a8c60{};   // 622348 / 622428 / 6224B4 / 6224D0
     std::uint32_t current_8a8c08{};          // the texture the composite shows
+    // Port (visionOS stereo): the right eye's copy of the scene (made on first use);
+    // the capture and the glare run once per eye (PcD3D9Device::set_stereo_eye).
+    std::uint32_t copy_right{};
+    unsigned captured_eyes{};                // eyes 414E50 copied this frame (1 or 2)
     bool unavailable{};                      // the device cannot create them: the glare stays off
     bool captured{};                         // 414E50 copied the scene this frame
     std::uint32_t runs{},copies{},skipped{};
