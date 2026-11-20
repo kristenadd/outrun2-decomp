@@ -19,6 +19,10 @@ public:
     void set_depth_stencil_surface(std::uint32_t) override;
     void unlock_rect(std::uint32_t) override;
     void release(std::uint32_t) override;
+    void query_issue(std::uint32_t,std::uint32_t) override;
+    bool stretch_rect(std::uint32_t,std::uint32_t,std::uint32_t) override;
+    void set_rhw_full_canvas(bool on) override{rhw_full_canvas_=on;}
+    std::uint32_t query_get_data(std::uint32_t,std::uint32_t&) override;
     std::uint8_t* lock(std::uint32_t,std::uint32_t,std::uint32_t,std::uint32_t) override;
     void begin_frame();
     void end_frame();
@@ -87,6 +91,7 @@ private:
     bool pipelined_{};
     bool msaa_live_{};   // the back buffer is the multisampled scene target (begin_frame .. finish_scene)
     bool ui_rect_{},fxaa_{},scene_finished_{},batch_rhw_{};   // batch_rhw_: the batch came from pretransformed vertices
+    bool rhw_full_canvas_{};   // set_rhw_full_canvas
     bool scene_in_ui_rect_{};   // 3D draws too go in the 4:3 rectangle (set_scene_in_ui_rect)
     float stereo_separation_{},stereo_convergence_{};
     bool stereo_live_{},gpu_frames_{};

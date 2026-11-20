@@ -246,6 +246,10 @@ and leaves (that's the original game's design, not a bug).
 - `OR2_HOST_FAULTS=1` (Mac host): caught faults of ported code on stderr.
 - `OR2_HD_TEXTURES=<0..16>`: texture-pack scale cap (overrides `hd_textures=`; 0 = off).
 - `OR2_MAC_SCREENSHOT_DIR` / `OR2_MAC_SCREENSHOT_FRAME`: dump frames (Mac).
+  `OR2_MAC_SCREENSHOT_RANGE=a-b` dumps every presented frame a..b (BMP at the window's pixels;
+  autoplay runs are deterministic, so two runs with one switch changed compare frame by frame).
+- `OR2_HOST_SCREEN_ASPECT=<w/h>` (Mac): act as a fixed screen of that aspect, so ASPECT RATIO
+  offers FULL SCREEN as on iOS (with `fit_screen=1` in options.ini). iPad mini 6: 1.5228.
   Frontend menus come out **blank white** in these dumps; use the simulator's
   `xcrun simctl io <id> screenshot` or ask the user instead.
 
@@ -725,6 +729,127 @@ it. Parallel autoplay runs: pass `--home=<dir>` (saves in `<dir>/SaveGame`,
 Right ×2, A ×3, Right, A ×2. Autoplay:
 `script=400-403:A,520-523:RIGHT,640-643:RIGHT,760-763:A,880-883:A,1000-1003:A,1120-1123:RIGHT,1240-1243:A,1360-1363:A,1700-7400:ZR`
 (race at about frame 1573).
+
+## Sun, lens flare and glare (2026-11-18, not yet confirmed by the owner)
+
+**Lens flare** (sun pass `40CBC0`, `race_course_passes.cpp`) was ported but never
+showed. Four causes, all fixed:
+- `lens_flare_offset.bin` is in `Media/`, the PC reads `\common\` (the PC bug
+  OutRun2006Tweaks' `FixLensFlarePath` patches): now `\common\` then `\media\`.
+  `[flare]` under `OR2_TRACE`.
+- The renderer global `740C98` (screen y scale, `.data` 1.0) was 0: the sun's
+  screen y was divided by 0, so it was never "on screen" (`PcRenderGlobals`).
+- **The course environment was never applied in races**: `CourseEnvironmentRuntime`
+  (START's `44AA80` records) had no per-frame caller, so the sun record kept
+  defaults (range `899CC4` = 0: the sun sat at the camera). The renderer's
+  `44A8DF` update now runs over the course records
+  (`PcSceneRenderer::update_course_environment`, bound by `game_host`), which also
+  gives the race the **course's own sun and fog** (and stage blends). Watch for
+  lighting / fog changes the owner may notice.
+- Occlusion queries: Metal had none (the base device answers "pending"), and the
+  sun's occlusion object `570010` is an **indexed triangle fan** (type 6), which
+  neither device drew. Metal queries now sum the per-draw visibility counts
+  between BEGIN and END, delivered when the command buffer completes; both
+  devices draw indexed fans.
+- **Strength depends on anti-aliasing, as on the PC.** The sun's visibility
+  `95AEF8` is occlusion *samples* / `73E2AC` (11500, raised only once a ratio
+  passes 0.22, capped at 0.22). MSAA multiplies the samples: at the OutRun2SP
+  start (16:9, 1920x1080) AA off gives 1437 samples (0.125, flare 0.034), MSAA 4x
+  5748 (0.22, flare 0.059). The owner's PC reference shots are anti-aliased.
+  **Port change (owner's call):** Metal reports query samples as a 2560x1440, 4x MSAA
+  target would count them (the owner's modded Windows build: Tweaks sets 2560x1440,
+  antialiasing 2), scaled by MSAA, resolution and eye count, so the start reaches 0.22
+  on every device and setting (1920x1080 AA off: 10204 samples). The software device is
+  unscaled.
+- **Edge fade depends on resolution too (fixed, 2026-11-19).** `40CBC0` divides the sun's
+  screen position (640x480 basis, camera `+B0` / `+B4`) by `740C94` / `740C98`, which the
+  PC sets to width / 640 and height / 480 (`40EAED`). At the reference's 2560x1440 (4.0,
+  3.0) the sun counts as near the centre, so the flare isn't faded at the edges; at 1.0
+  the ghosts were ~2.4x weaker (start: flare 0.059 instead of 0.141) and invisible. The
+  sun pass now uses 4.0 / 3.0 (the global stays 1.0 for everything else). The green
+  ring left of the car at the OutRun2SP start then matches the owner's shot.
+- **Car brightness strobing (owner, iPad, 2026-11-19; fixed, confirmed by the owner on the iPad).** The car's
+  sun light (record `899CD8`) is scaled by its light rate `+58` (`46BD30`), which `4A45F0`
+  sets from the road polygon's baked corner shades (`43D130`, root `780160`). The port read
+  that table from the wrong place: `CourseCollisionPack::pc_coli0200` starts with a 4-byte
+  size prefix, and the PC roots (`43DC06`) are `header + [header + field]` with the header
+  after it. Reading `data + [data + 0x30]` gave another table (noise, the "repeating start
+  shade" the owner saw), which the course lighting (diffuse 0.6) made a strobe. Fixed with
+  `pc_coli0200_section` (player car shade, its surface codes `+0x24` for the wall code, and
+  traffic shade, which all had it). Checked against the owner's PC video (OutRun2SP start,
+  ZR held): per-frame car red change 1.15 mean / 5.0 p95 vs the PC's 1.22 / 3.7 (was 5.8 /
+  34.7). `OR2_HOST_CAR_SHADE=1` logs `[car-shade]` (mean red of the car's pixels, every
+  frame) for such comparisons. Port option `car_shade=0` keeps `+58` at 1.0 (no road shade).
+  Also ported on the way: Tweaks' `FixIncorrectShading` (`fix_incorrect_shading=`, default
+  1): double-sided lighting kinds 2 / 3 link the `VSULT_DOUBLE_*` fragments (cutscene
+  characters, some stage models; the player car doesn't use them).
+- **Sky / whole-screen flicker with the glare on (owner, iPad and Mac, 2026-11-19; fixed, confirmed
+  by the owner on the iPad).** The bloom switched fully on and off for stretches of
+  13 to 37 frames (presented frames, glare on minus glare off: +2 then exactly 0). Cause: the
+  Metal device folds the constant `D3DRS_DEPTHBIAS` into clip z, and a bias left set by an
+  earlier draw (-1.06e-5) pushed the glare composite (`415ED0`, a pretransformed quad at z 0,
+  depth off) out of the clip volume. D3D9 biases after clipping, so on the PC it never removes a
+  draw. The bias is now folded in only while `ZENABLE` is on with a depth surface
+  (`metal_d3d9.mm` `flush`). Not the sun: its glow follows each occlusion result as on the PC
+  (checked in the disassembly and against the owner's video: the PC's glow shrinks when palm
+  fronds cover the sun), and an eased visibility tried first was taken out again.
+  `OR2_HOST_SKY_SHADE=1` logs `[sky-shade]` (blue sky level and the top band's mean, every
+  frame), but it reads the 3D frame, which missed this; compare presented frames instead
+  (`OR2_MAC_SCREENSHOT_RANGE`, below). The probe frame numbers equal the autoplay input frames.
+- The sun pass also draws with the projection's near plane at 0.05 (Tweaks'
+  `FixZBufferPrecision` does this around `40BE70`); no visible change measured.
+- Trap when tracing: the first frames of a race have the flare at strength 0 (no
+  occlusion result yet), so traces capped at the first N draws show alpha 0.
+  Ghost positions match the reference (checked with the visibility forced to 1).
+  The ghosts' strength is the flare material's diffuse alpha (`4056D0` →
+  colour record `+0C` → c18), so they stay faint. `OR2_SUN_TRACE=1` logs `[sun]`
+  screen position, samples / calibration and strengths every 30 passes.
+
+**Glare / bloom** (`414E50` / `414F00`, new `src/platform/pc_glare.cpp`). On the
+PC it is gated by `95AF09`, the second byte of the `DX/WINDOWED` value, so the
+retail game never ran it (the Hi-Res folder's Tweaks DLL does **not** restore it;
+only the flare path). Ported natively: bright pass `4152E0` (`ps 622348`, glow
+record `8A8C18..8A8C5C` from `4160F0`), `[8A8C40]-1` blur passes `415630`
+(`622428`, blend factor `[8A8C4C]`), composite `415ED0` (`6224B4`, blend from
+`6237F0`, usually screen). Port option `glare=1` in options.ini (**default on** since the
+exposure restoration below, 2026-11-19; it was off while it washed out),
+`OR2_GLARE=0/1`; `[glare]` lines under `OR2_TRACE`. Device additions:
+`stretch_rect` / `get_back_buffer` (Metal: a pass, the MSAA scene resolved first,
+the left eye in stereo), `D3DBLEND_BLENDFACTOR` (14/15), drawing with no depth
+surface, `set_rhw_full_canvas` (the composite covers the widescreen canvas).
+**Look:** the bright pass keys on the back buffer's alpha, and opaque geometry
+writes alpha 1 (sky 0), so on many stretches (OutRun2SP Palm Beach) the road and
+buildings bloom to near white; that follows the PC code and data, with no
+reference to compare against. The warm road glow in the owner's Tweaks shots (Legend) is the
+sun pass's own full-screen glow sprite `570008` and the course lighting, not this pass.
+**Why it washes out, and how Tweaks fixed it** (OutRun2006Tweaks `RestoreSkyGlow`,
+`src/hooks_graphics.cpp`, 2026-10, newer than the owner's DLL). Frame alpha is meant to be
+an HDR *exposure* per material (`clamp(((intensity+1)*0.25)*glow_param[1]*255)`, 63 for
+ordinary scenery), written by the alpha-op fragment for key `10101230`/`4C00` (stage 4,
+`c7.a`). On PC that fragment is **empty** in both tables (`61F240` entry 0 → `61ED30`,
+`61F2B0` → `61F184`, checked), so opaque scenery keeps texture alpha 255 and blooms.
+Tweaks' fixes: (1) that entry → `mul r0.a, r0.a, c7.a` (ps_1_4: `r4.a`); (2) the alpha-ref
+compare / reassert immediates `40B027` / `40B039` 0x80 → 1, and per draw that writes the
+exposure, `ALPHAREF = exposure / 2` (hook on `40AF80`, exposure from `410F4F`);
+(2c) `408F56` `and al,1` → `xor al,al` (no material keeps its real alpha); (3) during
+races the frame clear's alpha = `0.25 * [8A8C18] * 255` (D3D9 blends alpha with colour
+factors; that value is the blend's fixed point); (4) `95AF09` = 1, glow targets sized
+screen / `SkyGlowFactor` (4) with the extract / blur quads, two-step reduce, blur offsets
+× width/640. The port's linker (`pixel_shader_40b200`) reads the same tables, but its
+shaders run as pre-translated EXE fragments (`pc_shader_split`, generators), so (1) needs
+a port fragment added to `tools/generate_pc_shaders.py` and the Metal / GLSL output.
+**Ported 2026-11-19** (all only with the glare on, so `glare=0` renders as before):
+`PORT_BLOBS` in `generate_pc_shaders.py` (ps11 `ps11_60`, ps14 `ps14_44`, addresses
+`F0000000` / `F0000040`, tokens emitted inline), linked by `pixel_shader_40b200` for
+key `10101230`/`4C00`; `apply_pixel_40af80` sets `ALPHAREF` 1, or half the material's
+exposure (`g_material_exposure`, from `410DD0`) when the block writes it; `skip_final`
+(408F56) is 0; `frame_begin_448db0` seeds the clear alpha in the race modes (0D, 10, 12,
+13, 14, 1B, 22, 23). Not ported: Tweaks' glow buffers at screen / 4 and two-step reduce
+(the port keeps 640x480 targets, close to Tweaks' 640x360 at 2560x1440; its blur offsets
+over 640 equal Tweaks' width/640 scaling). To regenerate the shaders without the pinned
+EXE, feed the generator the cache image (`Image.u32` over the decompressed
+`OR2006C2C.cache`, base 0x400000); it reproduces the committed files byte for byte.
+Switch / PS5 shader outputs changed too (new blobs) but were not built here.
 
 ## Outstanding issues
 

@@ -1608,6 +1608,10 @@ void ps14_43(Ps14State& s){ // 61F218
     wmask(s.R[0],t0,7);
     wmask(s.R[0],t1,8);
 }
+void ps14_44(Ps14State& s){ // F0000040
+    V4 t0=mul(swz(s.R[4],3,3,3,3),swz(s.PC[7],3,3,3,3));
+    wmask(s.R[4],t0,8);
+}
 void ps11_0(Ps11State& s){ // 61E7C4
     V4 t0=s.VC[0];
     wmask(s.R[0],t0,15);
@@ -1985,12 +1989,16 @@ void ps11_59(Ps11State& s){ // 623DA8
     wmask(s.R[0],t4,7);
     wmask(s.R[0],t5,8);
 }
+void ps11_60(Ps11State& s){ // F0000000
+    V4 t0=mul(swz(s.R[0],3,3,3,3),swz(s.PC[7],3,3,3,3));
+    wmask(s.R[0],t0,8);
+}
 }
 const PcShaderBlobFn<VsState> PcShaderBlobFns_vs[73]={vs_0,vs_1,vs_2,vs_3,vs_4,vs_5,vs_6,vs_7,vs_8,vs_9,vs_10,vs_11,vs_12,vs_13,vs_14,vs_15,vs_16,vs_17,vs_18,vs_19,vs_20,vs_21,vs_22,vs_23,vs_24,vs_25,vs_26,vs_27,vs_28,vs_29,vs_30,vs_31,vs_32,vs_33,vs_34,vs_35,vs_36,vs_37,vs_38,vs_39,vs_40,vs_41,vs_42,vs_43,vs_44,vs_45,vs_46,vs_47,vs_48,vs_49,vs_50,vs_51,vs_52,vs_53,vs_54,vs_55,vs_56,vs_57,vs_58,vs_59,vs_60,vs_61,vs_62,vs_63,vs_64,vs_65,vs_66,vs_67,vs_68,vs_69,vs_70,vs_71,vs_72};
-const PcShaderBlobFn<Ps14State> PcShaderBlobFns_ps14[44]={ps14_0,ps14_1,ps14_2,ps14_3,ps14_4,ps14_5,ps14_6,ps14_7,ps14_8,ps14_9,ps14_10,ps14_11,ps14_12,ps14_13,ps14_14,ps14_15,ps14_16,ps14_17,ps14_18,ps14_19,ps14_20,ps14_21,ps14_22,ps14_23,ps14_24,ps14_25,ps14_26,ps14_27,ps14_28,ps14_29,ps14_30,ps14_31,ps14_32,ps14_33,ps14_34,ps14_35,ps14_36,ps14_37,ps14_38,ps14_39,ps14_40,ps14_41,ps14_42,ps14_43};
-const PcShaderBlobFn<Ps11State> PcShaderBlobFns_ps11[60]={ps11_0,ps11_1,ps11_2,ps11_3,ps11_4,ps11_5,ps11_6,ps11_7,ps11_8,ps11_9,ps11_10,ps11_11,ps11_12,ps11_13,ps11_14,ps11_15,ps11_16,ps11_17,ps11_18,ps11_19,ps11_20,ps11_21,ps11_22,ps11_23,ps11_24,ps11_25,ps11_26,ps11_27,ps11_28,ps11_29,ps11_30,ps11_31,ps11_32,ps11_33,ps11_34,ps11_35,ps11_36,ps11_37,ps11_38,ps11_39,ps11_40,ps11_41,ps11_42,ps11_43,ps11_44,ps11_45,ps11_46,ps11_47,ps11_48,ps11_49,ps11_50,ps11_51,ps11_52,ps11_53,ps11_54,ps11_55,ps11_56,ps11_57,ps11_58,ps11_59};
-std::uint32_t PcShaderBlobTokens[3452]{};
-const PcShaderBlob PcShaderBlobs[177]={
+const PcShaderBlobFn<Ps14State> PcShaderBlobFns_ps14[45]={ps14_0,ps14_1,ps14_2,ps14_3,ps14_4,ps14_5,ps14_6,ps14_7,ps14_8,ps14_9,ps14_10,ps14_11,ps14_12,ps14_13,ps14_14,ps14_15,ps14_16,ps14_17,ps14_18,ps14_19,ps14_20,ps14_21,ps14_22,ps14_23,ps14_24,ps14_25,ps14_26,ps14_27,ps14_28,ps14_29,ps14_30,ps14_31,ps14_32,ps14_33,ps14_34,ps14_35,ps14_36,ps14_37,ps14_38,ps14_39,ps14_40,ps14_41,ps14_42,ps14_43,ps14_44};
+const PcShaderBlobFn<Ps11State> PcShaderBlobFns_ps11[61]={ps11_0,ps11_1,ps11_2,ps11_3,ps11_4,ps11_5,ps11_6,ps11_7,ps11_8,ps11_9,ps11_10,ps11_11,ps11_12,ps11_13,ps11_14,ps11_15,ps11_16,ps11_17,ps11_18,ps11_19,ps11_20,ps11_21,ps11_22,ps11_23,ps11_24,ps11_25,ps11_26,ps11_27,ps11_28,ps11_29,ps11_30,ps11_31,ps11_32,ps11_33,ps11_34,ps11_35,ps11_36,ps11_37,ps11_38,ps11_39,ps11_40,ps11_41,ps11_42,ps11_43,ps11_44,ps11_45,ps11_46,ps11_47,ps11_48,ps11_49,ps11_50,ps11_51,ps11_52,ps11_53,ps11_54,ps11_55,ps11_56,ps11_57,ps11_58,ps11_59,ps11_60};
+std::uint32_t PcShaderBlobTokens[3460]{};
+const PcShaderBlob PcShaderBlobs[179]={
     {0x61F64CU,0xFFFE0101U,0U,0U,10U},
     {0x61F67CU,0xFFFE0101U,1U,10U,6U},
     {0x61F6A0U,0xFFFE0101U,2U,16U,22U},
@@ -2124,60 +2132,68 @@ const PcShaderBlob PcShaderBlobs[177]={
     {0x623CF0U,0xFFFF0101U,57U,3189U,17U},
     {0x623D40U,0xFFFF0101U,58U,3206U,23U},
     {0x623DA8U,0xFFFF0101U,59U,3229U,34U},
-    {0x61EDE8U,0xFFFF0104U,0U,3263U,0U},
-    {0x61EDF0U,0xFFFF0104U,1U,3263U,0U},
-    {0x61EDF8U,0xFFFF0104U,2U,3263U,3U},
-    {0x61EE0CU,0xFFFF0104U,3U,3266U,6U},
-    {0x61EE2CU,0xFFFF0104U,4U,3272U,6U},
-    {0x61EE4CU,0xFFFF0104U,5U,3278U,9U},
-    {0x61EE78U,0xFFFF0104U,6U,3287U,3U},
-    {0x61EE8CU,0xFFFF0104U,7U,3290U,6U},
-    {0x61EEACU,0xFFFF0104U,8U,3296U,9U},
-    {0x61EED8U,0xFFFF0104U,9U,3305U,12U},
-    {0x61EF10U,0xFFFF0104U,10U,3317U,0U},
-    {0x61EF18U,0xFFFF0104U,11U,3317U,4U},
-    {0x61EF30U,0xFFFF0104U,12U,3321U,3U},
-    {0x61EF44U,0xFFFF0104U,13U,3324U,4U},
-    {0x61EF5CU,0xFFFF0104U,14U,3328U,4U},
-    {0x61EF74U,0xFFFF0104U,15U,3332U,4U},
-    {0x61EF8CU,0xFFFF0104U,16U,3336U,4U},
-    {0x61EFA4U,0xFFFF0104U,17U,3340U,5U},
-    {0x61EFC0U,0xFFFF0104U,18U,3345U,9U},
-    {0x61EFECU,0xFFFF0104U,19U,3354U,3U},
-    {0x61F000U,0xFFFF0104U,20U,3357U,4U},
-    {0x61F018U,0xFFFF0104U,21U,3361U,4U},
-    {0x61F030U,0xFFFF0104U,22U,3365U,4U},
-    {0x61F048U,0xFFFF0104U,23U,3369U,4U},
-    {0x61F060U,0xFFFF0104U,24U,3373U,5U},
-    {0x61F07CU,0xFFFF0104U,25U,3378U,9U},
-    {0x61F0A8U,0xFFFF0104U,26U,3387U,4U},
-    {0x61F0C0U,0xFFFF0104U,27U,3391U,4U},
-    {0x61F0D8U,0xFFFF0104U,28U,3395U,0U},
-    {0x61F0E0U,0xFFFF0104U,29U,3395U,5U},
-    {0x61F0FCU,0xFFFF0104U,30U,3400U,5U},
-    {0x61F118U,0xFFFF0104U,31U,3405U,5U},
-    {0x61F134U,0xFFFF0104U,32U,3410U,4U},
-    {0x61F14CU,0xFFFF0104U,33U,3414U,5U},
-    {0x61F168U,0xFFFF0104U,34U,3419U,5U},
-    {0x61F184U,0xFFFF0104U,35U,3424U,0U},
-    {0x61F18CU,0xFFFF0104U,36U,3424U,3U},
-    {0x61F1A0U,0xFFFF0104U,37U,3427U,4U},
-    {0x61F1B8U,0xFFFF0104U,38U,3431U,4U},
-    {0x61F1D0U,0xFFFF0104U,39U,3435U,3U},
-    {0x61F1E4U,0xFFFF0104U,40U,3438U,3U},
-    {0x61F1F8U,0xFFFF0104U,41U,3441U,4U},
-    {0x61F210U,0xFFFF0104U,42U,3445U,0U},
-    {0x61F218U,0xFFFF0104U,43U,3445U,7U},
+    {0xF0000000U,0xFFFF0101U,60U,3263U,4U},
+    {0x61EDE8U,0xFFFF0104U,0U,3267U,0U},
+    {0x61EDF0U,0xFFFF0104U,1U,3267U,0U},
+    {0x61EDF8U,0xFFFF0104U,2U,3267U,3U},
+    {0x61EE0CU,0xFFFF0104U,3U,3270U,6U},
+    {0x61EE2CU,0xFFFF0104U,4U,3276U,6U},
+    {0x61EE4CU,0xFFFF0104U,5U,3282U,9U},
+    {0x61EE78U,0xFFFF0104U,6U,3291U,3U},
+    {0x61EE8CU,0xFFFF0104U,7U,3294U,6U},
+    {0x61EEACU,0xFFFF0104U,8U,3300U,9U},
+    {0x61EED8U,0xFFFF0104U,9U,3309U,12U},
+    {0x61EF10U,0xFFFF0104U,10U,3321U,0U},
+    {0x61EF18U,0xFFFF0104U,11U,3321U,4U},
+    {0x61EF30U,0xFFFF0104U,12U,3325U,3U},
+    {0x61EF44U,0xFFFF0104U,13U,3328U,4U},
+    {0x61EF5CU,0xFFFF0104U,14U,3332U,4U},
+    {0x61EF74U,0xFFFF0104U,15U,3336U,4U},
+    {0x61EF8CU,0xFFFF0104U,16U,3340U,4U},
+    {0x61EFA4U,0xFFFF0104U,17U,3344U,5U},
+    {0x61EFC0U,0xFFFF0104U,18U,3349U,9U},
+    {0x61EFECU,0xFFFF0104U,19U,3358U,3U},
+    {0x61F000U,0xFFFF0104U,20U,3361U,4U},
+    {0x61F018U,0xFFFF0104U,21U,3365U,4U},
+    {0x61F030U,0xFFFF0104U,22U,3369U,4U},
+    {0x61F048U,0xFFFF0104U,23U,3373U,4U},
+    {0x61F060U,0xFFFF0104U,24U,3377U,5U},
+    {0x61F07CU,0xFFFF0104U,25U,3382U,9U},
+    {0x61F0A8U,0xFFFF0104U,26U,3391U,4U},
+    {0x61F0C0U,0xFFFF0104U,27U,3395U,4U},
+    {0x61F0D8U,0xFFFF0104U,28U,3399U,0U},
+    {0x61F0E0U,0xFFFF0104U,29U,3399U,5U},
+    {0x61F0FCU,0xFFFF0104U,30U,3404U,5U},
+    {0x61F118U,0xFFFF0104U,31U,3409U,5U},
+    {0x61F134U,0xFFFF0104U,32U,3414U,4U},
+    {0x61F14CU,0xFFFF0104U,33U,3418U,5U},
+    {0x61F168U,0xFFFF0104U,34U,3423U,5U},
+    {0x61F184U,0xFFFF0104U,35U,3428U,0U},
+    {0x61F18CU,0xFFFF0104U,36U,3428U,3U},
+    {0x61F1A0U,0xFFFF0104U,37U,3431U,4U},
+    {0x61F1B8U,0xFFFF0104U,38U,3435U,4U},
+    {0x61F1D0U,0xFFFF0104U,39U,3439U,3U},
+    {0x61F1E4U,0xFFFF0104U,40U,3442U,3U},
+    {0x61F1F8U,0xFFFF0104U,41U,3445U,4U},
+    {0x61F210U,0xFFFF0104U,42U,3449U,0U},
+    {0x61F218U,0xFFFF0104U,43U,3449U,7U},
+    {0xF0000040U,0xFFFF0104U,44U,3456U,4U},
 };
-const std::size_t PcShaderBlobCount=177;
-const std::size_t PcShaderBlobCounts[3]={73,60,44}; // vs, ps11, ps14
+const std::size_t PcShaderBlobCount=179;
+const std::size_t PcShaderBlobCounts[3]={73,61,45}; // vs, ps11, ps14
+// Port fragments (PORT_BLOBS, addresses outside the EXE): tokens given here.
+const std::uint32_t PcPortBlobTokens0[4]={0x5U,0x80080000U,0x80FF0000U,0xA0FF0007U};
+const std::uint32_t PcPortBlobTokens1[4]={0x5U,0x80080004U,0x80FF0004U,0xA0FF0007U};
 // Shader bytecode tokens: copied from the player's EXE image at each blob
 // address (version token excluded, END excluded) when the image is installed.
 void build_shader_blob_tokens(){
     for(std::size_t i=0;i<PcShaderBlobCount;++i){
         const auto& b=PcShaderBlobs[i];
+        if(b.va>=0xF0000000U)continue;   // a port fragment
         std::memcpy(PcShaderBlobTokens+b.token_offset,exe_image_bytes(b.va+4u,b.token_count*4u),b.token_count*4u);
     }
+    std::memcpy(PcShaderBlobTokens+3263U,PcPortBlobTokens0,sizeof PcPortBlobTokens0);
+    std::memcpy(PcShaderBlobTokens+3456U,PcPortBlobTokens1,sizeof PcPortBlobTokens1);
 }
 OR2_EXE_BIND(build_shader_blob_tokens);
 }

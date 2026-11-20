@@ -1518,7 +1518,7 @@ void calc_light_rate_4a3d40(Bytes event,PcMatrixStack& matrices){
 
 void calc_ofs_left_lane_4a45f0(Bytes event,const PcOfsLeftLaneInputs& in){
     event.check(0,0x1f8);
-    if(in.selector==-1){event.putf(0x58,1.0f);return;}
+    if(in.selector==-1||!g_car_road_shade){event.putf(0x58,1.0f);return;}   // port option car_shade= (header)
     const CourseProbe position{event.f32(0x14),event.f32(0x18),event.f32(0x1c)};
     float best=100000.0f;
     unsigned best_index=0;

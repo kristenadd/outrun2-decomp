@@ -2,6 +2,7 @@
 #include <chrono>
 #include <cstdio>
 #include "platform/pc_scene_renderer.hpp"
+#include "platform/pc_glare.hpp"
 #include "enhancements/frame_rate.hpp"
 #include "driving/pc_d3dx.hpp"
 #include <memory>
@@ -300,6 +301,10 @@ bool PcSceneRenderer::invoke(std::uint32_t callback,std::uint32_t,std::uint32_t,
         c.update_44a8df=[this]{
             driving::Bytes vehicle(nullptr,0),camera(nullptr,0);
             if(!vehicle_camera||!vehicle_camera(vehicle,camera))throw std::runtime_error("44A8DF needs the shared car and camera");
+            if(course_environment){
+                const auto b=course_environment();
+                if(b.records&&b.world&&b.flags_7d28b0&&b.phase_7d28c8&&b.records->initialized()&&update_course_environment(b,vehicle,camera))return;
+            }
             update_environment(vehicle,camera);};
         c.bridge_49eed0=[]()->std::uint32_t{throw std::runtime_error("44A890 table-0 gate needs the 49EED0 bridge");};
         c.timer_49b2d0=[this]()->std::uint16_t{
@@ -345,6 +350,27 @@ void PcSceneRenderer::with_environment(Bytes vehicle,Bytes camera,
     fn(f,no_course,ec);
     time_7d2934_=ec.time_7d2934;duration_7d28d8_=ec.duration_7d28d8;environment_.phase_7d28c8=ec.phase_7d28c8;
     push_lists();
+}
+// 44A8DF over the course's records (CourseEnvironmentRuntime): the PC runs it on
+// the same globals this renderer keeps (899B98 lights, 7D3A10 fog, 7D2934 time,
+// 7D26D0 / 7D28E0 saved records, 7D2D58), so they go in and come back out.
+// False (the frame untouched) when the course is not ready for it.
+bool PcSceneRenderer::update_course_environment(const CourseEnvironmentBinding& b,driving::Bytes vehicle,driving::Bytes camera){
+    CourseEnvironmentLiveState live{};
+    live.time_7d2934=time_7d2934_;live.duration_7d28d8=duration_7d28d8_;
+    live.saved_sun_7d26d0=saved_sun_7d26d0_;live.saved_fog_7d28e0=saved_fog_7d28e0_;
+    live.fog_7d3a10=environment_.fog_7d3a10;live.nearest_7d2d58=nearest_7d2d58_;
+    static_assert(sizeof live.lights_899b98<=sizeof environment_.lights_899b98,"light table size");   // 899B98..89A138
+    std::memcpy(live.lights_899b98.data(),environment_.lights_899b98.data(),live.lights_899b98.size());
+    std::string error;
+    if(!b.records->update_frame(vehicle,camera,*b.world,driving::PcEnvironmentTransition{},*b.flags_7d28b0,*b.phase_7d28c8,live,&error)){
+        ++course_environment_failures;last_error="44A8DF course environment: "+error;return false;}
+    time_7d2934_=live.time_7d2934;duration_7d28d8_=live.duration_7d28d8;
+    saved_sun_7d26d0_=live.saved_sun_7d26d0;saved_fog_7d28e0_=live.saved_fog_7d28e0;
+    environment_.fog_7d3a10=live.fog_7d3a10;nearest_7d2d58_=live.nearest_7d2d58;
+    std::memcpy(environment_.lights_899b98.data(),live.lights_899b98.data(),live.lights_899b98.size());
+    environment_.flags_7d28b0=*b.flags_7d28b0;environment_.phase_7d28c8=*b.phase_7d28c8;
+    ++course_environment_updates;return true;
 }
 void PcSceneRenderer::update_environment(driving::Bytes vehicle,driving::Bytes camera){
     with_environment(vehicle,camera,[](driving::PcEnvironmentFrame& f,const driving::CourseCollisionTables& primary,driving::PcEnvironmentBlendContext& ec){
@@ -570,6 +596,7 @@ void PcSceneRenderer::render_frame(driving::PcEventControlState& events,std::uin
         [](void* u){render_lights_reset_410740(*static_cast<Ctx*>(u)->self->flush_);},
         [](void* u,std::uint8_t* l){render_light_add_4107a0(*static_cast<Ctx*>(u)->self->flush_,Bytes(l,0x94));}};
     PcFrameInputs in{};in.game_mode_78026c=mode_78026c;in.screen_740c94=1.f;in.screen_740c98=1.f;
+    in.glare_95af09=pc_glare_enabled()?1u:0u;   // port: the PC's 95AF09 is never set (pc_glare.hpp)
     for(unsigned k=0;k<16;++k)in.matrix_7d2da0[k]=(k%5u)==0u?1.f:0.f;
     if(course_effects)course_effects(in.course_work_79f5ec,in.course_flags);
     PcFrameServices sv{[this](std::uint32_t pc,std::uint32_t arg){if(trace)trace("leaf",pc);

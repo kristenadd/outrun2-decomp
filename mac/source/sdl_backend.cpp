@@ -62,7 +62,10 @@ float SdlDisplay::screen_aspect()const{
     if(!renderer_||SDL_GetRendererOutputSize(renderer_,&w,&h)<0||w<=0||h<=0)return 0;
     return float(std::max(w,h))/float(std::min(w,h));   // the game is landscape only
 #else
-    return 0;
+    // OR2_HOST_SCREEN_ASPECT=<w/h> (testing): act as a fixed screen of that aspect, so
+    // ASPECT RATIO offers FULL SCREEN as on iOS (iPad mini 6: 1.5228).
+    static const float forced=[]{const char* v=std::getenv("OR2_HOST_SCREEN_ASPECT");return v?float(std::atof(v)):0.f;}();
+    return forced>1.f?forced:0.f;
 #endif
 }
 void SdlDisplay::clear(){require_sdl(SDL_SetRenderDrawColor(renderer_,0,0,0,255)==0);require_sdl(SDL_RenderClear(renderer_)==0);}
@@ -119,7 +122,9 @@ bool SdlDisplay::present(std::string& error){
     ++frame;
     // Capture the composed image, including the native 3D and frontend layers.
     const char* capture_frame=std::getenv("OR2_MAC_SCREENSHOT_FRAME");
-    if(const char* dir=std::getenv("OR2_MAC_SCREENSHOT_DIR");dir&&(!capture_frame||frame==std::strtoul(capture_frame,nullptr,10))){
+    // OR2_MAC_SCREENSHOT_RANGE=a-b: every presented frame a..b (OR2_MAC_SCREENSHOT_FRAME: one).
+    static const char* range=std::getenv("OR2_MAC_SCREENSHOT_RANGE");static unsigned ra=0,rb=0;if(range&&!rb)std::sscanf(range,"%u-%u",&ra,&rb);
+    if(const char* dir=std::getenv("OR2_MAC_SCREENSHOT_DIR");dir&&(range?(frame>=ra&&frame<=rb):(!capture_frame||frame==std::strtoul(capture_frame,nullptr,10)))){
         std::filesystem::create_directories(dir);
         int w=0,h=0;
         if(SDL_GetRendererOutputSize(renderer_,&w,&h)<0){error=SDL_GetError();return false;}

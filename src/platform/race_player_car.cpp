@@ -80,13 +80,7 @@ struct Frame {
     Bytes coli_section(unsigned type,std::size_t field,std::size_t element){
         auto& world=c.start_mode.scene_owner_course_world;
         if(!world.lane_loaded(type))return Bytes(nullptr,0);
-        const auto& pack=world.lane(type);
-        if(pack.pc_coli0200.size()<0x40)return Bytes(nullptr,0);
-        const Bytes h(const_cast<std::uint8_t*>(pack.pc_coli0200.data()),pack.pc_coli0200.size());
-        const std::size_t off=h.u32(field);
-        const std::size_t n=std::size_t(pack.pc_layout.polygon_count)*element;
-        if(off>h.size()||n>h.size()-off)return Bytes(nullptr,0);
-        return h.sub(off,n);
+        return pc_coli0200_section(world.lane(type),field,element);
     }
     Bytes surface_codes(unsigned type){return coli_section(type,0x24,1);}
 };

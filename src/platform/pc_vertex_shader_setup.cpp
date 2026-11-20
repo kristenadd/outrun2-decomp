@@ -171,6 +171,10 @@ std::vector<std::uint32_t> link_vertex_shader_40e140(std::uint32_t c){
     code[0]=w(0x73f004u+(c&7u)*8u);decl[0]=w(0x73f008u+(c&7u)*8u);
     code[1]=w(0x73f02cu+((c>>3)&3u)*8u);decl[1]=w(0x73f030u+((c>>3)&3u)*8u);
     code[2]=w(0x73f044u+((c>>5)&0xfu)*4u);
+    if(g_pc_fix_incorrect_shading){   // port: Tweaks' FixIncorrectShading (header)
+        if(code[2]==0x61fbe8u)code[2]=0x61fb48u;
+        else if(code[2]==0x61fdc8u)code[2]=0x61fc88u;
+    }
     nd=2;nc=3;
     const auto a=(c>>9)&0xfu;
     if(a){

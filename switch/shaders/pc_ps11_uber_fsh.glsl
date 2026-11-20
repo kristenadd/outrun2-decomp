@@ -426,6 +426,10 @@ void f59(){ // 623DA8
     R[0].xyz=(t4).xyz;
     R[0].w=(t5).w;
 }
+void f60(){ // F0000000
+    vec4 t0=((R[0]).wwww*(PC[7]).wwww);
+    R[0].w=(t0).w;
+}
 void run(int id){switch(id){
 case 0:f0();break;
 case 1:f1();break;
@@ -487,6 +491,7 @@ case 56:f56();break;
 case 57:f57();break;
 case 58:f58();break;
 case 59:f59();break;
+case 60:f60();break;
 default:break;}}
 void main(){
     R[0]=vec4(0.0);R[1]=vec4(0.0);for(int k=0;k<4;++k){T[k]=vec4(0.0);M3[k]=0.0;}TC[0]=in_t0;TC[1]=in_t1;TC[2]=in_t2;TC[3]=in_t3;

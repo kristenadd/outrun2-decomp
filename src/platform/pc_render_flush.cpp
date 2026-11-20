@@ -1,3 +1,4 @@
+#include <cstdio>
 #include "platform/pc_render_flush.hpp"
 #include "driving/pc_x87.hpp"
 #include "driving/pc_d3dx.hpp"
@@ -7,6 +8,7 @@
 #include "platform/pc_vertex_shader_setup.hpp"
 #include "system/perf.hpp"
 #include "platform/pc_pmt_records.hpp"
+#include "platform/pc_glare.hpp"
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
@@ -35,6 +37,9 @@ constexpr u32 Unknown=0xfffffffeu,None=0xffffffffu;
 using namespace pmt_records;
 DrawEntry& entry(std::array<u32,15>& e){return *reinterpret_cast<DrawEntry*>(e.data());}
 
+// The last material's exposure (410DD0's clamped alpha), for the glare
+// restoration's alpha reference (Tweaks' MaterialExposure).
+u32 g_material_exposure=1;
 struct Flush {
     PcFlushContext& c;
     PcD3D9Device& d;
@@ -317,6 +322,7 @@ struct Flush {
         const X alpha=((X(m[17])+1.0f)*0.25f)*f32(px.alpha_scale)*255.0f;
         u32 a8=u32(ftol(alpha));
         if(a8<1u)a8=1;else if(a8>0xffu)a8=0xff;
+        g_material_exposure=a8;   // the exposure the glare restoration's alpha reference follows
         combiner_constants_40b4b0(0,4,a8<<24);
     }
     // Light API 410740 / 410710 / 4107A0 (410810 directional, 4109C0 spot,
@@ -500,12 +506,29 @@ struct Flush {
             if((colour_arg&0xf0u)==0x50u)continue;
             append_matching(t,v14?0x61f440u:0x61f320u,0x18,pipeline_word(b.colour_op,i),&colour_arg);
             const auto alpha_arg=pipeline_word(b.alpha_arg,i);
+            if(pc_glare_enabled()&&pipeline_word(b.alpha_op,i)==ExposureAlphaOp&&alpha_arg==ExposureAlphaArg){
+                // Port (glare restoration, OutRun2006Tweaks' RestoreSkyGlow): the table's
+                // entry 0 for this key has an empty fragment on PC; the exposure write
+                // alpha *= c7.a goes there (port fragments in generate_pc_shaders.py).
+                if(v14)t.insert(t.end(),{0x5u,0x80080004u,0x80ff0004u,0xa0ff0007u});
+                else t.insert(t.end(),{0x5u,0x80080000u,0x80ff0000u,0xa0ff0007u});
+                continue;
+            }
             append_matching(t,v14?0x61f2b0u:0x61f240u,9,pipeline_word(b.alpha_op,i),&alpha_arg);
         }
         for(u32 a=v14?0x61f21cu:0x61edc8u;;a+=4){const auto v=exe_u(a);t.push_back(v);if(v==0xffffu)break;}
         // D3DXDisassembleShader on failure only feeds the debug output.
         shader.pixel_shader=d.create_pixel_shader(t.data());
         g.pixel_shaders_95aeec.push_back({hash,shader.pixel_shader});
+    }
+    // The exposure write (alpha-op key, second word) and whether the bound
+    // combiner block emits it (40B200 links the slots below the count).
+    static constexpr u32 ExposureAlphaOp=0x10101230u,ExposureAlphaArg=0x4c00u;
+    bool writes_exposure(){
+        auto& b=px.block;
+        for(u32 i=0;i<(b.slots&0xfu);++i)
+            if((pipeline_word(b.colour_arg,i)&0xf0u)!=0x50u&&pipeline_word(b.alpha_op,i)==ExposureAlphaOp&&pipeline_word(b.alpha_arg,i)==ExposureAlphaArg)return true;
+        return false;
     }
     // 40AF80: apply the pixel pipeline (combiner shader, or a fixed shader
     // for mode 89BC20 != 0).
@@ -522,7 +545,11 @@ struct Flush {
             }
             if(!px.alpha_test)return;
             rs(RS_COLORWRITEENABLE,skip_final?px.colour_write_rgb:px.colour_write);
-            rs(RS_ALPHAREF,0x80);
+            if(!pc_glare_enabled()){rs(RS_ALPHAREF,0x80);return;}
+            // Port (glare restoration): alpha holds the material's exposure, so the
+            // reference 0x80 (40B023 / 40B038) would fail every opaque draw. 1, and for
+            // a shader writing the exposure half of it, where the console's MUX cut.
+            rs(RS_ALPHAREF,writes_exposure()?std::max(1u,g_material_exposure/2u):1u);
             return;
         }
         if(px.applied_mode==px.mode)return;
@@ -713,7 +740,9 @@ struct Flush {
             material_colours_410dd0(bank.system,colours+mat.colour_index*0x48u,ambient_pass);
             mc.colour_index=mat.colour_index;mc.object_key=object_key;
         }
-        const std::uint8_t skip_final=std::uint8_t((mat.layer[0].flags>>8)&1u);
+        // 408F56: a material keeping its real alpha skips stage 4 (no exposure write);
+        // port glare restoration: none does (Tweaks' and al,1 -> xor al,al).
+        const std::uint8_t skip_final=pc_glare_enabled()?std::uint8_t(0):std::uint8_t((mat.layer[0].flags>>8)&1u);
         auto& sh=g.shader();
         if(std::uint8_t(sh.skip_final_word)!=skip_final){sh.set_skip_final(skip_final);px.dirty=1;}
         apply_pixel_40af80();
@@ -899,6 +928,10 @@ PcRenderGlobals::PcRenderGlobals(){
     for(const auto& [base,size]:spans)ranges.push_back({base,size,std::vector<std::uint32_t>(size/4,0)});
     build_table();
     w(0x740c9c)=pc_shader_data_u32(0x740c9c); // static .data flag (never written by code)
+    // 740C98: the screen height scale (.data 1.0; the port keeps the 640x480
+    // frame, as PcFrameInputs). Zero made the sun pass (40CBC0) divide its
+    // screen y by 0, so the sun and its lens flare were never on screen.
+    w(0x740c98)=pc_shader_data_u32(0x740c98);
 }
 void PcRenderGlobals::build_table(){
     table_.clear();if(ranges.empty()||ranges.size()>=0xffu)return;

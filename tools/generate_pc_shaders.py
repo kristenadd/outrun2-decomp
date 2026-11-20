@@ -55,7 +55,24 @@ class Image:
         raise ValueError(hex(va))
 
 
+# Port-only fragments, appended after the EXE's so no existing blob index moves.
+# The alpha-op entry 0 of the pixel combiner tables (key 10101230 / 4C00, the HDR
+# exposure write, 61F240 / 61F2B0) has an empty fragment on PC, so opaque scenery
+# keeps texture alpha 255 and the glare (414F00) blooms everything. These are the
+# fragments OutRun2006Tweaks' RestoreSkyGlow puts there: alpha *= c7.a (the stage-4
+# constant holding the material's exposure). Used only with the glare restoration
+# (pc_render_flush.cpp, pixel_shader_40b200). Addresses outside the EXE.
+PORT_BLOBS = [
+    (0xF0000000, [0xFFFF0101, 0x00000005, 0x80080000, 0x80FF0000, 0xA0FF0007, 0x0000FFFF]),  # mul r0.a, r0.a, c7.a
+    (0xF0000040, [0xFFFF0104, 0x00000005, 0x80080004, 0x80FF0004, 0xA0FF0007, 0x0000FFFF]),  # mul r4.a, r4.a, c7.a
+]
+
+
 def blobs(img):
+    return exe_blobs(img) + PORT_BLOBS
+
+
+def exe_blobs(img):
     out = []
     va = BLOB_RANGE[0]
     while va < BLOB_RANGE[1]:
@@ -450,12 +467,16 @@ vec4 sample_vspec(int n,vec3 nrm,vec3 eye){vec3 r=2.0*nrm*dot(nrm,eye)/dot(nrm,n
         cpp.append('const PcShaderBlobFn<%s> PcShaderBlobFns_%s[%d]={%s};' % (state, kind, len(names), ','.join(names)))
     blob_lines = []
     token_lines = []
+    port_copies = []   # (offset, body) of the port fragments (not in the EXE)
+    port_vas = {va for va, _ in PORT_BLOBS}
     offset = 0
     for kind in ('vs', 'ps11', 'ps14'):
         for i, (va, toks) in enumerate(kinds[kind]):
             body = toks[1:-1]
             blob_lines.append('    {0x%XU,0x%08XU,%dU,%dU,%dU},' % (va, toks[0], i, offset, len(body)))
             token_lines.append(','.join('0x%XU' % t for t in body))
+            if va in port_vas:
+                port_copies.append((offset, body))
             offset += len(body)
     # Tokens are not emitted: they are copied from the player's EXE image.
     cpp.append('std::uint32_t PcShaderBlobTokens[%d]{};' % max(offset, 1))
@@ -465,7 +486,13 @@ vec4 sample_vspec(int n,vec3 nrm,vec3 eye){vec3 r=2.0*nrm*dot(nrm,eye)/dot(nrm,n
     cpp.append('const std::size_t PcShaderBlobCount=%d;' % len(blob_lines))
     cpp.append('const std::size_t PcShaderBlobCounts[3]={%d,%d,%d}; // vs, ps11, ps14' % (
         len(kinds['vs']), len(kinds['ps11']), len(kinds['ps14'])))
-    cpp.append("// Shader bytecode tokens: copied from the player's EXE image at each blob\n// address (version token excluded, END excluded) when the image is installed.\nvoid build_shader_blob_tokens(){\n    for(std::size_t i=0;i<PcShaderBlobCount;++i){\n        const auto& b=PcShaderBlobs[i];\n        std::memcpy(PcShaderBlobTokens+b.token_offset,exe_image_bytes(b.va+4u,b.token_count*4u),b.token_count*4u);\n    }\n}\nOR2_EXE_BIND(build_shader_blob_tokens);")
+    port = ['// Port fragments (PORT_BLOBS, addresses outside the EXE): tokens given here.']
+    for k, (off, body) in enumerate(port_copies):
+        port.append('const std::uint32_t PcPortBlobTokens%d[%d]={%s};' % (k, len(body), ','.join('0x%XU' % t for t in body)))
+    cpp.append('\n'.join(port))
+    copies = ''.join('    std::memcpy(PcShaderBlobTokens+%dU,PcPortBlobTokens%d,sizeof PcPortBlobTokens%d);\n' % (off, k, k)
+                     for k, (off, body) in enumerate(port_copies))
+    cpp.append("// Shader bytecode tokens: copied from the player's EXE image at each blob\n// address (version token excluded, END excluded) when the image is installed.\nvoid build_shader_blob_tokens(){\n    for(std::size_t i=0;i<PcShaderBlobCount;++i){\n        const auto& b=PcShaderBlobs[i];\n        if(b.va>=0xF0000000U)continue;   // a port fragment\n        std::memcpy(PcShaderBlobTokens+b.token_offset,exe_image_bytes(b.va+4u,b.token_count*4u),b.token_count*4u);\n    }\n" + copies + "}\nOR2_EXE_BIND(build_shader_blob_tokens);")
     cpp.append('}')
     with open(os.path.join(root, 'src/platform/pc_shader_programs_generated.cpp'), 'w', newline='\n') as f:
         f.write('\n'.join(cpp) + '\n')

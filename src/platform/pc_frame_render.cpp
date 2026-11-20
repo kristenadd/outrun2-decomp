@@ -1,5 +1,7 @@
 #include "enhancements/frame_rate.hpp"
 #include "platform/pc_frame_render.hpp"
+#include "platform/pc_glare.hpp"
+#include <algorithm>
 #include "driving/pc_x87.hpp"
 #include <cmath>
 #include <cstring>
@@ -17,14 +19,28 @@ constexpr std::uint32_t kOne=0x3f800000u;
 void frame_clear_40ec70(PcFlushContext& c,const PcFrameState& s,std::uint32_t target){
     c.device.clear(6u+(target!=0u?1u:0u),s.clear_colour_89bd5c,1.f,0);
 }
-void frame_begin_448db0(PcFlushContext& c,PcFrameState& s,const PcFrameInputs&){
+void frame_begin_448db0(PcFlushContext& c,PcFrameState& s,const PcFrameInputs& in){
     c.device.get_viewport(s.viewport_7d25f8.data());
     s.backbuffer_7d25ec=c.device.get_render_target(0);
     s.depth_7d25f4=c.device.get_depth_stencil_surface();
     s.current_colour_7d25e8=s.backbuffer_7d25ec;s.current_depth_7d2610=s.depth_7d25f4;
     // (The 79FCCF scan of the layer targets that follows ends at the clear
     // on every path.)
+    // Port (glare restoration, OutRun2006Tweaks' RestoreSkyGlow): in a race the
+    // clear's alpha is the stage's exposure 0.25 * [8A8C18]. D3D9 blends alpha
+    // with the colour factors (srcA*srcA + dstA*(1-srcA)), and that value is the
+    // blend's fixed point; it also covers pixels no sky draws (the sky is drawn
+    // with depth off, transparent scenery writes RGB only).
+    const auto saved=s.clear_colour_89bd5c;
+    const auto mode=in.game_mode_78026c;
+    const bool race=mode==0x0du||mode==0x10u||mode==0x12u||mode==0x13u||mode==0x14u||mode==0x1bu||mode==0x22u||mode==0x23u;
+    if(race&&pc_glare_enabled()){
+        const float exposure=0.25f*c.g.f(0x8a8c18u);
+        const std::int32_t a=std::max(0,std::min(255,std::int32_t(exposure*255.0f)));
+        s.clear_colour_89bd5c=(saved&0x00ffffffu)|(std::uint32_t(a)<<24);
+    }
     frame_clear_40ec70(c,s,1);
+    s.clear_colour_89bd5c=saved;
 }
 void frame_targets_448ed0(PcFlushContext& c,PcFrameState& s,std::uint8_t flags_79fccf,std::uint32_t layer){
     const auto& l=s.layers.at(layer);

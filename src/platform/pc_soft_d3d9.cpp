@@ -29,6 +29,47 @@ PcSoftD3D9Device::PcSoftD3D9Device(std::uint32_t w,std::uint32_t h):width_(w),he
     back_width_=w;back_height_=h;
 }
 void PcSoftD3D9Device::add_ref(std::uint32_t handle){if(auto* o=object(handle))++o->refs;}
+// StretchRect over the CPU targets (R,G,B,A bytes): the back buffer, or a
+// texture surface's level (in colour_ while it is the render target).
+bool PcSoftD3D9Device::stretch_rect(std::uint32_t source,std::uint32_t dest,std::uint32_t filter){
+    if(source==dest)return false;
+    auto pixels=[&](std::uint32_t h,std::vector<std::uint8_t>*& v,std::uint32_t& w,std::uint32_t& ht)->bool{
+        if(h==BackBuffer){v=colour_target_==BackBuffer?&colour_:&back_colour_;w=back_width_;ht=back_height_;}
+        else{
+            auto* o=object(h);if(!o||o->kind!=KSurface||!o->parent)return false;
+            if(colour_target_==h){v=&colour_;w=width_;ht=height_;}
+            else{
+                auto* t=object(o->parent);
+                if(!t||o->face>=t->rgba.size()||o->level>=t->rgba[o->face].size())return false;
+                v=&t->rgba[o->face][o->level];w=o->width;ht=o->height;
+            }
+        }
+        const std::size_t n=std::size_t(w)*ht*4;
+        if(!w||!ht)return false;
+        if(v->size()!=n)v->assign(n,0);
+        return true;};
+    std::vector<std::uint8_t>* src=nullptr;std::vector<std::uint8_t>* dst=nullptr;std::uint32_t sw=0,sh=0,dw=0,dh=0;
+    if(!pixels(source,src,sw,sh)||!pixels(dest,dst,dw,dh))return false;
+    const std::vector<std::uint8_t> in=*src;   // a copy: source and destination may share storage
+    for(std::uint32_t y=0;y<dh;++y)for(std::uint32_t x=0;x<dw;++x){
+        std::uint8_t* out=dst->data()+(std::size_t(y)*dw+x)*4;
+        const float u=(float(x)+0.5f)*float(sw)/float(dw)-0.5f,v=(float(y)+0.5f)*float(sh)/float(dh)-0.5f;
+        if(filter!=2u||(sw==dw&&sh==dh)){
+            const std::uint32_t sx=std::min(sw-1,std::uint32_t(std::max(0.f,std::floor(u+0.5f)))),sy=std::min(sh-1,std::uint32_t(std::max(0.f,std::floor(v+0.5f))));
+            std::memcpy(out,in.data()+(std::size_t(sy)*sw+sx)*4,4);continue;
+        }
+        const float fu=std::max(0.f,u),fv=std::max(0.f,v);
+        const std::uint32_t x0=std::min(sw-1,std::uint32_t(fu)),y0=std::min(sh-1,std::uint32_t(fv));
+        const std::uint32_t x1=std::min(sw-1,x0+1),y1=std::min(sh-1,y0+1);
+        const float ax=fu-float(x0),ay=fv-float(y0);
+        for(unsigned c=0;c<4;++c){
+            auto at=[&](std::uint32_t px,std::uint32_t py){return float(in[(std::size_t(py)*sw+px)*4+c]);};
+            const float top=at(x0,y0)+(at(x1,y0)-at(x0,y0))*ax,bottom=at(x0,y1)+(at(x1,y1)-at(x0,y1))*ax;
+            out[c]=std::uint8_t(std::lround(std::clamp(top+(bottom-top)*ay,0.f,255.f)));
+        }
+    }
+    return true;
+}
 std::uint32_t PcSoftD3D9Device::create_occlusion_query(){
     queries_.push_back({});return QueryBase+std::uint32_t(queries_.size()-1u);
 }
@@ -197,7 +238,7 @@ std::uint32_t PcSoftD3D9Device::draw_indexed_primitive(std::uint32_t type,std::i
     auto vertex=[&](std::uint32_t i)->const Vertex*{
         auto it=cache.find(i);if(it!=cache.end())return &it->second;
         Vertex v{};if(!shade_vertex(i,base,v))return nullptr;return &cache.emplace(i,v).first->second;};
-    const std::size_t total=type==5?std::size_t(count)+2:type==4?std::size_t(count)*3:0;
+    const std::size_t total=type==5||type==6?std::size_t(count)+2:type==4?std::size_t(count)*3:0;   // 6: triangle fan (the sun's occlusion disc 570010)
     if(!total||(std::size_t(start)+total)*2>ib->bytes.size())return 1;
     note_dip_state(count);
     if(hash_draws)hash_draw(1,{type,std::uint32_t(base),min_index,vertices,start,count});
@@ -221,6 +262,7 @@ std::uint32_t PcSoftD3D9Device::draw_indexed_primitive(std::uint32_t type,std::i
     for(std::uint32_t p=0;p<count;++p){
         std::uint32_t a,b,c;
         if(type==5){a=index(start+p);b=index(start+p+1);c=index(start+p+2);if(p&1)std::swap(a,b);}
+        else if(type==6){a=index(start);b=index(start+p+1);c=index(start+p+2);}
         else{a=index(start+p*3);b=index(start+p*3+1);c=index(start+p*3+2);}
         const Vertex* va=vertex(a);const Vertex* vb=vertex(b);const Vertex* vc=vertex(c);
         if(!va||!vb||!vc)return 1;
@@ -379,6 +421,9 @@ void PcSoftD3D9Device::raster(const Vertex* v,unsigned n){
                         case 5:return pc_shader::v4(colour.w);case 6:return pc_shader::v4(1-colour.w);case 7:return pc_shader::v4(dst.w);case 8:return pc_shader::v4(1-dst.w);
                         case 9:return dst;case 10:return {1-dst.x,1-dst.y,1-dst.z,1-dst.w};
                         case 11:{const float k=std::fmin(colour.w,1-dst.w);return {k,k,k,1};}
+                        case 14:case 15:{   // BLENDFACTOR / INVBLENDFACTOR: RS 0xC1 (ARGB)
+                            const std::uint32_t b=render[0xc1];const V4 k{((b>>16)&255)/255.f,((b>>8)&255)/255.f,(b&255)/255.f,(b>>24)/255.f};
+                            return f==14?k:V4{1-k.x,1-k.y,1-k.z,1-k.w};}
                         default:return {1,1,1,1};}};
                 const V4 fs=factor(render[d3d9::RS_SRCBLEND]),fd=factor(render[d3d9::RS_DESTBLEND]);
                 const V4 a=pc_shader::mul(colour,fs),b=pc_shader::mul(dst,fd);

@@ -55,6 +55,11 @@ constexpr std::size_t CourseCollisionQuadStride=64u;
 // run topology. Failure leaves the previous pack intact.
 bool parse_pc_coli0200(const std::uint8_t* data,std::size_t size,
                        CourseCollisionPack& pack,std::string* error=nullptr);
+// A per-polygon table of the COLI0200 header as the PC roots it (43DC06): the
+// header follows pc_coli0200's 4-byte size prefix, and the root is
+// header + [header + field] (+0x24 surface bytes 780170, +0x30 lane rates
+// 780160), polygon_count * element bytes. Empty when the pack has no such table.
+driving::Bytes pc_coli0200_section(const CourseCollisionPack& pack,std::size_t field,std::size_t element);
 // Short-lived, read-only views; no cached native/guest pointers survive a
 // pack copy or move. Invalid/unopened packs throw before exposing any views.
 driving::CourseCollisionTables course_collision_tables(

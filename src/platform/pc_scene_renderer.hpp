@@ -17,6 +17,7 @@
 #include "driving/pc_camera.hpp"
 #include "driving/pc_race_camera.hpp"
 #include "platform/frontend_vehicle_data.hpp"
+#include "platform/course_environment_runtime.hpp"
 #include <map>
 #include <memory>
 #include <functional>
@@ -216,6 +217,16 @@ public:
     std::function<std::uint32_t()> mode_84a318;
     // [79F5EC] (SCN_EFC work, 0 when event 387 is closed) and its flags word for the course passes 40BD80 / 40BE70.
     std::function<void(std::uint32_t& work,std::uint32_t& flags)> course_effects;
+    // The course's environment records (44AA80 at START: sun / fog lanes, 44A940)
+    // with the START owner's 7D28B0 flags and 7D28C8 phase. When bound and
+    // initialized, the 44A8DF update runs over them (the course sun and fog,
+    // blended between stages) into this renderer's light and fog tables.
+    struct CourseEnvironmentBinding {
+        CourseEnvironmentRuntime* records{};const CourseWorldRuntime* world{};
+        std::array<std::uint32_t,6>* flags_7d28b0{};std::uint32_t* phase_7d28c8{};
+    };
+    std::function<CourseEnvironmentBinding()> course_environment;
+    std::uint32_t course_environment_updates{},course_environment_failures{};
 private:
     // 49F4C0 = 46C060 (the arcade ending's car, event 8 function 0x2D): 409F90(+B0), 469FF0(car, +11), 40A010.
     bool display_ending_car();
@@ -236,6 +247,7 @@ private:
     std::uint32_t ps_95af9c_{};bool ps_95af9c_created_{};
     bool shadow_leaf(const PcVehicleDrawCall& call,driving::Bytes car);
     void update_environment(driving::Bytes vehicle,driving::Bytes camera);
+    bool update_course_environment(const CourseEnvironmentBinding&,driving::Bytes vehicle,driving::Bytes camera);
     std::int16_t time_7d2934_{};
     float duration_7d28d8_{};
     std::array<std::uint8_t,0x1e0> saved_sun_7d26d0_{};

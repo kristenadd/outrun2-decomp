@@ -38,13 +38,13 @@ bool MetalD3D9Device::shade_cached_vertex(std::uint32_t index,std::int32_t base,
 std::uint32_t MetalD3D9Device::draw_indexed_primitive(std::uint32_t type,std::int32_t base,std::uint32_t min_index,std::uint32_t vertices,std::uint32_t start,std::uint32_t count){
     (void)min_index;(void)vertices;batch_.clear();
     auto* ib=object(indices);if(!ib)return 1;
-    const std::size_t total=type==5?std::size_t(count)+2:type==4?std::size_t(count)*3:0;
+    const std::size_t total=type==5||type==6?std::size_t(count)+2:type==4?std::size_t(count)*3:0;   // 6: triangle fan (the sun's occlusion disc 570010)
     if(!total||(std::size_t(start)+total)*2>ib->bytes.size())return 1;
     note_dip_state(count);if(count_only)return 0;
     if(!targets_consistent()){errors.push_back("draw with the depth surface smaller than the render target");return 1;}
     auto* decl=object(declaration);auto* vs=object(vertex_shader);
     if(!decl||!vs||vs->kind!=3)return 1;
-    bool supported=vs->program.blobs.size()<=32&&std::getenv("OR2_MAC_CPU_VERTEX")==nullptr;
+    bool supported=type!=6&&vs->program.blobs.size()<=32&&std::getenv("OR2_MAC_CPU_VERTEX")==nullptr;   // fans: CPU vertices
     for(const auto& field:decl->elements)if(field.stream!=PcDeclEndStream&&field.type>5)supported=false;
     if(supported){
         unsigned low=65535,high=0;
@@ -76,6 +76,7 @@ std::uint32_t MetalD3D9Device::draw_indexed_primitive(std::uint32_t type,std::in
     for(unsigned p=0;p<count;++p){
         unsigned a,b,c;
         if(type==5){a=index(start+p);b=index(start+p+1);c=index(start+p+2);if(p&1)std::swap(a,b);}
+        else if(type==6){a=index(start);b=index(start+p+1);c=index(start+p+2);}
         else{a=index(start+p*3);b=index(start+p*3+1);c=index(start+p*3+2);}
         const auto* va=vertex(a);const auto* vb=vertex(b);const auto* vc=vertex(c);
         if(!va||!vb||!vc){batch_.clear();return 1;}

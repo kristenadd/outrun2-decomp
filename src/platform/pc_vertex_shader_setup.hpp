@@ -26,6 +26,14 @@ std::uint32_t material_config_40de10(driving::Bytes group,driving::Bytes materia
 // PC 40E140: links the vs_1_1 shader of a configuration word from the
 // EXE-owned fragments (tokens end with 0x0000FFFF).
 std::vector<std::uint32_t> link_vertex_shader_40e140(std::uint32_t config);
+// Port option (options.ini fix_incorrect_shading=, default on), OutRun2006Tweaks'
+// FixIncorrectShading: materials with double-sided lighting (40DE10 lighting kinds
+// 2 / 3, VSULT_TWOSIDE_LAMBERT 61FBE8 / _SPECULAR 61FDC8 from 73F04C / 73F050) link
+// the VSULT_DOUBLE_* fragments (61FB48 / 61FC88) instead. The TWOSIDE fragments
+// light with the direction flipped (dp3 normal, c37), so on the PC the player's car
+// is lit from the side facing away from the sun, and the road shade under the car
+// (4A45F0, +58 scaling the sun's diffuse) strobes the rear the camera sees.
+inline bool g_pc_fix_incorrect_shading=true;
 // 43A6F0: Adler-32 (initial value 1) as used by the shader caches.
 std::uint32_t pc_adler32_43a6f0(const std::uint8_t* data,std::size_t size);
 // Words of the embedded EXE renderer data by PC address (throws outside).

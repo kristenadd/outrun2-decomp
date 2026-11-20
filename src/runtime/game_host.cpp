@@ -14,6 +14,7 @@
 #include "platform/race_end_runtime.hpp"      // race end modes 19..35
 #include "platform/race_traffic_runtime.hpp"  // the C2C request manager (event 0x190)
 #include "platform/race_course_passes.hpp"
+#include "platform/pc_glare.hpp"
 #include "platform/pc_input_devices.hpp"     // 40BD80 / 40BE70 course passes
 #include "platform/race_manager.hpp"
 #include "platform/pc_vehicle_control.hpp"
@@ -1090,6 +1091,10 @@ void attach_pc_scene(GameHost& host,pf::NativeRuntimeContext& context,pf::Retail
         v=outrun::driving::Bytes(shared.car_799d18.data(),shared.car_799d18.size());
         c=outrun::driving::Bytes(shared.camera_79fe10.data(),shared.camera_79fe10.size());return true;};
     scene.timer_49b2d0=[&context]{return std::uint16_t(context.game_mode.start_countdown);};
+    scene.course_environment=[&context]{
+        auto& start=context.start_mode;
+        return pf::PcSceneRenderer::CourseEnvironmentBinding{&start.scene_owner_environment,&start.scene_owner_course_world,
+            &start.environment_flags_7d28b0,&start.environment_phase_7d28c8};};
     // Car stencil shadows (422550 / 422740): on (host 2026-10-01: the darkening lands
     // under and left of the car, 2.7k pixels); OR2_SHADOW_OFF (host) turns them off.
     scene.shadow_draw_enabled=std::getenv("OR2_SHADOW_OFF")==nullptr&&pf::g_pc_car_shadows;
@@ -1154,6 +1159,7 @@ void attach_pc_scene(GameHost& host,pf::NativeRuntimeContext& context,pf::Retail
         if(pc==0x42d710u&&host.presenter)host.presenter->scene_to_frame();   // 2D layer at full resolution
         if(pc==0x4bfa20u||pc==0x49a650u)return pf::native_race_end_layer_invoke(context,pc);   // 448FD0 layer callbacks
         if(pf::native_course_pass_leaf(context,scene,pc,a))return true;                // 40BD80 / 40BE70 course passes
+        if(pf::pc_glare_leaf(scene.flush_context(),pc,context.event_state.slots[397].flags,scene.frame().layer_7d25f0))return true;   // 414E50 / 414F00 glare
         if(pc==0x4c50a0u){
             // 4C50A0 (frontend, layer 8): while the transition byte 84A9FD is set, the
             // 2D layers below [68A670] are flushed before the 3D car preview draws.

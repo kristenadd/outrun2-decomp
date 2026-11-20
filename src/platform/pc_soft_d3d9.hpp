@@ -123,6 +123,8 @@ public:
     // depth/stencil tests between BEGIN and END, available at END.
     static constexpr std::uint32_t QueryBase=0xb0001000u;
     std::uint32_t create_occlusion_query()override;
+    std::uint32_t get_back_buffer()override{return BackBuffer;}
+    bool stretch_rect(std::uint32_t source,std::uint32_t dest,std::uint32_t filter)override;
     void query_issue(std::uint32_t query,std::uint32_t flags)override;
     std::uint32_t query_get_data(std::uint32_t query,std::uint32_t& samples)override;
     bool write_png(const std::string& path)const;
@@ -168,7 +170,11 @@ protected:
     std::uint32_t colour_target_{BackBuffer},depth_target_{DepthBuffer};
     std::vector<std::uint8_t> back_colour_;std::vector<float> back_depth_;std::vector<std::uint8_t> back_stencil_;
     std::uint32_t back_width_{},back_height_{};
-    bool targets_consistent()const{return depth_.size()==std::size_t(width_)*height_&&stencil_.size()==depth_.size();}
+    // No depth surface (SetDepthStencilSurface(NULL), the glare's passes): drawing
+    // is valid with Z and stencil off, as on D3D9.
+    bool targets_consistent()const{
+        if(depth_target_==0u)return !render[d3d9::RS_ZENABLE]&&!render[52]&&!render[d3d9::RS_ZWRITEENABLE];
+        return depth_.size()==std::size_t(width_)*height_&&stencil_.size()==depth_.size();}
     std::uint32_t empty_texture(bool cube,std::uint32_t width,std::uint32_t height,std::uint32_t levels,std::uint32_t format);
     std::uint32_t surface_of(std::uint32_t texture,std::uint32_t face,std::uint32_t level);
     Object* object(std::uint32_t h){return h&&h<=objects_.size()&&objects_[h-1].refs?&objects_[h-1]:nullptr;}

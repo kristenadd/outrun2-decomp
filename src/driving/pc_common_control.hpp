@@ -127,6 +127,10 @@ struct PcOfsLeftLaneInputs {
 // PC 0x004A45F0 CalcOfsLeftLane. The packed selector and two road/collision
 // service calls are explicit inputs; nearest-point selection and smoothing stay native.
 void calc_ofs_left_lane_4a45f0(Bytes event,const PcOfsLeftLaneInputs& inputs);
+// Port option (options.ini car_shade=, default on): off keeps the car's light
+// rate +58 at 1.0, as the PC does with no road under the car (selector -1), so
+// the road's baked shades never dim the car.
+inline bool g_car_road_shade=true;
 struct PcRecordGhostInputs {
     std::int32_t steering_override_active{}; // PC global queried by 0x487310
     std::int16_t steering_override{};        // PC 0x487490 low-word result

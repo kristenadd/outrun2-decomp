@@ -155,6 +155,16 @@ bool parse_pc_coli0200(const std::uint8_t* data,std::size_t size,
     return true;
 }
 
+driving::Bytes pc_coli0200_section(const CourseCollisionPack& pack,std::size_t field,std::size_t element){
+    const auto& d=pack.pc_coli0200;
+    if(d.size()<PrefixBytes+HeaderBytes||field+4u>HeaderBytes)return driving::Bytes(nullptr,0);
+    auto* header=const_cast<std::uint8_t*>(d.data())+PrefixBytes;
+    const std::size_t size=d.size()-PrefixBytes;
+    const std::size_t off=u32(header+field),n=std::size_t(pack.pc_layout.polygon_count)*element;
+    if(off>size||n>size-off)return driving::Bytes(nullptr,0);
+    return driving::Bytes(header+off,n);
+}
+
 driving::CourseCollisionTables course_collision_tables(
     const CourseCollisionPack& pack,std::uint32_t load_type){
     check_open(pack);

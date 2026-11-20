@@ -164,6 +164,16 @@ public:
     // GetData (+1C): 0 (S_OK) with the samples that passed the depth test
     // between the last begin and end (0 before the first issue), 1 (S_FALSE)
     // while the result is pending.
+    // GetBackBuffer(0, 0, MONO) (18): the back buffer surface, holding a reference.
+    virtual std::uint32_t get_back_buffer(){return 0;}
+    // StretchRect (34) without rectangles: the whole source surface (the back
+    // buffer or a render-target texture surface) into the whole destination
+    // surface, filter D3DTEXF_NONE 0 / POINT 1 / LINEAR 2. False: unsupported.
+    virtual bool stretch_rect(std::uint32_t source,std::uint32_t dest,std::uint32_t filter){(void)source;(void)dest;(void)filter;return false;}
+    // Port: pretransformed draws on the back buffer cover the whole canvas,
+    // not the widescreen device's centred 4:3 2D rectangle (the glare's
+    // full-screen composite, 415ED0). No effect on devices without that rectangle.
+    virtual void set_rhw_full_canvas(bool on){(void)on;}
     virtual std::uint32_t create_occlusion_query(){return 0;}
     virtual void query_issue(std::uint32_t query,std::uint32_t flags){(void)query;(void)flags;}
     virtual std::uint32_t query_get_data(std::uint32_t query,std::uint32_t& samples){(void)query;samples=0;return 1;}

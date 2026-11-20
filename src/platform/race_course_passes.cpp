@@ -23,6 +23,7 @@
 #include <array>
 #include <cstdio>
 #include <cstdlib>
+#include <cmath>
 #include <cstring>
 #include <stdexcept>
 namespace outrun::platform {
@@ -358,14 +359,19 @@ SunState& sun_state(){static SunState s;return s;}
 float fbits(std::uint32_t bits){float v;std::memcpy(&v,&bits,4);return v;}
 // lens_flare_offset.bin (44A630 at device setup: the file read over a
 // cleared table, then its first 0xF0 bytes copied to 7D2B18).
+// Port: the PC reads \common\, but the retail files keep it in \media\, so on
+// the PC the table stayed zero (OutRun2006Tweaks' FixLensFlarePath points the
+// read at \media\). \common\ first, as the PC, then \media\.
 void load_flare_table(NativeRuntimeContext& c){
     auto& st_=state();
     if(st_.flare_loaded)return;
     st_.flare_loaded=true;
     if(auto* store=c.event_function36.retail_assets){
         std::string error;
-        if(const auto* f=retail_asset_guest_path(*store,"\\common\\lens_flare_offset.bin",false,&error))
-            std::memcpy(st_.flare_7d2938.data(),f->data(),std::min<std::size_t>(f->size(),0x420u));
+        const auto* f=retail_asset_guest_path(*store,"\\common\\lens_flare_offset.bin",false,&error);
+        if(!f)f=retail_asset_guest_path(*store,"\\media\\lens_flare_offset.bin",false,&error);
+        if(f)std::memcpy(st_.flare_7d2938.data(),f->data(),std::min<std::size_t>(f->size(),0x420u));
+        if(std::getenv("OR2_TRACE"))std::fprintf(stderr,"[flare] lens_flare_offset.bin %s\n",f?"loaded":"not found (offsets 0)");
     }
     std::memmove(st_.flare_7d2938.data()+(0x7d2b18u-0x7d2938u),st_.flare_7d2938.data(),0xf0);
 }
@@ -597,8 +603,15 @@ void sun_flare_40cbc0(CoursePass& p,std::uint32_t object){
             }
         }
         driving::pc_matrix_pop(s);
-        sx=st(X(sx)/X(1.0f));                                                    // 740C94 = 1.0
-        sy=st(X(sy)/X(g.f(0x740c98)));
+        // 740C94 / 740C98 are the PC's resolution scales (40EAED: width / 640,
+        // height / 480), while sx / sy are on the 640x480 basis of +B0 / +B4, so on
+        // the PC the edge fade and the on-screen range depend on the resolution.
+        // Port: the owner's reference (the modded Windows game at 2560x1440: 4.0,
+        // 3.0), as the occlusion samples are (Metal query scaling). At 1.0 the
+        // flare is about 2.4x weaker whenever the sun is near the edge.
+        constexpr float ScaleX=2560.0f/640.0f,ScaleY=1440.0f/480.0f;
+        sx=st(X(sx)/X(ScaleX));
+        sy=st(X(sy)/X(ScaleY));
         if(!(X(sx)>X(-470.0f)&&X(sx)<X(470.0f)&&X(sy)>X(-440.0f)&&X(sy)<X(440.0f))){
             sun.put16(object+0x10,0);
         }else{
@@ -699,6 +712,12 @@ void sun_flare_40cbc0(CoursePass& p,std::uint32_t object){
             flare=st(X(flare)*X(visible));
             bright=st(X(bright)*X(visible));
             const float glow=st(ring*X(visible));
+            // OR2_SUN_TRACE=1: the sun's screen position and strengths every 30 passes.
+            if(static const bool trace=std::getenv("OR2_SUN_TRACE")!=nullptr;trace){
+                static unsigned n=0;
+                if(n++%30u==0u)std::fprintf(stderr,"[sun] frame %u screen %.0f,%.0f samples %u/%u visible %.3f flare %.3f bright %.3f glow %.3f\n",
+                    p.r.frames,sx,sy,samples,ss.visibility_73e2ac,visible,flare,bright,glow);
+            }
             sun.flare_40c9a0(0x57000eu,st(X(spread)*X(-1.7f)),st(X(size)*X(0.18f)),flare);
             const float small=st(X(size)*X(0.15f));
             sun.flare_40c9a0(0x570003u,st(X(spread)*X(-0.52f)),small,flare);
@@ -723,6 +742,33 @@ void sun_flare_40cbc0(CoursePass& p,std::uint32_t object){
     }
     driving::pc_matrix_pop(s);
 }
+// Port (as OutRun2006Tweaks' FixZBufferPrecision, the owner's reference build):
+// the sun pass with the projection's near plane at 0.05 instead of the camera's
+// +BC (0.1). The flare's ghosts run along an axis that ends close to the camera,
+// and at 0.1 the nearest (the large ring 57000E) is clipped away. Only the
+// depth terms of the right-handed perspective (slot 1) change; it is restored
+// after the pass, whose draws are flushed inside it.
+void sun_flare_near_plane(CoursePass& p,std::uint32_t object){
+    constexpr float Near=0.05f;
+    driving::Bytes car(nullptr,0),cam(nullptr,0);
+    auto& slot=p.fl.g.transform().slot[1];
+    const M saved=render_state::load(slot);
+    bool changed=false;
+    if(p.r.vehicle_camera&&p.r.vehicle_camera(car,cam)&&cam.size()>=0xc4){
+        const float zn=cam.f32(0xbc),zf=cam.f32(0xc0);
+        const bool perspective=saved[11]==-1.0f&&zf>zn&&zn>Near&&std::fabs(saved[10]-zf/(zn-zf))<1e-3f*std::fabs(saved[10]);
+        if(static unsigned n=0;std::getenv("OR2_SUN_TRACE")&&n++%600u==0u)
+            std::fprintf(stderr,"[sun] near plane: camera %.3f..%.0f, slot 1 m10 %.5f m11 %.1f m14 %.5f -> %s\n",zn,zf,saved[10],saved[11],saved[14],perspective?"0.05":"unchanged");
+        if(perspective){
+            M near=saved;
+            near[10]=zf/(Near-zf);near[14]=Near*zf/(Near-zf);
+            render_set_matrix_410f90(p.fl,near,1);changed=true;
+        }
+    }
+    try{sun_flare_40cbc0(p,object);}
+    catch(...){if(changed)render_set_matrix_410f90(p.fl,saved,1);throw;}
+    if(changed)render_set_matrix_410f90(p.fl,saved,1);
+}
 bool native_pass(NativeRuntimeContext& c,PcSceneRenderer& r,std::uint32_t pc,std::uint32_t arg){
     CoursePass p(c,r);
     switch(pc){
@@ -734,7 +780,7 @@ bool native_pass(NativeRuntimeContext& c,PcSceneRenderer& r,std::uint32_t pc,std
     case 0x40c8d0u:stage_end(p,3);return true;
     case 0x422820u:return shadow_map_422820(p,arg);
     case 0x422f20u:shadow_map_end_422f20(p);return true;
-    case 0x40cbc0u:sun_flare_40cbc0(p,arg);return true;
+    case 0x40cbc0u:sun_flare_near_plane(p,arg);return true;
     default:return false;
     }
 }

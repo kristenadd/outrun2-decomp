@@ -105,6 +105,27 @@ bool present_frame(RendererImpl& r){
             if(px.size()>=std::size_t(w)*h*4)for(unsigned y=h*55/100;y<h*95/100;y+=2)for(unsigned x=w*30/100;x<w*70/100;x+=2){
                 const auto* p=&px[(std::size_t(y)*w+x)*4];if(p[0]>140&&p[1]<70&&p[2]<70)++red;}
             std::fprintf(stderr,"[car-px] frame=%u red=%zu\n",r.stats.frames,red);}}
+        // OR2_HOST_CAR_SHADE=1: every frame, the mean red of the car's red pixels in
+        // the same box (the car's brightness; compare with a PC video).
+        {static const bool probe=std::getenv("OR2_HOST_CAR_SHADE")!=nullptr;
+         if(probe&&!r.start_loading_visible){
+            const auto& px=r.device->rgba();const unsigned w=r.device->presentation_width(),h=r.device->presentation_height();
+            std::size_t n=0,sum=0;
+            if(px.size()>=std::size_t(w)*h*4)for(unsigned y=h*55/100;y<h*95/100;y+=2)for(unsigned x=w*30/100;x<w*70/100;x+=2){
+                const auto* p=&px[(std::size_t(y)*w+x)*4];if(p[0]>p[1]+50&&p[0]>p[2]+50){sum+=p[0];++n;}}
+            std::fprintf(stderr,"[car-shade] frame=%u n=%zu red=%.1f\n",r.stats.frames,n,n?double(sum)/n:0.0);}}
+        // OR2_HOST_SKY_SHADE=1: every frame, the mean brightness of the blue sky pixels in
+        // the upper right of the 3D frame (sky / glow / flare flicker; compare with a PC video).
+        {static const bool probe=std::getenv("OR2_HOST_SKY_SHADE")!=nullptr;
+         if(probe&&!r.start_loading_visible){
+            const auto& px=r.device->rgba();const unsigned w=r.device->presentation_width(),h=r.device->presentation_height();
+            std::size_t n=0,sum=0;
+            if(px.size()>=std::size_t(w)*h*4)for(unsigned y=h*12/100;y<h*32/100;y+=2)for(unsigned x=w*53/100;x<w*97/100;x+=2){
+                const auto* p=&px[(std::size_t(y)*w+x)*4];if(p[2]>p[0]+40&&p[2]>p[1]+10){sum+=p[0]+p[1]+p[2];++n;}}
+            std::size_t all=0,m=0;   // the whole band across the top (the sun and its glow)
+            if(px.size()>=std::size_t(w)*h*4)for(unsigned y=h*12/100;y<h*40/100;y+=2)for(unsigned x=0;x<w;x+=2){
+                const auto* p=&px[(std::size_t(y)*w+x)*4];all+=p[0]+p[1]+p[2];++m;}
+            std::fprintf(stderr,"[sky-shade] frame=%u n=%zu level=%.1f band=%.2f\n",r.stats.frames,n,n?double(sum)/n/3.0:0.0,m?double(all)/m/3.0:0.0);}}
 #endif
         screen_request_frames_per_second(enhancements::display_rate());   // (iOS: lets ProMotion go past 60 Hz)
 #ifndef OR2_VISIONOS

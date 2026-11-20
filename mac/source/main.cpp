@@ -16,6 +16,9 @@
 #include "platform/frontend_preview_pack.hpp"
 #include "platform/native_race_effects.hpp"   // scn-efc
 #include "platform/sprite_2d_runtime.hpp"
+#include "platform/pc_glare.hpp"
+#include "platform/pc_vertex_shader_setup.hpp"
+#include "driving/pc_common_control.hpp"
 #include "platform/race_hud_runtime.hpp"
 #include "platform/race_area_runtime.hpp"
 #include "platform/pc_screen.hpp"
@@ -103,6 +106,14 @@ u64 dualsense_mapped(){u64 m=0;for(const auto& e:PadMap)m|=e.first;return m;}
 //   hd_textures=4       OutRun2006Tweaks texture packs in <game>/textures/load: the largest
 //                       scale kept (1..16; 0 = off). Default 4 on the Mac, 2 on iOS /
 //                       visionOS (memory: the HD GUI pack's frontend is ~320 MB at 2x)
+//   glare=1             the console glare (bloom) after the 3D scene (414F00, with the
+//                       exposure alpha restored as in OutRun2006Tweaks); 0 = off.
+//                       OR2_GLARE=0/1 overrides
+//   fix_incorrect_shading=1  double-sided lighting (the player's car, cutscene characters,
+//                       some stage models) lit as OutRun2006Tweaks' FixIncorrectShading
+//                       does; 0 = the PC's flipped TWOSIDE lighting
+//   car_shade=1         the car darkens under the road's baked shades (4A45F0, the
+//                       car's light rate); 0 = the car always fully lit
 struct Options {bool reflections{true},resolution_set{};unsigned render_scale{3};outrun::enhancements::VideoSettings video;} g_options;
 const char* const OptionsDefault=
     "# OutRun 2006 macOS options (edit and restart)\n"
@@ -131,6 +142,9 @@ void load_options(){
         const auto eq=l.find('=');if(l.empty()||l[0]=='#'||eq==std::string::npos)continue;
         const std::string k=l.substr(0,eq);const unsigned v=unsigned(std::strtoul(l.c_str()+eq+1,nullptr,10));
         if(k=="reflections")g_options.reflections=v!=0;
+        else if(k=="glare")outrun::platform::g_pc_glare=v!=0;
+        else if(k=="car_shade")outrun::driving::g_car_road_shade=v!=0;
+        else if(k=="fix_incorrect_shading")outrun::platform::g_pc_fix_incorrect_shading=v!=0;
         else if(k=="hd_textures"){
             if(v>16)throw std::runtime_error("hd_textures must be between 0 and 16");
             outrun::platform::texture_pack_set_max_scale(v);
@@ -412,10 +426,9 @@ int main(int argc,char** argv){
 #endif
      std::fprintf(stderr,"[frame-rate] launch rate %u fps (screen %u Hz)\n",unsigned(outrun::enhancements::display_rate()),window_hz);}
     // The OpenGL validation build keeps the PC's 640x480 4:3 at 60 Hz (no rows).
-#ifdef OR2_IOS
-    // ASPECT RATIO offers FULL SCREEN (the default) at the device screen's aspect.
+    // ASPECT RATIO offers FULL SCREEN (the default on iOS) at the device screen's aspect
+    // (0 on the Mac unless OR2_HOST_SCREEN_ASPECT is set, sdl_backend.cpp).
     video.set_screen_aspect(outrun::mac_runtime::mac_renderer_screen_aspect(renderer));
-#endif
 #ifdef OR2_VISIONOS
     // 3D DEPTH: OFF, 1 .. 5 (stereoscopic frames in the window, visionos/README.md).
     video.set_stereo_depths(5,[&renderer](std::uint32_t level){outrun::mac_runtime::mac_renderer_set_stereo_depth(renderer,level);});

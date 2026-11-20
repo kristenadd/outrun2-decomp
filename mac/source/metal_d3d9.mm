@@ -35,6 +35,8 @@ MTLStencilOperation stencil(unsigned v){
 }
 MTLBlendFactor blend(unsigned v){
     const MTLBlendFactor factors[]{MTLBlendFactorOne,MTLBlendFactorZero,MTLBlendFactorOne,MTLBlendFactorSourceColor,MTLBlendFactorOneMinusSourceColor,MTLBlendFactorSourceAlpha,MTLBlendFactorOneMinusSourceAlpha,MTLBlendFactorDestinationAlpha,MTLBlendFactorOneMinusDestinationAlpha,MTLBlendFactorDestinationColor,MTLBlendFactorOneMinusDestinationColor,MTLBlendFactorSourceAlphaSaturated};
+    if(v==14)return MTLBlendFactorBlendColor;                 // D3DBLEND_BLENDFACTOR (RS 0xC1; the glare's blur 415630)
+    if(v==15)return MTLBlendFactorOneMinusBlendColor;         // D3DBLEND_INVBLENDFACTOR
     require(v>=1&&v<=11,"Unsupported D3D9 blend factor");return factors[v];
 }
 MTLBlendOperation blend_op(unsigned v){require(v>=1&&v<=5,"Invalid D3D9 blend operation");return MTLBlendOperation(v-1);}
@@ -66,6 +68,9 @@ struct MetalD3D9Device::Impl {
     id<MTLTexture> msaa_colour,msaa_depth;   // multisampled scene targets (port enhancement)
     id<MTLRenderPipelineState> fxaa;
     id<MTLSamplerState> fxaa_sampler;
+    id<MTLRenderPipelineState> stretch;   // StretchRect (the glare's scene copies, 414E50 / 4152E0)
+    id<MTLSamplerState> stretch_point;
+    id<MTLTexture> scene_resolve;         // the multisampled scene resolved for a StretchRect from it
     id<MTLBuffer> visibility;
     // Stereo (set_stereo): the back buffer, its depth, the MSAA targets and the
     // FXAA source have `layers` layers (2: left, right eye); a pass on them
@@ -80,6 +85,14 @@ struct MetalD3D9Device::Impl {
     id<MTLBuffer> spare_visibility,spare_staging;
     std::vector<id<MTLBuffer>> spare_vertex_buffers;
     id<MTLCommandBuffer> inflight;unsigned inflight_samples{};bool inflight_done{};
+    // Occlusion queries (query_issue): a query's samples are the visibility
+    // counts of the draws between its BEGIN and END (slots first..last of the
+    // command buffer's results), delivered when that buffer completes.
+    struct QueryRange { std::uint32_t handle; unsigned first,last; double scale; };
+    std::vector<QueryRange> query_ranges,spare_query_ranges;
+    std::map<std::uint32_t,std::pair<std::uint64_t,unsigned>> query_open;   // BEGIN: command generation, first slot
+    std::map<std::uint32_t,unsigned> query_pending;                          // ENDs not completed yet
+    std::uint64_t command_generation{};
     // gpu_frames_: the back buffer's copies (3, as the queue may still read the
     // shown one while the next two are drawn) and their eyes as 2D textures.
     std::array<id<MTLTexture>,3> presents;
@@ -148,7 +161,7 @@ struct MetalD3D9Device::Impl {
         start();const unsigned flags=clear_flags;clear_flags=0;
         auto e=[command renderCommandEncoderWithDescriptor:pass(flags,clear_colour,clear_z,clear_stencil)];require(e!=nil,"Cannot encode Metal clear");[e endEncoding];
     }
-    void start(){if(!command){command=[queue commandBuffer];require(command!=nil,"Cannot allocate Metal command buffer");samples=0;std::memset(visibility.contents,0,visibility.length);vertex_offset=0;vertex_buffer_index=0;}}
+    void start(){if(!command){command=[queue commandBuffer];require(command!=nil,"Cannot allocate Metal command buffer");samples=0;++command_generation;std::memset(visibility.contents,0,visibility.length);vertex_offset=0;vertex_buffer_index=0;}}
     id<MTLBuffer> upload_vertices(const void* source,NSUInteger bytes,NSUInteger& offset){
         const NSUInteger padded=(bytes+255)&~NSUInteger(255);
         if(vertex_buffer_index<vertex_buffers.size()&&vertex_offset+padded>vertex_buffers[vertex_buffer_index].length){++vertex_buffer_index;vertex_offset=0;}
@@ -164,14 +177,21 @@ struct MetalD3D9Device::Impl {
     void finish(){
         finish_encoder();if(!command)return;
         [command commit];[command waitUntilCompleted];
-        completed(command,visibility,samples);
+        completed(command,visibility,samples,query_ranges);
         command=nil;samples=0;
     }
     // A finished command buffer: its status, GPU time and visibility counts.
-    void completed(id<MTLCommandBuffer> c,id<MTLBuffer> results,unsigned count){
+    void completed(id<MTLCommandBuffer> c,id<MTLBuffer> results,unsigned count,std::vector<QueryRange>& ranges){
         if(c.status!=MTLCommandBufferStatusCompleted)metal_error(c.error,"D3D9 Metal command");
         const auto* values=static_cast<const std::uint64_t*>(results.contents);
         for(unsigned i=0;i<count;++i)owner.pixels_shaded+=values[i];
+        for(const auto& r:ranges){
+            std::uint64_t n=0;for(unsigned i=r.first;i<r.last&&i<count;++i)n+=values[i];
+            const double scaled=std::floor(double(n)*r.scale+0.5);
+            if(r.handle-owner.QueryBase<owner.queries_.size())owner.queries_[r.handle-owner.QueryBase].result=std::uint32_t(std::min(scaled,4294967295.0));
+            if(auto it=query_pending.find(r.handle);it!=query_pending.end()&&!--it->second)query_pending.erase(it);
+        }
+        ranges.clear();
         const double elapsed=c.GPUEndTime-c.GPUStartTime;
         if(elapsed>0)gpu_ns+=std::uint64_t(elapsed*1e9);
     }
@@ -197,7 +217,7 @@ struct MetalD3D9Device::Impl {
     void drain(){
         if(!inflight)return;
         [inflight waitUntilCompleted];
-        if(!inflight_done){completed(inflight,spare_visibility,inflight_samples);if(inflight_present>=0)shown_present=inflight_present;else copy_out(spare_staging);}
+        if(!inflight_done){completed(inflight,spare_visibility,inflight_samples,spare_query_ranges);if(inflight_present>=0)shown_present=inflight_present;else copy_out(spare_staging);}
         inflight=nil;inflight_done=false;
     }
     id<MTLTexture> texture(std::uint32_t handle){
@@ -324,6 +344,10 @@ fragment float4 fxaa_fs(V v [[stage_in]],texture2d<float> scene [[texture(0)]],s
     const float3 aa=(lB<lMin||lB>lMax)?a:b;
     return float4((lMax-lMin<max(0.0312,lMax*0.125))?cM.rgb:aa,cM.a);
 }
+// StretchRect (stretch_rect): the whole source over the whole destination.
+fragment float4 stretch_fs(V v [[stage_in]],texture2d<float> source [[texture(0)]],sampler s [[sampler(0)]],constant float2& size [[buffer(0)]]){
+    return source.sample(s,v.p.xy/size,level(0.0));
+}
 )";
 MetalD3D9Device::MetalD3D9Device(unsigned w,unsigned h,unsigned scale):PcSoftD3D9Device(w,h),metal_(std::make_unique<Impl>(*this)){
     @autoreleasepool {
@@ -355,6 +379,10 @@ MetalD3D9Device::MetalD3D9Device(unsigned w,unsigned h,unsigned scale):PcSoftD3D
         m.fxaa=[m.device newRenderPipelineStateWithDescriptor:pd error:&error];if(!m.fxaa)metal_error(error,"FXAA pipeline");
         auto sd=[MTLSamplerDescriptor new];sd.minFilter=sd.magFilter=MTLSamplerMinMagFilterLinear;sd.sAddressMode=sd.tAddressMode=MTLSamplerAddressModeClampToEdge;
         m.fxaa_sampler=[m.device newSamplerStateWithDescriptor:sd];require(m.fxaa_sampler!=nil,"Cannot create FXAA sampler");
+        pd.fragmentFunction=[fxaa newFunctionWithName:@"stretch_fs"];
+        m.stretch=[m.device newRenderPipelineStateWithDescriptor:pd error:&error];if(!m.stretch)metal_error(error,"StretchRect pipeline");
+        sd.minFilter=sd.magFilter=MTLSamplerMinMagFilterNearest;
+        m.stretch_point=[m.device newSamplerStateWithDescriptor:sd];require(m.stretch_point!=nil,"Cannot create StretchRect sampler");
     }
 }
 MetalD3D9Device::~MetalD3D9Device(){try{metal_->drain();metal_->finish();}catch(const std::exception& e){std::fprintf(stderr,"Metal shutdown: %s\n",e.what());}}
@@ -421,11 +449,11 @@ void MetalD3D9Device::end_frame(){
     bool done=false;
     if(m.inflight)m.drain();
     else{   // the first frame: shown at once (and again next frame, while the pipeline fills)
-        [frame waitUntilCompleted];m.completed(frame,m.visibility,samples);
+        [frame waitUntilCompleted];m.completed(frame,m.visibility,samples,m.query_ranges);
         if(present>=0)m.shown_present=present;else m.copy_out(m.readback_staging);done=true;
     }
     m.inflight=frame;m.inflight_samples=samples;m.inflight_done=done;m.inflight_present=present;
-    std::swap(m.visibility,m.spare_visibility);std::swap(m.readback_staging,m.spare_staging);std::swap(m.vertex_buffers,m.spare_vertex_buffers);
+    std::swap(m.visibility,m.spare_visibility);std::swap(m.query_ranges,m.spare_query_ranges);std::swap(m.readback_staging,m.spare_staging);std::swap(m.vertex_buffers,m.spare_vertex_buffers);
 }
 void MetalD3D9Device::set_pipelined(bool on){
     if(!on&&pipelined_)@autoreleasepool {metal_->drain();}
@@ -460,6 +488,79 @@ std::string MetalD3D9Device::device_name()const{return metal_->device.name.UTF8S
 // The pass ends only when a target really changes (the PC sets the same one again and again).
 void MetalD3D9Device::set_render_target(std::uint32_t i,std::uint32_t h){if(h!=colour_target_)metal_->finish_encoder();PcSoftD3D9Device::set_render_target(i,h);}
 void MetalD3D9Device::set_depth_stencil_surface(std::uint32_t h){if(h!=depth_target_)metal_->finish_encoder();PcSoftD3D9Device::set_depth_stencil_surface(h);}
+// StretchRect on the GPU: a pass drawing the source over the destination
+// (linear or nearest). The back buffer as source is the scene: resolved first
+// while it is multisampled, its left eye when it is layered (stereo).
+bool MetalD3D9Device::stretch_rect(std::uint32_t source,std::uint32_t dest,std::uint32_t filter){
+    if(source==dest||dest==BackBuffer)return false;
+    auto& m=*metal_;
+    auto surface=[&](std::uint32_t h,__strong id<MTLTexture>& t,unsigned& level,unsigned& slice)->bool{
+        auto* o=object(h);if(!o||o->kind!=6||!o->parent)return false;
+        t=m.texture(o->parent);level=o->level;slice=o->face;return t!=nil;};
+    id<MTLTexture> dst=nil;unsigned dst_level=0,dst_slice=0;
+    if(!surface(dest,dst,dst_level,dst_slice))return false;
+    m.finish_encoder();m.start();
+    id<MTLTexture> src=nil;unsigned src_level=0,src_slice=0;
+    if(source==BackBuffer){
+        if(msaa_live_&&m.msaa_colour){
+            if(!m.scene_resolve||m.scene_resolve.width!=m.back.width||m.scene_resolve.height!=m.back.height){
+                auto td=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:m.back.width height:m.back.height mipmapped:NO];
+                td.storageMode=MTLStorageModePrivate;td.usage=MTLTextureUsageShaderRead|MTLTextureUsageRenderTarget;
+                m.scene_resolve=[m.device newTextureWithDescriptor:td];require(m.scene_resolve!=nil,"Cannot allocate the scene resolve");
+            }
+            auto p=[MTLRenderPassDescriptor renderPassDescriptor];
+            p.colorAttachments[0].texture=m.msaa_colour;p.colorAttachments[0].slice=0;p.colorAttachments[0].loadAction=MTLLoadActionLoad;
+            p.colorAttachments[0].storeAction=MTLStoreActionStoreAndMultisampleResolve;p.colorAttachments[0].resolveTexture=m.scene_resolve;
+            auto e=[m.command renderCommandEncoderWithDescriptor:p];require(e!=nil,"Cannot encode the scene resolve");[e endEncoding];
+            src=m.scene_resolve;
+        }else src=m.back;
+    }else if(!surface(source,src,src_level,src_slice))return false;
+    if(src.textureType!=MTLTextureType2D||src_level||src_slice)
+        src=[src newTextureViewWithPixelFormat:MTLPixelFormatRGBA8Unorm textureType:MTLTextureType2D levels:NSMakeRange(src_level,1) slices:NSMakeRange(src_slice,1)];
+    require(src!=nil,"StretchRect source view");
+    auto p=[MTLRenderPassDescriptor renderPassDescriptor];
+    p.colorAttachments[0].texture=dst;p.colorAttachments[0].level=dst_level;p.colorAttachments[0].slice=dst_slice;
+    p.colorAttachments[0].loadAction=MTLLoadActionDontCare;p.colorAttachments[0].storeAction=MTLStoreActionStore;
+    auto e=[m.command renderCommandEncoderWithDescriptor:p];require(e!=nil,"Cannot encode StretchRect");
+    const float size[2]{float(std::max<NSUInteger>(1,dst.width>>dst_level)),float(std::max<NSUInteger>(1,dst.height>>dst_level))};
+    [e setRenderPipelineState:m.stretch];[e setFragmentTexture:src atIndex:0];
+    [e setFragmentSamplerState:filter==2u?m.fxaa_sampler:m.stretch_point atIndex:0];[e setFragmentBytes:size length:sizeof size atIndex:0];
+    [e setViewport:MTLViewport{0,0,size[0],size[1],0,1}];
+    [e drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];[e endEncoding];
+    return true;
+}
+// Occlusion queries over the per-draw visibility counts (Impl::QueryRange):
+// GetData answers S_FALSE until the command buffer holding the END is done
+// (one frame later with pipelined frames, as on a PC GPU).
+void MetalD3D9Device::query_issue(std::uint32_t h,std::uint32_t flags){
+    if(h<QueryBase||h-QueryBase>=queries_.size())return;
+    auto& m=*metal_;auto& q=queries_[h-QueryBase];
+    if(flags&2u){m.start();m.query_open[h]={m.command_generation,m.samples};q.active=true;}
+    if((flags&1u)&&q.active){
+        q.active=false;
+        const auto it=m.query_open.find(h);
+        // A BEGIN in an earlier command buffer (a mid-frame finish): this buffer's draws only.
+        const unsigned first=it!=m.query_open.end()&&it->second.first==m.command_generation?it->second.second:0u;
+        if(it!=m.query_open.end())m.query_open.erase(it);
+        if(!m.command){q.result=0;return;}   // nothing recorded since: no samples
+        // Port: the samples as a 2560x1440 target with 4x MSAA would count them (the
+        // owner's reference, the modded Windows game). The sun pass (40CBC0) divides
+        // them by a fixed calibration (73E2AC 11500, raised only above 0.22), so on the
+        // PC the flare's strength depends on resolution and anti-aliasing; this makes
+        // it the reference's on every device and setting. Both eyes count when layered.
+        const double per_pixel=colour_target_==BackBuffer&&msaa_live_?double(msaa_):1.0;
+        const double pixels=double(std::max(1u,presentation_width()))*double(std::max(1u,presentation_height()));
+        const double scale=4.0/per_pixel*(2560.0*1440.0)/pixels/(m.layered?double(m.layers):1.0);
+        m.query_ranges.push_back({h,first,m.samples,scale});++m.query_pending[h];
+    }
+}
+std::uint32_t MetalD3D9Device::query_get_data(std::uint32_t h,std::uint32_t& samples){
+    samples=0;
+    if(h<QueryBase||h-QueryBase>=queries_.size())return 1u;
+    const auto& q=queries_[h-QueryBase];
+    if(q.active||metal_->query_pending.count(h))return 1u;
+    samples=q.result;return 0u;
+}
 void MetalD3D9Device::release(std::uint32_t h){
     PcSoftD3D9Device::release(h);
     // Most releases only drop a reference (set_stream_source, set_texture): nothing was destroyed.
@@ -718,6 +819,7 @@ void MetalD3D9Device::flush(){
             auto ds=[m.device newDepthStencilStateWithDescriptor:d];require(ds!=nil,"Cannot create Metal depth/stencil state");depth_state=m.depth_states.emplace(key,ds).first;
         }
         [e setRenderPipelineState:pipeline->second];[e setDepthStencilState:depth_state->second];[e setStencilReferenceValue:render[57]&255];
+        {const auto b=colour(render[0xc1]);[e setBlendColorRed:b.v[0] green:b.v[1] blue:b.v[2] alpha:b.v[3]];}   // D3DRS_BLENDFACTOR
         [e setFrontFacingWinding:MTLWindingClockwise];[e setCullMode:render[RS_CULLMODE]==CULL_NONE?MTLCullModeNone:render[RS_CULLMODE]==CULL_CCW?MTLCullModeBack:MTLCullModeFront];
         [e setTriangleFillMode:render[RS_FILLMODE]==2?MTLTriangleFillModeLines:MTLTriangleFillModeFill];
         require(render[RS_FILLMODE]==2||render[RS_FILLMODE]==3,"Metal point fill mode is not implemented");
@@ -725,7 +827,7 @@ void MetalD3D9Device::flush(){
         // UI rectangle, pretransformed (2D) draws keep a centred 4:3 area.
         const bool back=colour_target_==BackBuffer;
         double sx=back?double(presentation_width())/back_width_:1,sy=back?double(presentation_height())/back_height_:1,ox=0;
-        if(back&&ui_rect_&&(scene_in_ui_rect_||(batch_rhw_&&!native_vertices_&&!screen_fade()))){const double w=double(presentation_height())*4/3;ox=std::floor((presentation_width()-w)/2);sx=w/back_width_;}
+        if(back&&ui_rect_&&(scene_in_ui_rect_||(batch_rhw_&&!native_vertices_&&!rhw_full_canvas_&&!screen_fade()))){const double w=double(presentation_height())*4/3;ox=std::floor((presentation_width()-w)/2);sx=w/back_width_;}
         MTLViewport viewport{ox+soft_viewport_.x*sx,soft_viewport_.y*sy,soft_viewport_.w*sx,soft_viewport_.h*sy,soft_viewport_.min_z,soft_viewport_.max_z};[e setViewport:viewport];
         const unsigned left=unsigned(std::max(0.f,soft_viewport_.x)),top=unsigned(std::max(0.f,soft_viewport_.y));
         require(left<width_&&top<height_&&soft_viewport_.w>0&&soft_viewport_.h>0,"Metal viewport outside target");
@@ -735,7 +837,14 @@ void MetalD3D9Device::flush(){
         [e setScissorRect:MTLScissorRect{px(left),py(top),px(right)-px(left),py(bottom)-py(top)}];
         // Constant D3D depth bias is an absolute offset, unlike Metal's
         // format-dependent depthBias. Fold it into clip z; slope is native.
-        for(auto& v:batch_)v.pos[2]+=f(render[RS_DEPTHBIAS])*v.pos[3];
+        // Only while the depth test is on: D3D9 biases the depth after clipping,
+        // so it never removes a draw, but folded into clip z it moves geometry
+        // at z 0 or 1 out of the clip volume. A bias left set by an earlier draw
+        // (-1.06e-5 from road / shadow draws) clipped the glare's full-screen
+        // composite (z 0, depth off) for whole stretches of frames: the bloom
+        // switched on and off.
+        const float depth_bias=render[RS_ZENABLE]&&has_depth?f(render[RS_DEPTHBIAS]):0.f;
+        for(auto& v:batch_)v.pos[2]+=depth_bias*v.pos[3];
         [e setDepthBias:0 slopeScale:f(render[RS_SLOPESCALEDEPTHBIAS]) clamp:0];
         for(unsigned s=0;s<6;++s){
             auto* o=object(textures[s]);auto texture=m.texture(textures[s]);const bool cube=o&&o->kind==5&&o->texture.cube;
@@ -765,7 +874,7 @@ void MetalD3D9Device::flush(){
             for(unsigned i=0;i<4;++i)if(streams[i].buffer)[e setVertexBuffer:m.buffer(streams[i].buffer) offset:streams[i].offset atIndex:i];
             [e setVertexBuffer:m.default_vertex offset:0 atIndex:4];
             [e setVertexBytes:vs_constants.data() length:sizeof vs_constants atIndex:5];
-            const float viewport[]{soft_viewport_.w,soft_viewport_.h,f(render[RS_DEPTHBIAS]),0};
+            const float viewport[]{soft_viewport_.w,soft_viewport_.h,depth_bias,0};
             [e setVertexBytes:viewport length:sizeof viewport atIndex:6];
         }else{
             NSUInteger vertex_offset=0;

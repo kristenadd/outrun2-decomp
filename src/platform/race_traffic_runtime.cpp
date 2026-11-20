@@ -607,11 +607,7 @@ struct Run {
                 driving::Bytes rates(nullptr,0);
                 if(world.lane_loaded(type)){   // 43D130: the lane rates, section +30 of the COLI0200 header (4 bytes per polygon)
                     const auto& pack=world.lane(type);
-                    if(pack.pc_coli0200.size()>=0x40){
-                        const driving::Bytes h(const_cast<std::uint8_t*>(pack.pc_coli0200.data()),pack.pc_coli0200.size());
-                        const std::size_t off=h.u32(0x30),n=std::size_t(pack.pc_layout.polygon_count)*4u;
-                        if(off<=h.size()&&n<=h.size()-off)rates=h.sub(off,n);
-                    }
+                    rates=pc_coli0200_section(pack,0x30,4);
                 }
                 in.rates=driving::pc_lane_rates_43d130(in.selector,rates.size()?&rates:nullptr);
                 const auto& poly=tables.courses[type].polygons;
