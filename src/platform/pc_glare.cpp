@@ -232,12 +232,18 @@ void composite_415ed0(Pass& p){
     d.set_texture(0,s.current_8a8c08);
     d.set_fvf(0x444);
     d.set_pixel_shader(s.ps_8a8c0c);
-    // 744990: 0..640 x 0..480 (414CE0 scales it by 740C94 / 740C98, 1.0).
-    // Port: the quad covers the 3D viewport, the whole widescreen canvas
-    // (set_rhw_full_canvas), where the PC's 4:3 frame is 640x480.
+    // 744990: 0..640 x 0..480 (414CE0 scales it by 740C94 / 740C98, 1.0): the whole screen in
+    // screen coordinates, whatever the viewport. Port: the quad covers the whole back buffer
+    // (the widescreen canvas, set_rhw_full_canvas), the area 414E50 copied, with the viewport
+    // opened to it for the draw. Over the current viewport instead, a scene drawn in a smaller
+    // one (the goal ending's 320x240 window) got the whole screen's glow squeezed into it: a
+    // shrunken, shifted ghost of the picture.
     auto quad=exe_table(0x744990u,0xd0);
     std::uint32_t viewport[6];d.get_viewport(viewport);                       // D3DVIEWPORT9: X, Y, Width, Height are DWORDs
-    const float w=float(viewport[2]),h=float(viewport[3]),x0=float(viewport[0]),y0=float(viewport[1]);
+    std::uint32_t full[6]{viewport[0],viewport[1],viewport[2],viewport[3],viewport[4],viewport[5]};
+    {std::uint32_t bw{},bh{};if(d.back_buffer_size(bw,bh)){full[0]=full[1]=0;full[2]=bw;full[3]=bh;}}
+    const float w=float(full[2]),h=float(full[3]),x0=float(full[0]),y0=float(full[1]);
+    d.set_viewport(full);
     for(unsigned v=0;v<4;++v){
         float x,y;std::memcpy(&x,quad.data()+v*0x34,4);std::memcpy(&y,quad.data()+v*0x34+4,4);
         x=x0+x/640.0f*w;y=y0+y/480.0f*h;
@@ -246,6 +252,7 @@ void composite_415ed0(Pass& p){
     d.set_rhw_full_canvas(true);
     p.quad(quad,0x34);
     d.set_rhw_full_canvas(false);
+    d.set_viewport(viewport);
     d.set_pixel_shader(0);d.set_texture(0,0);
     p.rs_restore(0xa8);p.rs_restore(0x1b);p.rs_restore(0xab);p.rs_restore(0x13);p.rs_restore(0x14);
 }

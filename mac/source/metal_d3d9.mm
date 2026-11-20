@@ -859,7 +859,7 @@ void MetalD3D9Device::flush(){
         // UI rectangle, pretransformed (2D) draws keep a centred 4:3 area.
         const bool back=colour_target_==BackBuffer;
         double sx=back?double(presentation_width())/back_width_:1,sy=back?double(presentation_height())/back_height_:1,ox=0;
-        if(back&&ui_rect_&&(scene_in_ui_rect_||(batch_rhw_&&!native_vertices_&&!rhw_full_canvas_&&!screen_fade()))){const double w=double(presentation_height())*4/3;ox=std::floor((presentation_width()-w)/2);sx=w/back_width_;}
+        if(back&&ui_rect_&&!(batch_rhw_&&rhw_full_canvas_)&&(scene_in_ui_rect_||(batch_rhw_&&!native_vertices_&&!screen_fade()))){const double w=double(presentation_height())*4/3;ox=std::floor((presentation_width()-w)/2);sx=w/back_width_;}
         MTLViewport viewport{ox+soft_viewport_.x*sx,soft_viewport_.y*sy,soft_viewport_.w*sx,soft_viewport_.h*sy,soft_viewport_.min_z,soft_viewport_.max_z};[e setViewport:viewport];
         const unsigned left=unsigned(std::max(0.f,soft_viewport_.x)),top=unsigned(std::max(0.f,soft_viewport_.y));
         require(left<width_&&top<height_&&soft_viewport_.w>0&&soft_viewport_.h>0,"Metal viewport outside target");

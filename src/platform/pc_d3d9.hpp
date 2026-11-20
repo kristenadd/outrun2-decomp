@@ -166,6 +166,9 @@ public:
     // while the result is pending.
     // GetBackBuffer(0, 0, MONO) (18): the back buffer surface, holding a reference.
     virtual std::uint32_t get_back_buffer(){return 0;}
+    // Port: the back buffer's logical size (what a NULL-rect StretchRect from it covers); false
+    // when the device has none.
+    virtual bool back_buffer_size(std::uint32_t& width,std::uint32_t& height){(void)width;(void)height;return false;}
     // StretchRect (34) without rectangles: the whole source surface (the back
     // buffer or a render-target texture surface) into the whole destination
     // surface, filter D3DTEXF_NONE 0 / POINT 1 / LINEAR 2. False: unsupported.

@@ -62,6 +62,7 @@ public:
     void set_pixel_shader(std::uint32_t)override;
     void set_stream_source(std::uint32_t,std::uint32_t,std::uint32_t,std::uint32_t)override;
     void set_indices(std::uint32_t)override;
+    bool back_buffer_size(std::uint32_t& width,std::uint32_t& height)override{width=back_width_;height=back_height_;return width&&height;}
     std::size_t live_objects()const;
     std::size_t total_objects()const{return objects_.size();}
     // per kind: created / live (host diagnostics)

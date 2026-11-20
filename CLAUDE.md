@@ -1000,6 +1000,16 @@ over 640 equal Tweaks' width/640 scaling). To regenerate the shaders without the
 EXE, feed the generator the cache image (`Image.u32` over the decompressed
 `OR2006C2C.cache`, base 0x400000); it reproduces the committed files byte for byte.
 Switch / PS5 shader outputs changed too (new blobs) but were not built here.
+**Ghost glow in the goal endings (user, all platforms, 2026-11-20; fixed on the Mac, not yet
+confirmed).** The composite (`415ED0`) stretched the glow over the *current viewport*, but 414E50
+copies the *whole* back buffer; in the endings the 3D viewport is the 320x240 scene window, so the
+whole screen's glow (bright columns, credits text) was squeezed into it: a shrunken, shifted copy
+(goal B's temple columns showed a row of small orange glows below them). The quad now covers the
+whole back buffer (`PcD3D9Device::back_buffer_size`, the viewport opened for the draw), and Metal
+keeps the full-canvas glare quad out of the ending's 4:3 scene mapping (`scene_in_ui_rect_`). Race
+frames are byte-identical. Goal endings for testing: `OR2_HOST_GOAL_COURSE=10..14` = A..E (11 =
+the user's "Legend"); real screenshots of a bigger window (`OR2_HOST_WINDOW_RECT=0,40,1440,810`,
+`screencapture -R0,68,1440,810`), since the BMP dumps come out partly white in the endings.
 
 ## Outstanding issues
 
