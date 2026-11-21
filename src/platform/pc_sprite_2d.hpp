@@ -142,6 +142,10 @@ void pc_image_42d300(PcSprite2dState&,std::uint32_t mode,std::uint32_t token,std
 // 42CFE0 with a record the caller built (42C860 glyphs: token, left, top,
 // right, bottom, scale x/y, x, y, colour; flags 0).
 void pc_image_record_42cfe0(PcSprite2dState&,const std::array<std::uint8_t,0x48>& record,float layer);
+// 42D0C0 with a sprite record the caller built (0xB8 bytes: +8 flags, +C texture,
+// +10 1, +14 matrix, +54.. four corners (x, y, z), +84.. their u, v, +AC/+B0 sampler
+// modes), e.g. the title movie's quad of 414A40.
+void pc_sprite_record_42d0c0(PcSprite2dState&,const std::array<std::uint8_t,0xb8>& record,float layer);
 // 42C2F0(rec, token): the image table entry of a loaded bank into rec +0 (texture
 // token), +4/+8/+C/+10 (left, top, right, bottom); nothing when the bank is absent.
 void pc_image_entry_42c2f0(PcSprite2dState&,std::uint8_t* rec,std::uint32_t token);

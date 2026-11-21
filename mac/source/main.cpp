@@ -1056,5 +1056,12 @@ const bool core_passed=loader_bytes_match&&rc==0u&&ev405.function_id==36u&&ev405
     consoleExit(nullptr);
 
     // Diagnostic coverage is reported above; application errors determine exit.
-    return rc==0u&&!diag.render_failed?0:3;
+    const int code=rc==0u&&!diag.render_failed?0:3;
+#if defined(OR2_IOS)&&!defined(OR2_VISIONOS)
+    // SDL's UIKit app delegate keeps the app alive after main returns (a frozen window):
+    // the run is over (Yes in the title's quit dialog), so the process ends here.
+    // (visionOS ends it in vision_main.mm.)
+    std::exit(code);
+#endif
+    return code;
 }

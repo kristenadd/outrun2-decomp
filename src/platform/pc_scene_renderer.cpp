@@ -627,7 +627,7 @@ void PcSceneRenderer::render_frame(driving::PcEventControlState& events,std::uin
             if(r.race_area_display&&r.race_area_display(callback,work,event)){}   // race AREA/SKY hook (events 390/391)
             else if(callback==0x405830u)r.flush_alpha();
             else if(callback==0x49a650u){}
-            else if(callback==0x414a40u){}   // event 0x196 (function 0x51) Bink quad: the platform movie layer draws the open movie; with none ([95AF18] = 0) 414A40 returns
+            else if(callback==0x414a40u){if(r.movie_display)r.movie_display();}   // event 0x196 (function 0x51) Bink quad; with no movie ([95AF18] = 0) 414A40 returns
             else if(callback==0x49f500u){if(!r.display_car())++r.unported_displays[callback];}
             else if(callback==0x49f3e0u){if(!r.display_race_car())++r.unported_displays[callback];}
             else if(callback==0x49f400u){(void)r.display_headlight_49f400();}   // drawn only with the lights on

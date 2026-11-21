@@ -1,5 +1,6 @@
 #include "enhancements/frame_rate.hpp"
 #include "runtime/game_host.hpp"
+#include "platform/pc_network.hpp"
 #include "platform/bulk_fallback.hpp"
 #include "driving/pc_driving.hpp"
 #include "platform/embedded_exe_data.hpp"
@@ -368,6 +369,7 @@ void frontend_frame(GameHost& s){
             // A movie that cannot be opened stays inactive: the error is kept
             // for the log and the frontend continues without it.
             (void)s.title_movie.open(s.movie_path,s.movie_error);
+            s.movie_in_2d=false;
             s.menu_audio.stop_movie();
             s.movie_decoded_total+=s.title_movie.decoded_frames();s.movie_uploaded_frame=~0ull;
             if(s.movie_clock_reset)s.movie_clock_reset();
@@ -388,7 +390,10 @@ void frontend_frame(GameHost& s){
         s.title_movie.take_audio(s.movie_pcm);
         if(!s.render_failed&&s.title_movie.has_audio()&&!s.menu_audio.queue_movie(s.movie_pcm,s.movie_error))s.render_failed=true;
         if(!s.render_failed&&s.movie_uploaded_frame!=s.title_movie.decoded_frames()){
-            if(!p.set_movie_frame(s.title_movie.rgba().data(),s.title_movie.width(),s.title_movie.height()))s.render_failed=true;
+            // Once 414A40 draws it in the 2D layer 0 (under the welcome's PRESS ENTER), the
+            // platform's movie layer, drawn over the whole frame, stays empty.
+            if(!(s.movie_in_2d?p.set_movie_frame(nullptr,0u,0u):
+                 p.set_movie_frame(s.title_movie.rgba().data(),s.title_movie.width(),s.title_movie.height())))s.render_failed=true;
             else s.movie_uploaded_frame=s.title_movie.decoded_frames();
         }
     }
@@ -894,6 +899,12 @@ void input_sample(void* user,pf::NativeInputState& out){
     out.raw_buttons_up=pad.up;
     if(s.map_input)s.map_input(held,down,pad,out);
     else map_pad(s,out,held,down,pad.left,pad.right);
+    // 8A8CAC: the quit flag the title's quit dialog sets (Yes); the PC's main loop
+    // (417E10) ends on it. Port option: a DisableQuit build never offers the dialog.
+    if(s.runtime&&pf::native_network_mapped()&&pf::native_network_u32(0x8a8cacu)!=0u){
+        if(!out.exit_requested)std::fprintf(stderr,"[quit] the player quit from the title\n");
+        out.exit_requested=true;s.quit_requested=true;
+    }
     // Every frame (the configuration screen polls the pad outside 453BB0 too).
     if(s.runtime&&out.pc_input_layer)pf::native_pc_input_set_pad(*s.runtime,out.pc_pad);
 #if defined(OR2_HOST_HOOKS)
@@ -1150,6 +1161,11 @@ void attach_pc_scene(GameHost& host,pf::NativeRuntimeContext& context,pf::Retail
     // the platform's frontend then keeps only its glyph, image and icon layers.
     scene.sprite2d_display=[&context,&scene](std::uint32_t cb){ProfileScope prof(profile_key(ProfileDisplay,0,cb));
         return pf::native_sprite2d_display(context,scene,cb)||pf::native_race_hud_display(context,scene,cb,0u,0u);};
+    // 414A40: the title movie in the 2D layer 0, under the frontend's sprites (PRESS ENTER).
+    scene.movie_display=[&host,&context,&scene]{
+        if(!host.title_movie.active()||host.title_movie.rgba().empty())return;
+        if(pf::native_sprite2d_movie_414a40(context,scene.flush_context().device,host.title_movie.rgba().data(),
+               host.title_movie.width(),host.title_movie.height(),host.title_movie.decoded_frames()))host.movie_in_2d=true;};
     // Frame leaves: 42D710 (2D flush) and 414340 (the car reflection cube; autoplay
     // nocube=1 / OR2_NOCUBE leave it unported, as before its port).
     pf::native_car_reflection_init(scene);

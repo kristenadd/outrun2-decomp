@@ -36,6 +36,10 @@ struct NativeSprite2d {
     std::uint32_t ui_displays{},ui_glyphs{},ui_images{},ui_icons{};
     ButtonPrompts prompts;                                   // port: controller button prompt sheets
     TexturePackUi textures;                                  // port: texture pack (HD) replacements of the banks
+    // 414A40's Bink texture 8A8C04 (the title movie): the device texture, its size
+    // (95AF20 / 95AF24) and the movie frame last copied into it.
+    std::uint32_t movie_texture{},movie_width{},movie_height{};
+    std::uint64_t movie_frame{~0ull};
 };
 NativeSprite2d& native_sprite2d(NativeRuntimeContext&);
 // 755860[bank-0x20]: the SPRANI animation path of a pool bank (null outside 0x20..0x4A).
@@ -55,6 +59,12 @@ bool native_sprite2d_event(NativeRuntimeContext&,std::uint32_t callback);
 void native_sprite2d_glyph_records(NativeRuntimeContext&,PcD3D9Device&,const std::vector<FrontendGlyph>&);
 void native_sprite2d_set_frontend(NativeRuntimeContext&,const std::vector<FrontendGlyph>&,const std::vector<FrontendListImage>&,
                                   const std::vector<FrontendWindowIcon>&);
+// 414A40 (display of event 0x196): the title movie as a 2D sprite node in layer 0,
+// under the frontend's sprites (the welcome screen's PRESS ENTER). `rgba` is the
+// decoded frame (R,G,B,A bytes), copied into the movie texture when `frame` changes;
+// no movie (null): nothing, as 414A40 with [95AF18] = 0. True when it queued the quad.
+bool native_sprite2d_movie_414a40(NativeRuntimeContext&,PcD3D9Device&,const std::uint8_t* rgba,
+                                  std::uint32_t width,std::uint32_t height,std::uint64_t frame);
 // Frame renderer displays 428170 (pool) and 49E4B0 (frontend UI lists): false
 // for other callbacks.
 bool native_sprite2d_display(NativeRuntimeContext&,PcSceneRenderer&,std::uint32_t callback);

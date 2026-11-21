@@ -825,6 +825,10 @@ void pc_image_42d300(PcSprite2dState& s,std::uint32_t mode,std::uint32_t token,s
     }catch(const Fault& f){latch(s,f.pc,f.address);}
 }
 void pc_image_entry_42c2f0(PcSprite2dState& s,std::uint8_t* rec,std::uint32_t token){image_42c2f0(s,rec,token);}
+void pc_sprite_record_42d0c0(PcSprite2dState& s,const std::array<std::uint8_t,0xb8>& record,float layer){
+    Ctx c{s,nullptr,nullptr,0x42d0c0u};
+    try{queue_42d0c0(c,record.data(),layer);}catch(const Fault& f){latch(s,f.pc,f.address);}
+}
 void pc_image_record_42cfe0(PcSprite2dState& s,const std::array<std::uint8_t,0x48>& record,float layer){
     Ctx c{s,nullptr,nullptr,0x42cfe0u};
     try{queue_42cfe0(c,record.data(),layer);}catch(const Fault& f){latch(s,f.pc,f.address);}

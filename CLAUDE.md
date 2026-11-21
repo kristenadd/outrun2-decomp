@@ -1108,6 +1108,16 @@ a race. Don't chase them again unless the user reports one.
   overlay counts frames shown (not 60 Hz ticks) and lists the real settings. `OR2_TRACE`
   logs `[present] N frames/s`. Measured on the 15 Pro Max at 2342x1080 FXAA: ~119 fps while
   cool, 47–70 once warm (CPU record and GPU time per frame both about double: thermal).
+- **Title screen PRESS ENTER and quit dialog** (2026-11-21, checked on the Mac with autoplay, **not
+  yet confirmed by the user**). The welcome screen's sprite `4400D8` was drawn but the platform
+  pasted the title movie over the whole frame. The movie is now the PC's `414A40` quad (event
+  0x196): a 2D node in layer 0 under the sprites (`native_sprite2d_movie_414a40`, an X8R8G8B8
+  texture refreshed per decoded frame); the platform's movie layer stays empty once it ran.
+  Back (B / Backspace) on the title is the PC's own quit question: `465EB0(0x4B3)` /
+  `492690(0x17, …)` post it to the network layer, which opens its message dialog (screen 46,
+  `pc_network_message.inc`); Yes sets `8A8CAC`, which ends the host loop (`[quit]` line) and the
+  process (iOS: `std::exit` after main; visionOS already exits). `-DDisableQuit=ON`
+  (`OR2_DISABLE_QUIT`) builds without it: Back does nothing on the title.
 - Goal ending (mode 24, staff roll): the scene stays in its 320x240 window
   (the car reflection cube's target switch reset the viewport), centred in the
   4:3 area with a 4:3 camera in widescreen; race-end modes no longer tick the

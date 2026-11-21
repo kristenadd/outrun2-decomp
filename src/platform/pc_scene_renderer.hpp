@@ -149,6 +149,8 @@ public:
     std::function<bool(std::uint32_t callback,std::uint32_t work,std::uint32_t event_id)> race_area_display;
     // PC 2D sprite renderer: display 428170 and the frame leaf 42D710 (sprite_2d_runtime).
     std::function<bool(std::uint32_t callback)> sprite2d_display;
+    // 414A40 (event 0x196): the title movie's quad in the 2D layer 0 (sprite_2d_runtime).
+    std::function<void()> movie_display;
     std::function<bool(std::uint32_t pc,std::uint32_t arg)> leaf_hook;
     // Port profiling (optional): inclusive time of each display callback
     // (kind 0) and frame leaf (kind 1) of render_frame, in nanoseconds.

@@ -32,11 +32,16 @@ std::uint32_t frontend_welcome_control_4c5210(driving::Bytes child,const Fronten
         }else if(call(s,0x4536c0u,{1u})||call(s,0x4536c0u,{4u})){
             call(s,0x4285a0u,{child.u32(0x744u)});call(s,0x414790u,{~0u});
             child.put32(0x740u,2u);call(s,0x4413f0u,{1u});call(s,0x4249f0u,{0x40u});
-        }else if(call(s,0x4536f0u,{2u})||call(s,0x4536f0u,{8u})){
+        }
+#ifndef OR2_DISABLE_QUIT
+        // Back (ESC / B): the quit question (message 0x17, screen 46). Port option:
+        // a DisableQuit build (CMake -DDisableQuit=ON) leaves Back without effect here.
+        else if(call(s,0x4536f0u,{2u})||call(s,0x4536f0u,{8u})){
             const auto text=call(s,0x465eb0u,{0x4b3u});
             call(s,0x492690u,{0x17u,text,~0u,10u});child.put32(4u,46u);
             call(s,0x4249f0u,{0u});return 4u;
         }
+#endif
         break;
     case 2u:
         child.put32(4u,call(s,0x416380u));call(s,0x4040f0u);return 1u;

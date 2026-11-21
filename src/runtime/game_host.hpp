@@ -108,6 +108,11 @@ struct GameHost {
     std::string movie_path,movie_error;
     std::uint64_t movie_decoded_total{};
     std::uint64_t movie_uploaded_frame{~0ull};
+    // The movie went into the PC 2D queue (414A40) this movie: the platform's movie
+    // layer (drawn over the whole frame) is then left empty.
+    bool movie_in_2d{};
+    // The player chose Yes in the title's quit dialog (8A8CAC): the run ends.
+    bool quit_requested{};
     platform::NativeRuntimeContext* runtime{};
     Presenter* presenter{};
     // Ported PC renderer (SCN_ENV + frame renderer 449050) on the platform's

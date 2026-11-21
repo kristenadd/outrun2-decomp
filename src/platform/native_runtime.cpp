@@ -877,6 +877,19 @@ std::uint32_t native_welcome_call(void* user,std::uint32_t pc,
     }
     case 0x4536c0u:return state.frontend_gate_input_action==0u&&args[0]==1u?1u:0u;
     case 0x4536f0u:return state.frontend_gate_input_action==1u&&args[0]==2u?2u:0u;
+    // Back on the title: 465EB0(0x4B3) the quit question, 492690(0x17, text, -1, 10) posts it as
+    // the network layer's pending message, and the welcome opens its dialog (screen 46,
+    // pc_network_message.inc), whose Yes sets the quit flag 8A8CAC. 465EB0 answers the
+    // text id here; 492690 takes the text from the frontend table into the layer's buffer.
+    case 0x465eb0u:return count==1u?args[0]:0u;
+    case 0x492690u:{
+        const auto* text=count==4u&&state.frontend_text?state.frontend_text->get(args[1]):nullptr;
+        if(!text||!state.runtime||!native_network_mapped()){state.frontend_ui_missing_pc=pc;return 0u;}
+        constexpr std::uint32_t Buffer=0x65d00cu;                       // 492690 copies it over itself (65D00C)
+        native_network_put_string(Buffer+0x400u,text->size()>0x3ffu?text->substr(0,0x3ffu):*text);
+        std::uint32_t result=0;
+        return native_network_invoke(*state.runtime,0x492690u,0,{args[0],Buffer+0x400u,args[2],args[3]},&result)?result:0u;
+    }
     case 0x401000u:case 0x401030u:case 0x401050u:return native_music_call(state,pc,args,count);
     case 0x4040f0u:if(state.runtime)(void)native_pc_input_profile_4040f0(*state.runtime);return 0u;   // saved device assignments
     case 0x416380u:

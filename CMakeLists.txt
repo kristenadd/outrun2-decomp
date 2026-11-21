@@ -17,6 +17,12 @@ if(APPLE)
 endif()
 # x87 model (src/driving/pc_x87.hpp): the Switch build always uses the fast
 # double path; ON here builds the host/oracle with it to validate it.
+# Port option: B / ESC on the title opens the game's own quit dialog (Yes ends the app, on
+# iOS and visionOS too). -DDisableQuit=ON builds without it (Back does nothing on the title).
+option(DisableQuit "Build without the title screen's quit dialog" OFF)
+if(DisableQuit)
+    add_compile_definitions(OR2_DISABLE_QUIT=1)
+endif()
 option(OR2_X87_FAST "Use the fast Single24 x87 model on the host" OFF)
 if(OR2_X87_FAST)
     add_compile_definitions(OR2_X87_FAST=1)

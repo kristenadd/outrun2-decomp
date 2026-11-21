@@ -225,6 +225,45 @@ bool native_sprite2d_display(NativeRuntimeContext& c,PcSceneRenderer& r,std::uin
     ++o.displays;
     return true;
 }
+bool native_sprite2d_movie_414a40(NativeRuntimeContext& c,PcD3D9Device& device,const std::uint8_t* rgba,
+                                  std::uint32_t width,std::uint32_t height,std::uint64_t frame){
+    auto& o=native_sprite2d(c);
+    if(!rgba||!width||!height)return false;
+    // 414980 (control) decodes into the texture: here the host's decoded frame is copied in
+    // (X8R8G8B8: B,G,R,X bytes). The texture is the movie's size, so 95AF28 / 95AF20 = 1.
+    if(o.movie_texture&&(o.movie_width!=width||o.movie_height!=height)){device.release(o.movie_texture);o.movie_texture=0;}
+    if(!o.movie_texture){
+        o.movie_texture=device.create_texture(width,height,1u,0u,22u,1u);   // D3DFMT_X8R8G8B8, D3DPOOL_MANAGED
+        if(!o.movie_texture)return false;
+        o.movie_width=width;o.movie_height=height;o.movie_frame=~0ull;
+    }
+    if(o.movie_frame!=frame){
+        const auto surface=device.get_surface_level(o.movie_texture,0);
+        std::uint32_t pitch=0;
+        if(auto* bits=surface?device.lock_rect(surface,pitch):nullptr){
+            for(std::uint32_t y=0;y<height;++y){
+                const auto* src=rgba+std::size_t(y)*width*4u;auto* dst=bits+std::size_t(y)*pitch;
+                for(std::uint32_t x=0;x<width;++x){dst[x*4]=src[x*4+2];dst[x*4+1]=src[x*4+1];dst[x*4+2]=src[x*4];dst[x*4+3]=0xffu;}
+            }
+            device.unlock_rect(surface);
+            o.movie_frame=frame;
+        }
+        if(surface)device.release(surface);
+    }
+    // 414A40: the 0xB8 record of 42D0C0(record, layer 0): flags 0x45, the texture,
+    // an identity matrix, corners (0, 0) (0, 480) (640, 0) (640, 480) with u, v
+    // (1, 0) (1, 1) (0, 1) (0, 0) as the PC writes them, sampler modes 3 / 3.
+    std::array<std::uint8_t,0xb8> r{};
+    auto put=[&](std::size_t at,std::uint32_t v){std::memcpy(r.data()+at,&v,4);};
+    auto putf=[&](std::size_t at,float v){std::memcpy(r.data()+at,&v,4);};
+    put(4,0xffffffffu);put(8,0x45u);put(0xc,o.movie_texture);put(0x10,1u);
+    for(std::size_t at:{0x14u,0x28u,0x3cu,0x50u})putf(at,1.0f);
+    putf(0x64,480.0f);putf(0x6c,640.0f);putf(0x78,640.0f);putf(0x7c,480.0f);
+    putf(0x84,1.0f);putf(0x8c,1.0f);putf(0x90,1.0f);putf(0x98,1.0f);
+    putf(0xa4,1.0f);putf(0xa8,1.0f);put(0xac,3u);put(0xb0,3u);
+    pc_sprite_record_42d0c0(o.state,r,0.0f);
+    return true;
+}
 bool native_sprite2d_leaf(NativeRuntimeContext& c,PcSceneRenderer& r,std::uint32_t pc,std::uint32_t arg){
     if(pc!=0x42d710u)return false;
     auto& o=native_sprite2d(c);auto& fc=r.flush_context();
