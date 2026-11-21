@@ -47,6 +47,7 @@
 #include <cstdint>
 #include <stdexcept>
 #include <string>
+#include <ctime>
 
 namespace {
 namespace rt=outrun::runtime;
@@ -178,32 +179,39 @@ void load_options(){
 }
 // Touch-pad performance overlay, drawn by the native 2D flush (pc_screen.hpp).
 struct Overlay {
-    bool on{};std::uint64_t last{},sum_dt{},sum_wait{},sum_gpu_ns{};unsigned n{},toast_frames{};
+    bool on{};std::uint64_t last{},sum_dt{},sum_cpu_ns{},sum_gpu_ns{},last_cpu_ns{};unsigned n{},toast_frames{};
     std::uint32_t frames_at{};   // the renderer's frame count when the window began (frames shown, not 60 Hz ticks)
     std::string stats,toast;
 } g_overlay;
-// The overlay's last line: the 3D resolution, anti-aliasing, aspect and frame rate in use.
+// The overlay's last two lines: the 3D resolution and aspect, then anti-aliasing and frame rate.
 std::string video_settings(){
 #ifdef OR2_MAC_OPENGL
-    return "OpenGL 640x480 4:3";
+    return "640x480 4:3\nOpenGL";
 #else
     const auto* b=outrun::enhancements::video_backend();
     if(!b)return "Metal";
     const auto v=b->current();
     const char* aspect=v.fit_screen&&b->screen_aspect()>0?"FULL":v.widescreen?"16:9":"4:3";
-    return "Metal "+outrun::enhancements::resolution_label(v.resolution)+" "+outrun::enhancements::antialiasing_label(v.antialiasing)+
-        " "+aspect+" "+std::to_string(v.frame_rate)+"Hz";
+    return outrun::enhancements::resolution_label(v.resolution)+" "+aspect+"\n"+
+        outrun::enhancements::antialiasing_label(v.antialiasing)+" "+std::to_string(v.frame_rate)+"Hz";
 #endif
+}
+// CPU time the calling (game) thread has used, in nanoseconds: work only, so the waits for
+// vsync, the GPU or the headset's refresh are left out however they are made.
+std::uint64_t thread_cpu_ns(){
+    timespec t{};if(clock_gettime(CLOCK_THREAD_CPUTIME_ID,&t)!=0)return 0;
+    return std::uint64_t(t.tv_sec)*1000000000ull+std::uint64_t(t.tv_nsec);
 }
 void overlay_frame(const rt::GameHost& s,const outrun::mac_runtime::MacRenderer* renderer){
     auto& o=g_overlay;
     const std::uint64_t now=OR2_PROFILE_TICK(),freq=OR2_PROFILE_FREQ();
-    const auto wait=rt::frame_wait_ticks();rt::frame_wait_ticks()=0;
+    rt::frame_wait_ticks()=0;
+    const std::uint64_t cpu_now=thread_cpu_ns();
     if(o.last&&now>o.last){
-        o.sum_dt+=now-o.last;o.sum_wait+=std::min(wait,now-o.last);++o.n;
+        o.sum_dt+=now-o.last;o.sum_cpu_ns+=cpu_now>o.last_cpu_ns?cpu_now-o.last_cpu_ns:0;++o.n;
         if(renderer)o.sum_gpu_ns+=outrun::mac_runtime::mac_renderer_stats(*renderer).last_gpu_ns;
     }
-    o.last=now;
+    o.last=now;o.last_cpu_ns=cpu_now;
     if(o.n>=20u){
         // This runs once per 60 Hz game tick; at 90 / 120 fps a tick shows more than one
         // frame, so FPS counts the frames the renderer drew over the window instead.
@@ -212,14 +220,14 @@ void overlay_frame(const rt::GameHost& s,const outrun::mac_runtime::MacRenderer*
         const unsigned shown=renderer&&frames_now>o.frames_at?frames_now-o.frames_at:o.n;
         o.frames_at=frames_now;
         const double frame_ms=window_ms/shown;
-        const double cpu_ms=double(o.sum_dt-o.sum_wait)*1000.0/double(freq)/shown;
+        const double cpu_ms=double(o.sum_cpu_ns)/1e6/shown;   // the game thread's own CPU time per frame shown
         const double gpu_ms=double(o.sum_gpu_ns)/1e6/o.n;
         char t[512];
         std::snprintf(t,sizeof t,"FPS %.1f %.1fms\nCPU %.1fms %.0f%%\nGPU %.1fms %.0f%%\n",
             frame_ms>0?1000.0/frame_ms:0.0,frame_ms,cpu_ms,frame_ms>0?cpu_ms*100.0/frame_ms:0.0,gpu_ms,frame_ms>0?gpu_ms*100.0/frame_ms:0.0);
         o.stats=t;
         std::snprintf(t,sizeof t,"SND %ums skip %llu\n",unsigned((s.audio_output?s.audio_output->queued_frames():0u)/48u),(unsigned long long)s.audio_drops);
-        o.stats+=t;o.sum_dt=o.sum_wait=o.sum_gpu_ns=0;o.n=0;
+        o.stats+=t;o.sum_dt=o.sum_cpu_ns=o.sum_gpu_ns=0;o.n=0;
     }
     std::string text;
     if(o.on)text=o.stats+video_settings();

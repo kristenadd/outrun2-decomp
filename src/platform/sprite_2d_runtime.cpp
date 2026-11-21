@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include "platform/sprite_2d_runtime.hpp"
 #include "system/dev_hooks.hpp"
 #include "platform/native_runtime.hpp"
@@ -227,35 +228,46 @@ bool native_sprite2d_display(NativeRuntimeContext& c,PcSceneRenderer& r,std::uin
 bool native_sprite2d_leaf(NativeRuntimeContext& c,PcSceneRenderer& r,std::uint32_t pc,std::uint32_t arg){
     if(pc!=0x42d710u)return false;
     auto& o=native_sprite2d(c);auto& fc=r.flush_context();
-    // Port overlay (not original code): monospace lines right-aligned on the right edge, under the
-    // mission bubble and clear of the left HUD (progress bar, Next Stage panel), queued in the
-    // last layer (20) just before the frame's flush.
+    const auto before=o.state.draws;
+    o.state.sprite_95b218=fc.device.sprite()!=nullptr;          // D3DXCreateSprite succeeded on this device
+    pc_2d_flush_42d710(o.state,fc,fc.device.sprite(),0,arg,r.frame().layer_7d25f0);
+    // Port overlay (not original code): monospace lines right-aligned in the bottom-right corner
+    // of the whole screen, drawn after the frame's 2D in a pass of their own over the full canvas
+    // (set_rhw_full_canvas), not the centred 4:3 area the game's 2D uses in widescreen.
     if(!g_pc_overlay_text.empty()&&arg>20u){
         const auto* fonts=c.event_function36.frontend_fonts;
         if(fonts&&fonts->fonts[9].token==9u){
             const auto& font=fonts->fonts[9];
-            constexpr float Scale=0.7f;
-            std::size_t longest=0,line=0;
-            for(const char ch:g_pc_overlay_text){if(ch==10){line=0;continue;}longest=std::max(longest,++line);}
-            const int left=640-8-int(float(longest)*float(font.width)*Scale);
+            constexpr float Scale=0.7f,Margin=6.0f,RightMargin=16.0f;   // in 480-line screen pixels
+            constexpr float Step=0.8f;   // letter step: 0.8 of the font's cell (the game's spacing is wider)
+            // The full canvas stretches the 640-wide 2D space across the screen's width
+            // (2 * g_pc_view_half_width in 480-line pixels): narrower letters keep their shape.
+            const float stretch=std::max(1.0f,2.0f*g_pc_view_half_width/640.0f);
+            const float advance=float(font.width)*Scale*Step/stretch;   // per letter, in 2D units
+            std::size_t longest=0,line=0,lines=1;
+            for(const char ch:g_pc_overlay_text){if(ch==10){line=0;++lines;continue;}longest=std::max(longest,++line);}
+            const int line_height=int(float(font.height)*Scale)+3;
+            const float left=640.0f-RightMargin/stretch-float(longest)*advance;
+            const int top=int(480.0f-Margin)-int(lines)*line_height;
             // A black copy one pixel down-right first: readable on the sky and the road.
             std::vector<FrontendGlyph> glyphs;
             for(const auto [dx,colour]:{std::pair<int,std::uint32_t>{1,0xff000000u},{0,0xffffffffu}}){
-                FrontendTextStyle style;style.scale_x=Scale;style.scale_y=Scale;style.color=colour;style.mode=20u;style.flags=1u;
-                FrontendTextCursor cursor;cursor.origin_x=cursor.x=std::int16_t(left+dx);cursor.y=std::int16_t(150+dx);
+                FrontendTextStyle style;style.scale_x=Scale/stretch;style.scale_y=Scale;style.color=colour;style.mode=20u;style.flags=1u;
+                FrontendTextCursor cursor;cursor.y=std::int16_t(top+dx);
+                std::size_t column=0;
                 for(const char ch:g_pc_overlay_text){
-                    if(ch==10){cursor.x=cursor.origin_x;cursor.y=std::int16_t(cursor.y+int(float(font.height)*style.scale_y)+3);continue;}
+                    if(ch==10){column=0;cursor.y=std::int16_t(cursor.y+line_height);continue;}
+                    cursor.origin_x=cursor.x=std::int16_t(std::lround(left+float(column++)*advance)+dx);
                     FrontendGlyph g;
                     if(frontend_text_glyph_42c720(font,style,cursor,std::uint8_t(ch),g))glyphs.push_back(g);
-                    frontend_text_advance_42c5a0(font,style,cursor,std::uint8_t(ch));
                 }
             }
             native_sprite2d_glyph_records(c,fc.device,glyphs);
+            fc.device.set_rhw_full_canvas(true);
+            pc_2d_flush_42d710(o.state,fc,fc.device.sprite(),20,21,r.frame().layer_7d25f0);
+            fc.device.set_rhw_full_canvas(false);
         }
     }
-    const auto before=o.state.draws;
-    o.state.sprite_95b218=fc.device.sprite()!=nullptr;          // D3DXCreateSprite succeeded on this device
-    pc_2d_flush_42d710(o.state,fc,fc.device.sprite(),0,arg,r.frame().layer_7d25f0);
     // Port: a controller change swaps the prompt sheets here, with every layer
     // flushed (no queued node refers to the textures being replaced).
     if(arg>=Pc2dLayerCount){o.prompts.update(o.state.banks.data(),o.state.banks.size(),fc.device);o.textures.update(o.state.banks.data(),o.state.banks.size(),fc.device);}
