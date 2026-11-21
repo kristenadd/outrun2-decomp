@@ -226,6 +226,7 @@ std::uint32_t allocate_node(Ctx& c){
     auto& s=c.s;
     const auto node=Pc2dNodeBase+s.cursor_956bf4*Pc2dNodeBytes;
     if(s.cursor_956bf4<s.node_stereo_depth.size())s.node_stereo_depth[s.cursor_956bf4]=s.stereo_depth;
+    if(s.cursor_956bf4<s.node_canvas_clip.size())s.node_canvas_clip[s.cursor_956bf4]=s.canvas_clip?1u:0u;
     ++s.cursor_956bf4;++s.count_95b220;
     if(s.cursor_956bf4>=Pc2dNodeCount)s.cursor_956bf4=0;
     c.nput(node,0);c.nput(node+4,0);c.nput(node+8,0);
@@ -664,7 +665,7 @@ void image_42a0a0(Ctx& c,PcD3DXSprite* sprite,std::uint32_t rec){
 }
 }
 // ------------------------------------------------------------------ API
-PcSprite2dState::PcSprite2dState():nodes(std::size_t(Pc2dNodeCount)*Pc2dNodeBytes,0),node_stereo_depth(std::size_t(Pc2dNodeCount),0.0f),masks_986b34(std::size_t(Pc2dMaskCount)*Pc2dRecordBytes,0){
+PcSprite2dState::PcSprite2dState():nodes(std::size_t(Pc2dNodeCount)*Pc2dNodeBytes,0),node_stereo_depth(std::size_t(Pc2dNodeCount),0.0f),node_canvas_clip(std::size_t(Pc2dNodeCount),0u),masks_986b34(std::size_t(Pc2dMaskCount)*Pc2dRecordBytes,0){
     blend_9564e0={0.0f,1.0f,1.0f};
 }
 std::uint8_t* PcSprite2dState::node(std::uint32_t a){
@@ -865,7 +866,8 @@ void pc_2d_flush_42d710(PcSprite2dState& s,PcFlushContext& f,PcD3DXSprite* sprit
     if(first>=last)return;
     if(!s.sprite_95b218)sprite=nullptr;
     float stereo_depth=0.0f;                                  // the device's set_stereo_screen_depth
-    struct Reset{PcD3D9Device& d;float& v;~Reset(){if(v!=0.0f)d.set_stereo_screen_depth(0.0f);}} reset{f.device,stereo_depth};
+    bool canvas_clip=false;                                   // the device's set_rhw_canvas_clip
+    struct Reset{PcD3D9Device& d;float& v;bool& c;~Reset(){if(v!=0.0f)d.set_stereo_screen_depth(0.0f);if(c)d.set_rhw_canvas_clip(false);}} reset{f.device,stereo_depth,canvas_clip};
     for(std::uint32_t li=first;li<last;++li){
         try{
             begin_429c60(c,f,sprite,layer_7d25f0);
@@ -875,7 +877,9 @@ void pc_2d_flush_42d710(PcSprite2dState& s,PcFlushContext& f,PcD3DXSprite* sprit
                 for(auto n=c.n32(head);n;n=c.n32(n)){
                     --s.count_95b220;
                     {const auto k=(n-Pc2dNodeBase)/Pc2dNodeBytes;const float depth=k<s.node_stereo_depth.size()?s.node_stereo_depth[k]:0.0f;
-                     if(depth!=stereo_depth){stereo_depth=depth;f.device.set_stereo_screen_depth(depth);}}
+                     if(depth!=stereo_depth){stereo_depth=depth;f.device.set_stereo_screen_depth(depth);}
+                     const bool clip=k<s.node_canvas_clip.size()&&s.node_canvas_clip[k]!=0u;
+                     if(clip!=canvas_clip){canvas_clip=clip;f.device.set_rhw_canvas_clip(clip);}}
                     if(c.n32(n+0xc)==0u){
                         const auto rec=n+0x10;const auto flags=c.n32(rec+0x34);
                         if(flags&0x100u){blend_42a2b0(c,0x45);multi_42c0f0(c,rec);}     // 42C0F0 rotated / multi-texture quad

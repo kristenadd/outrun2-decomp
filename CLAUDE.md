@@ -89,6 +89,20 @@ for visionOS (`UIScreen`), so SDL2 is built with `SDL_VIDEO=OFF`
   `set_stereo_screen_depth`; the shader moves such w == 1 draws by `stereo.w` (the NDC shift of
   a 3D point at that depth, scaled for the 4:3 rectangle). Size unchanged. Markers pinned to the
   screen edge / bottom stay at zero parallax.
+- **Request sprites at their road depth** (2026-11-21, confirmed by the user on the Vision Pro): the
+  `4295D0` 3D sprites (Holly / Clarissa food, gate and answer numbers, Heart Attack hearts) tag their
+  `428AF0` draw with the point's view depth (`navi_sprite3d_4295d0`), through the same per-node path.
+  Not done: `428AC0` (`2C0006` over course objects) only has the projected z by then.
+  **Widescreen position** (same day, confirmed by the user on Do the Math): `4295D0` projected x with
+  `a0` (camera `+B0`), the PC's focal length over a 2D layer spanning the whole canvas; the port's
+  2D layer is a centred 4:3 area, so in 16:9 the sprites sat at 3/4 of their distance from the
+  centre and slid across the road when steering (mono too). It now uses `a1` for x (equal in 4:3).
+  The HUD markers over cars (place labels, rival / rank / target / LAN markers) had the same error;
+  their logic (pinning at ±290, stored positions) stays in the PC's basis and only the drawn x
+  widens (`N::hud_x`, ×a1/a0), so pinned ones sit at the screen edge as on the PC (confirmed by the
+  user, 2026-11-21). These draws and the request sprites set `set_rhw_canvas_clip` (per 2D node,
+  `node_canvas_clip`): Metal clips them by the whole canvas, not the 4:3 area (`wide` in `flush`);
+  Switch / PS5 don't implement it and still clip at the 4:3 area.
 - **Glare per eye** (2026-11-20, confirmed by the user on the Vision Pro): the glare copied the left eye
   only (StretchRect of a layered back buffer) and composited that glow over both eyes, so in
   the right eye the bloom floated beside its objects (ghosting). Now `pc_glare.cpp` captures

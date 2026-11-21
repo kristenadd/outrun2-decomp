@@ -57,9 +57,18 @@ struct N {
     std::int32_t i32(std::uint32_t a){return m.i32(a);}
     // Port (visionOS stereo): the view depth (-z) of the car the next draws mark; 0 = screen.
     float stereo_depth{};
-    struct AtDepth{N& n;AtDepth(N& o,float z):n(o){n.stereo_depth=z<0.0f?-z:0.0f;}~AtDepth(){n.stereo_depth=0.0f;}};
+    // The marker draws also may lie outside the 4:3 HUD (canvas_clip): see hud_x.
+    bool canvas_clip{};
+    struct AtDepth{N& n;AtDepth(N& o,float z):n(o){n.stereo_depth=z<0.0f?-z:0.0f;n.canvas_clip=true;}~AtDepth(){n.stereo_depth=0.0f;n.canvas_clip=false;}};
+    // Port: x (640 basis, from the centre) of a marker over a 3D point, for the port's 2D layer.
+    // The PC's 2D layer spans the whole canvas and a0 (camera +B0) is the focal length over it;
+    // the port's is a centred 4:3 area (focal length a1, square pixels). The markers' own logic
+    // (pinning at +-290, stored positions) stays in the PC's basis; only the drawn x widens, so
+    // in 16:9 a marker sits over its car and a pinned one at the screen edge, as on the PC.
+    static float hud_x(float px,float a0,float a1){return a0!=0.0f?px*(a1/a0):px;}
     void emit(const RaceHudDraw& d){
-        if(s.draws){s.draws->push_back(d);if(stereo_depth>0.0f&&s.draws->back().stereo_depth==0.0f)s.draws->back().stereo_depth=stereo_depth;}
+        if(s.draws){s.draws->push_back(d);if(stereo_depth>0.0f&&s.draws->back().stereo_depth==0.0f)s.draws->back().stereo_depth=stereo_depth;
+                    if(canvas_clip)s.draws->back().canvas_clip=true;}
         if(!s.scene_draws||!s.sprites||!s.matrices||!s.sprani||!s.blend_9564e0)return;
         const auto* a=d.args.data();
         if(d.pc==0x429530u||d.pc==0x429580u){
@@ -930,7 +939,7 @@ bool navi_rival_labels_4bad20_impl(NaviPubServices& s,std::uint32_t car){
         if(!visible)continue;
         const N::AtDepth at(n,z);                           // port: the label at its car's stereo depth
         const std::uint8_t pos=m.u8(other+0xc36);
-        std::int32_t esi=cvtt(px)+0x140;
+        std::int32_t esi=cvtt(N::hud_x(px,a0,a1))+0x140;          // port: widescreen x (hud_x)
         std::int32_t ebp=cvtt((240.0f-py)-32.0f);
         const std::uint32_t rank=std::uint8_t(pos+1);
         std::int32_t height=0x18,xoff=0;std::uint32_t suffix=3;
@@ -1028,7 +1037,7 @@ bool marker_4bbc70(N& n,std::uint32_t target,std::uint32_t player,std::uint32_t 
     m.put32(0x842bf4,f4);m.put32(0x842bf8,f8);m.put32(0x842bfc,fc);m.put32(0x842c00,c00);m.put32(0x842c04,c04);m.put32(0x842c08,c08);
     if(behind_far)return true;
     const N::AtDepth at(n,side||clamped?0.0f:pz);          // port: over the car, at its stereo depth
-    const float X=px+320.0f;const float Y=(240.0f-py)-32.0f;
+    const float X=N::hud_x(px,a0,a1)+320.0f;const float Y=(240.0f-py)-32.0f;   // port: widescreen x (hud_x)
     std::uint32_t rp,rt;
     if(!n.rank_45a2b0(m.u8(player+0x10),rp)||!n.rank_45a2b0(m.u8(target+0x10),rt))return false;
     if(std::uint8_t(rp)>std::uint8_t(rt)){
@@ -1227,7 +1236,7 @@ bool rival_markers_4bb640(N& n){
         const float z=p.z;
         std::int32_t lift=m.i32(0x689210)-cvtt(z*-2.0f);
         if(lift<m.i32(0x68920c))lift=m.i32(0x68920c);
-        const float X=p.x+320.0f;const float Y=(240.0f-p.y)-float(lift);
+        const float X=N::hud_x(p.x,a0,a1)+320.0f;const float Y=(240.0f-p.y)-float(lift);   // port: widescreen x (hud_x)
         std::uint32_t layer;
         if(first){first=false;near=z;layer=1;}else layer=z>near?2u:0u;
         const N::AtDepth at(n,z);                           // port: the marker at its car's stereo depth
@@ -1267,7 +1276,7 @@ bool lan_markers_4bb300(N& n){
         if(!visible)continue;
         std::int32_t lift=m.i32(0x689208)-cvtt(z*-2.0f);
         if(lift<m.i32(0x689204))lift=m.i32(0x689204);
-        const float X=p.x+320.0f,Y=(240.0f-p.y)-float(lift);
+        const float X=N::hud_x(p.x,a0,a1)+320.0f,Y=(240.0f-p.y)-float(lift);   // port: widescreen x (hud_x)
         std::uint32_t layer;
         if(!any){any=true;near=z;layer=1;}else layer=z>near?2u:0u;
         const N::AtDepth at(n,z);                           // port: the marker and name at the car's stereo depth
@@ -1715,7 +1724,7 @@ bool target_marker_4bbaf0(N& n,std::uint32_t t){
     else{a+=0.05000000074505806f;if(a>target)a=target;}
     m.putf(0x8448ac,a);
     const N::AtDepth at(n,p.z>0.0f||-240.0f>p.y?0.0f:p.z);   // port: over the car (not pinned), at its stereo depth
-    n.draw(0x429580,{0x2c0023,fb(p.x+320.0f),fb((240.0f-py)-32.0f),0,0,fb(a)});
+    n.draw(0x429580,{0x2c0023,fb(N::hud_x(p.x,a0,a1)+320.0f),fb((240.0f-py)-32.0f),0,0,fb(a)});   // port: widescreen x (hud_x)
     return true;
 }
 // 4BE4B0(car): sector banners, split list, the 47F120 target marker, the time attack / class
@@ -1962,9 +1971,13 @@ bool navi_sprite3d_4295d0(NaviPubServices& s,std::uint32_t token,const std::arra
         driving::pc_matrix_push_load(st,camm);                                    // copy of the camera matrix, 449940
         const auto t=driving::pc_matrix_point(st,driving::CourseProbe{pos[0],pos[1],pos[2]});
         driving::pc_matrix_pop(st);
-        const float a0=m.f32(cam+0xb0),a1=m.f32(cam+0xb4);
+        const float a1=m.f32(cam+0xb4);                                          // the PC also reads a0 (+B0): see below
         float px=0.0f,py=0.0f,pz=0.0f;
-        if(!(1.1920928955078125e-07f>std::fabs(t.z))){const float w=1.0f/(0.0f-t.z);const float wx=w*a0;const float wy=w*a1;px=wx*t.x;py=t.y*wy;pz=t.z;}
+        // Port: the PC's 2D layer spans the whole canvas, and a0 (camera +B0) is the 640-wide
+        // focal length over it; the port draws the 2D layer in a centred 4:3 area, whose focal
+        // length is a1 (square pixels, Hor+). With a0 the sprite sat at 3/4 of its distance
+        // from the centre in 16:9 and slid across the road as the car moved. Same in 4:3.
+        if(!(1.1920928955078125e-07f>std::fabs(t.z))){const float w=1.0f/(0.0f-t.z);const float wx=w*a1;const float wy=w*a1;px=wx*t.x;py=t.y*wy;pz=t.z;}
         const float nz=-pz;                                                        // fchs
         if(nz<m.f32(cam+0xbc))return true;                                        // behind the near plane
         float sc=0.0f;
@@ -1979,7 +1992,9 @@ bool navi_sprite3d_4295d0(NaviPubServices& s,std::uint32_t token,const std::arra
         std::array<float,16> T{};T[0]=T[5]=T[10]=T[15]=1.0f;T[12]=px;T[13]=-py;T[14]=z;   // D3DXMatrixTranslation(x, fchs y, z)
         if(!s.sprites||!s.sprani||!s.scene_draws||!s.blend_9564e0)return n.fail(0x428af0);
         if(sprani_draw_428af0(*s.sprites,*s.sprani,st,token,T,frame,sc,angle,depth,*s.scene_draws,*s.blend_9564e0)&&s.draws){
-            RaceHudDraw d;d.pc=0x428af0;d.args[0]=token;s.draws->push_back(d);}   // the renderer pairs it with its scene draw
+            RaceHudDraw d;d.pc=0x428af0;d.args[0]=token;
+            d.stereo_depth=nz;d.canvas_clip=true;                                  // port: at the point's stereo depth (food, gate numbers, hearts)
+            s.draws->push_back(d);}   // the renderer pairs it with its scene draw
         return !s.missing;});
 }
 bool navi_sprite_428ac0(NaviPubServices& s,std::uint32_t token,const std::array<float,16>& matrix,std::int32_t frame,

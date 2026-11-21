@@ -38,6 +38,7 @@ struct RaceHudDraw {
     std::array<float,16> matrix{};
     std::array<std::uint8_t,0x48> record{};   // 42CFE0: the queued image record
     float stereo_depth{};                     // port: view depth of the car a marker is over (0 = screen; visionOS stereo)
+    bool canvas_clip{};                       // port: placed over a 3D point, may lie outside the 4:3 HUD (set_rhw_canvas_clip)
 };
 // NAVI_PUB-owned PC globals: 842800..844A00, 688B00..689300 (EXE initial
 // contents, including its static tables), 7F1900..7F2A00, 7F8980..7F8D80 and

@@ -58,6 +58,7 @@ public:
     // the next begin_frame; a GPU without vertex amplification stays mono.
     void set_stereo(float separation,float convergence){stereo_separation_=separation>0?separation:0;stereo_convergence_=convergence;}
     void set_stereo_screen_depth(float depth)override{stereo_screen_depth_=depth>0?depth:0;}
+    void set_rhw_canvas_clip(bool on)override{rhw_canvas_clip_=on;}
     unsigned stereo_eyes()const override{return stereo_live_?2u:1u;}
     void set_stereo_eye(int eye)override;
     // The current frame is drawn in stereo (rgba_right() holds the right eye).
@@ -95,6 +96,7 @@ private:
     bool msaa_live_{};   // the back buffer is the multisampled scene target (begin_frame .. finish_scene)
     bool ui_rect_{},fxaa_{},scene_finished_{},batch_rhw_{};   // batch_rhw_: the batch came from pretransformed vertices
     bool rhw_full_canvas_{};   // set_rhw_full_canvas
+    bool rhw_canvas_clip_{};   // set_rhw_canvas_clip
     bool scene_in_ui_rect_{};   // 3D draws too go in the 4:3 rectangle (set_scene_in_ui_rect)
     float stereo_separation_{},stereo_convergence_{};
     float stereo_screen_depth_{};

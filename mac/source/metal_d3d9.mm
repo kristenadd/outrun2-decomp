@@ -860,13 +860,20 @@ void MetalD3D9Device::flush(){
         const bool back=colour_target_==BackBuffer;
         double sx=back?double(presentation_width())/back_width_:1,sy=back?double(presentation_height())/back_height_:1,ox=0;
         if(back&&ui_rect_&&!(batch_rhw_&&rhw_full_canvas_)&&(scene_in_ui_rect_||(batch_rhw_&&!native_vertices_&&!screen_fade()))){const double w=double(presentation_height())*4/3;ox=std::floor((presentation_width()-w)/2);sx=w/back_width_;}
-        MTLViewport viewport{ox+soft_viewport_.x*sx,soft_viewport_.y*sy,soft_viewport_.w*sx,soft_viewport_.h*sy,soft_viewport_.min_z,soft_viewport_.max_z};[e setViewport:viewport];
+        // Port (set_rhw_canvas_clip): a 2D draw placed over a 3D point (request sprites, markers)
+        // keeps the 4:3 area's scale and centre but is clipped by the whole canvas, as the 3D
+        // point it marks can lie beside the 4:3 area in widescreen. Its viewport grows by `wide`
+        // canvas pixels on each side, and its clip x shrinks to match (same pixels).
+        const double wide=ox>0&&batch_rhw_&&!native_vertices_&&!scene_in_ui_rect_&&rhw_canvas_clip_?ox:0;
+        if(wide>0){const float k=float(soft_viewport_.w*sx/(soft_viewport_.w*sx+2*wide));for(auto& v:batch_)v.pos[0]*=k;}
+        MTLViewport viewport{ox-wide+soft_viewport_.x*sx,soft_viewport_.y*sy,soft_viewport_.w*sx+2*wide,soft_viewport_.h*sy,soft_viewport_.min_z,soft_viewport_.max_z};[e setViewport:viewport];
         const unsigned left=unsigned(std::max(0.f,soft_viewport_.x)),top=unsigned(std::max(0.f,soft_viewport_.y));
         require(left<width_&&top<height_&&soft_viewport_.w>0&&soft_viewport_.h>0,"Metal viewport outside target");
         const unsigned right=left+std::min(width_-left,unsigned(soft_viewport_.w)),bottom=top+std::min(height_-top,unsigned(soft_viewport_.h));
         const NSUInteger tw=back?presentation_width():width_,th=back?presentation_height():height_;
         const auto px=[&](unsigned v){return std::min(tw,NSUInteger(std::lround(ox+v*sx)));};const auto py=[&](unsigned v){return std::min(th,NSUInteger(std::lround(v*sy)));};
-        [e setScissorRect:MTLScissorRect{px(left),py(top),px(right)-px(left),py(bottom)-py(top)}];
+        if(wide>0)[e setScissorRect:MTLScissorRect{0,py(top),tw,py(bottom)-py(top)}];
+        else [e setScissorRect:MTLScissorRect{px(left),py(top),px(right)-px(left),py(bottom)-py(top)}];
         // Constant D3D depth bias is an absolute offset, unlike Metal's
         // format-dependent depthBias. Fold it into clip z; slope is native.
         // Only while the depth test is on: D3D9 biases the depth after clipping,

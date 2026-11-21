@@ -177,6 +177,11 @@ public:
     // not the widescreen device's centred 4:3 2D rectangle (the glare's
     // full-screen composite, 415ED0). No effect on devices without that rectangle.
     virtual void set_rhw_full_canvas(bool on){(void)on;}
+    // Port: the following pretransformed draws keep the centred 4:3 2D rectangle's scale and
+    // centre but may lie anywhere on the canvas (HUD sprites placed over 3D points: request
+    // sprites, markers over cars, pinned at the screen edges as on the PC's full-width 2D).
+    // No effect on devices without that rectangle.
+    virtual void set_rhw_canvas_clip(bool on){(void)on;}
     // Port (visionOS stereo): the following screen-space draws get the stereo
     // parallax of a 3D point at clip w `depth` (its view distance), so a HUD
     // marker over a car appears at the car's depth; 0 = the 2D layer's zero

@@ -83,6 +83,9 @@ struct PcSprite2dState {
     // depth given to the nodes queued from now on (0 = screen), kept per node.
     float stereo_depth{};
     std::vector<float> node_stereo_depth;                     // Pc2dNodeCount
+    // Port (PcD3D9Device::set_rhw_canvas_clip): nodes placed over a 3D point, kept per node.
+    bool canvas_clip{};
+    std::vector<std::uint8_t> node_canvas_clip;               // Pc2dNodeCount
     // ---- flush ----
     std::uint32_t blend_956bf8{},blend_956b94{},blend_956b98{},w956bfc{};
     // Render-state shadow 8606F0 ([893D20]): saved words and dirty bytes the flush uses.
