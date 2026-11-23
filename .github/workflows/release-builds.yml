@@ -66,7 +66,7 @@ jobs:
   mac:
     name: Mac app (notarized)
     if: github.event_name != 'workflow_dispatch' || inputs.mac
-    runs-on: macos-26
+    runs-on: macos-latest
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
@@ -179,7 +179,7 @@ jobs:
 
   ios:
     name: iOS ad-hoc .ipa
-    runs-on: macos-26
+    runs-on: macos-latest
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
