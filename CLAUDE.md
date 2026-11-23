@@ -632,8 +632,7 @@ sample rate.
 - When they report a regression ("it used to work"), believe it and bisect
   against a clean build of the previous commit (`git worktree add`, and point
   `CMAKE_PREFIX_PATH` at `build/dependencies`). Remove the worktree afterwards.
-- Commit or push only when asked. They push from GitHub Desktop (the CLI's
-  saved HTTPS credential lacks write access).
+- Commit or push only when asked.
 
 ## Clarissa mode (work in progress)
 
