@@ -206,8 +206,9 @@ bool title_settings_control_4d86f0(std::uint8_t* object,std::size_t size,Bytes l
     case 0:if(g.feature_mask&1){owner.put32(0x9ac,owner.u32(0x9ac)+1);owner.put32(0x9b0,2);}return true;
     case 1:title_settings_apply_4d76f0(owner,license,g.root_state);
         owner.put32(0x9ac,owner.u32(0x9ac)+1);owner.put32(0x9b4,0);owner.put32(0x9b0,1);return true;
-    case 2:return call(0x48dc10,0x34,1);
-    case 4:return call(0x48dc60,0x34,1);
+    case 2:case 4:   // port: a scrolled list (more than 8 rows) follows the selection
+        if(!call(action==2?0x48dc10:0x48dc60,0x34,1))return false;
+        enhancements::settings_scroll_follow(owner.sub(0x34,PcFrontendChoiceListBytes));return true;
     case 3:case 5:
         if(selected>3)return enhancements::settings_step(std::size_t(selected-4),action==5,[&]{return call(0x4249f0,0,1);});   // port: enhancement rows
         return selected<0||option_step(owner,call,0x6dc+std::size_t(selected)*0x18,action==5);
@@ -223,9 +224,11 @@ void title_settings_apply_4d76f0(Bytes owner,Bytes license,std::uint32_t root_st
 }
 bool FrontendTitleWidgets::settings_display_4d60c0(){
     const auto& font=fonts_.fonts[9];int row=0;
+    const int top=enhancements::SettingsAccess::top(*this),shown=enhancements::SettingsAccess::shown(*this);   // port: scrolling
     for(unsigned i=0;i<4;++i){
         if(globals_.root_state==3&&(i==0||i==2))continue;
-        const float step=float(row)*row_step;
+        if(row<top||row>=top+shown){++row;continue;}   // port: scrolled out
+        const float step=float(row-top)*row_step;
         const int x=int(field_x),y=int(float(int(field_y))+step);
         auto label=object_.sub(0x4ac+i*0x8c,0x8c);auto option=object_.sub(0x6dc+i*0x18,0x18);
         const auto* text=text_.get(option.u32(8));   // 564C90 -> 465EB0

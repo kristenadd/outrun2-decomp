@@ -115,6 +115,11 @@ u64 dualsense_mapped(){u64 m=0;for(const auto& e:PadMap)m|=e.first;return m;}
 //   fix_incorrect_shading=1  double-sided lighting (the player's car, cutscene characters,
 //                       some stage models) lit as OutRun2006Tweaks' FixIncorrectShading
 //                       does; 0 = the PC's flipped TWOSIDE lighting
+//   lens_flare=1        the sun's lens flare sprites (40CBC0); 0 = the sun and its glow only
+//   reflections=1       the car's reflection cube (414340); 0 = off
+//   timer=1             the race clock counts down; 0 holds it (checkpoints cap it at 99 s)
+//   (glare, lens_flare, reflections, pixel_fog, hd_textures and timer are also rows of
+//   Options > Settings; HD TEXTURES only when a pack is installed, and from the next launch)
 //   pixel_fog=1         the stages' exponential fog as on the PC with fog enabled (DX/FOG,
 //                       740C88; OutRun2006Tweaks' default); 0 = the linear fallback
 //   car_shade=1         the car darkens under the road's baked shades (4A45F0, the
@@ -122,15 +127,22 @@ u64 dualsense_mapped(){u64 m=0;for(const auto& e:PadMap)m|=e.first;return m;}
 //   holly_course2=3     the PSP's second Holly course (MIX 2 COURSE) on the C2C driver screen,
 //                       as OutRun2006Tweaks' EnableHollyCourse2: 0 off, 1 unlocked with Holly 1,
 //                       2 unlocked at Holly 1 rank A, 3 hidden until Holly 1 rank A
-struct Options {bool reflections{true},resolution_set{};unsigned render_scale{3};outrun::enhancements::VideoSettings video;} g_options;
+struct Options {bool resolution_set{};unsigned render_scale{3};outrun::enhancements::VideoSettings video;} g_options;
 const char* const OptionsDefault=
     "# OutRun 2006 macOS options (edit and restart)\n"
     "reflections=1\nwidescreen=0\nresolution=1920x1440\nantialiasing=off\n";
+// Options > Settings picture effects (glare, lens flare, reflections, pixel fog),
+// at launch and whenever a row changes. OR2_NOCUBE keeps the reflections off.
+void apply_effects(const outrun::enhancements::VideoSettings& v){
+    outrun::platform::g_pc_glare=v.glare;outrun::platform::g_pc_lens_flare=v.lens_flare;
+    outrun::platform::g_pc_pixel_fog=v.pixel_fog;
+    rt::cube_disabled()=!v.reflections||std::getenv("OR2_NOCUBE")!=nullptr;
+}
 void load_options(){
 #ifdef OR2_IOS
-    outrun::platform::texture_pack_set_max_scale(2);
+    g_options.video.hd_textures=2;
 #else
-    outrun::platform::texture_pack_set_max_scale(4);
+    g_options.video.hd_textures=4;
 #endif
 #if defined(OR2_IOS)&&!defined(OR2_VISIONOS)
     g_options.video.fit_screen=true;   // fill the device screen unless options.ini says fit_screen=0
@@ -149,19 +161,13 @@ void load_options(){
         std::string l(line);while(!l.empty()&&(l.back()==10||l.back()==13||l.back()==32))l.pop_back();
         const auto eq=l.find('=');if(l.empty()||l[0]=='#'||eq==std::string::npos)continue;
         const std::string k=l.substr(0,eq);const unsigned v=unsigned(std::strtoul(l.c_str()+eq+1,nullptr,10));
-        if(k=="reflections")g_options.reflections=v!=0;
-        else if(k=="glare")outrun::platform::g_pc_glare=v!=0;
-        else if(k=="pixel_fog")outrun::platform::g_pc_pixel_fog=v!=0;
-        else if(k=="car_shade")outrun::driving::g_car_road_shade=v!=0;
+        if(k=="car_shade")outrun::driving::g_car_road_shade=v!=0;
         else if(k=="holly_course2"){
             if(v>3)throw std::runtime_error("holly_course2 must be between 0 and 3");
             outrun::platform::g_holly_course2=v;
         }
         else if(k=="fix_incorrect_shading")outrun::platform::g_pc_fix_incorrect_shading=v!=0;
-        else if(k=="hd_textures"){
-            if(v>16)throw std::runtime_error("hd_textures must be between 0 and 16");
-            outrun::platform::texture_pack_set_max_scale(v);
-        }
+        else if(k=="hd_textures"&&v>16)throw std::runtime_error("hd_textures must be between 0 and 16");
         else if(outrun::enhancements::GpuVideoBackend::parse_option(k,l.substr(eq+1),g_options.video))g_options.resolution_set|=k=="resolution";
         else if(k=="render_scale"){
             if(v<1||v>4)throw std::runtime_error("render_scale must be between 1 and 4");
@@ -170,7 +176,8 @@ void load_options(){
         else std::fprintf(stdout,"macOS options: unsupported key %s\n",k.c_str());
     }
     std::fclose(f);
-    if(!g_options.reflections)rt::cube_disabled()=true;
+    apply_effects(g_options.video);
+    outrun::platform::texture_pack_set_max_scale(g_options.video.hd_textures);   // HD TEXTURES: at launch only
     if(!g_options.resolution_set)g_options.video.resolution={640u*g_options.render_scale,480u*g_options.render_scale};
     if(!std::getenv("OR2_MAC_RENDER_SCALE")){
         const auto scale=std::to_string(g_options.render_scale);
@@ -454,6 +461,9 @@ int main(int argc,char** argv){
     video.set_stereo_depths(5,[&renderer](std::uint32_t level){outrun::mac_runtime::mac_renderer_set_stereo_depth(renderer,level);});
 #endif
     video.attach([&renderer](std::uint32_t w,std::uint32_t h,bool wide,unsigned msaa,bool fxaa){outrun::mac_runtime::mac_renderer_set_video(renderer,w,h,wide,msaa,fxaa);});
+    // GLARE, LENS FLARE, REFLECTIONS, PIXEL FOG; HD TEXTURES once a pack is installed.
+    video.set_effects(apply_effects,[]{const auto root=outrun::platform::texture_pack_root();
+        return !root.empty()&&outrun::platform::texture_pack_art_count(root)>0;});
     outrun::enhancements::set_video_backend(&video);
 #endif
     if(auto* pc_device=outrun::mac_runtime::mac_renderer_pc_device(renderer)){

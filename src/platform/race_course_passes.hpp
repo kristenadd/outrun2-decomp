@@ -10,6 +10,10 @@
 #include <cstdint>
 #include <string>
 namespace outrun::platform {
+// Port option lens_flare= (Options > Settings > LENS FLARE): off, the sun pass
+// (40CBC0) draws the sun and its glow but not the flare sprites along the
+// screen axis nor the full-screen ring glow.
+inline bool g_pc_lens_flare=true;
 struct NativeRuntimeContext;
 class PcSceneRenderer;
 // The frame leaf `pc` with its PC argument (work + offset, as 40BD80 passes

@@ -550,9 +550,11 @@ Title (mode 32 child 0)
    │     SINGLE PLAYER (A) → (child 51): OUTRUN · HEART ATTACK · TIME ATTACK → A → table (child 57): OUTRUN2 · OUTRUN2SP
    │     MULTIPLAYER (A): NOT PORTED, hangs ([stall] frontend screen key 16, action 4442A0); B still backs out
    └─ OPTIONS (A) → (child 44) Up/Down: SETTINGS · CONTROLS · AUDIO OPTIONS · DONE
-         SETTINGS: CAMERA · SPEEDOMETER · OUTRUN2SP DIFF. · DISPLAY GHOST CARS · ASPECT RATIO ·
-                   RESOLUTION · ANTI-ALIASING · FRAME RATE   (Mac; iOS adds FULL SCREEN under ASPECT RATIO,
-                   visionOS 3D DEPTH); Left/Right change a value, A / Start save and leave
+         SETTINGS: CAMERA · SPEEDOMETER · OUTRUN2SP DIFF. · DISPLAY GHOST CARS · TIMER · ASPECT RATIO ·
+                   RESOLUTION · ANTI-ALIASING · FRAME RATE · GLARE · LENS FLARE · REFLECTIONS · PIXEL FOG ·
+                   HD TEXTURES   (Mac; iOS adds FULL SCREEN under ASPECT RATIO, visionOS 3D DEPTH;
+                   HD TEXTURES only with a pack installed); scrolls past 8 rows; Left/Right change a value,
+                   A / Start save and leave
          CONTROLS: CONFIGURATION · SENSITIVITY
          AUDIO OPTIONS: SOUND VOLUME · MUSIC VOLUME
 ```
@@ -1118,6 +1120,15 @@ a race. Don't chase them again unless the user reports one.
   `pc_network_message.inc`); Yes sets `8A8CAC`, which ends the host loop (`[quit]` line) and the
   process (iOS: `std::exit` after main; visionOS already exits). `-DDisableQuit=ON`
   (`OR2_DISABLE_QUIT`) builds without it: Back does nothing on the title.
+- **Settings rows and scrolling** (2026-11-22; the timer cap confirmed by the user, the rest checked
+  on the Mac with autoplay, the effects not yet seen switching in a race): TIMER (`timer=`;
+  Off holds the race clock `637911`, and a checkpoint extend caps it at 99 s), GLARE, LENS FLARE
+  (`lens_flare=`, `g_pc_lens_flare`: the sun pass skips its flare sprites and ring glow), REFLECTIONS,
+  PIXEL FOG (all live, `GpuVideoBackend::set_effects`) and HD TEXTURES (Off / 2x / 4x, next launch;
+  listed only when `texture_pack_art_count` finds pack files outside the prompt folders). More than 8
+  rows scroll (the list's own `+46C` mode, `settings_scroll_follow`), with the value arrows' sprite
+  `3004A` turned a quarter turn as up / down hints (`PcImageQuarterTurn`, port-only 42D280 flag).
+  Linked pixel shaders are cached apart with glare on / off (the exposure fragment).
 - Goal ending (mode 24, staff roll): the scene stays in its 320x240 window
   (the car reflection cube's target switch reset the viewport), centred in the
   4:3 area with a 4:3 camera in widescreen; race-end modes no longer tick the

@@ -493,6 +493,9 @@ struct Flush {
             auto& b=g.ps_blocks[g.ps_block_next];g.ps_block_next=(g.ps_block_next+1u)%u32(g.ps_blocks.size());
             b.block=block;b.hash=hash;b.valid=true;
         }
+        // Port: the glare links an extra exposure fragment, so a shader linked with it on
+        // is cached apart from one linked with it off (GLARE switches during play).
+        if(pc_glare_enabled())hash^=0x80000000u;
         auto& shader=g.shader();
         for(const auto& p:g.pixel_shaders_95aeec)if(p.hash==hash){shader.pixel_shader=p.shader;return;}
         auto& b=px.block;

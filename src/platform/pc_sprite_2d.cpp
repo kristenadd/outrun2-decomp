@@ -774,6 +774,8 @@ void pc_image_42d280(PcSprite2dState& s,std::uint32_t token,std::int32_t x,std::
         wr32(r.data()+0x24,ubits(float(x)));wr32(r.data()+0x2c,colour);wr32(r.data()+0x28,ubits(float(y)));
         if(flip&1u)wr32(r.data()+0x34,rd32(r.data()+0x34)|1u);
         if(flip&2u)wr32(r.data()+0x34,rd32(r.data()+0x34)|2u);
+        if(flip&PcImageQuarterTurn){   // port: centred (flag 8), rotated +90 degrees
+            wr32(r.data()+0x34,rd32(r.data()+0x34)|8u);wr32(r.data()+0x30,ubits(1.57079632679f));}
         queue_42cfe0(c,r.data(),layer);
     }catch(const Fault& f){latch(s,f.pc,f.address);}
 }

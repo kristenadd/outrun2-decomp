@@ -377,6 +377,9 @@ void race_check_time_extend_450cc0(RaceManagerState& st,RaceManagerWorld& w,Race
     }
     st.time_7d394c=std::int32_t(std::uint32_t(t)-std::uint32_t(st.time_adjust_7d3880));
     st.time_adjust_7d3880=0;
+    // Port: with the clock held (Settings > TIMER Off) extends would pile up past
+    // the HUD's two digits; keep it at 99 seconds at most.
+    if(!w.time_decrement_637911&&st.time_7d394c>99*60)st.time_7d394c=99*60;
     if(w.variant_780258!=4)s.pc_4f2b20(cvtt(smul(float(std::int32_t(st.last_stage_frames_7d3948)),K62812C)));
 }
 

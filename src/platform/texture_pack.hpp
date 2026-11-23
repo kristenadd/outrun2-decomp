@@ -55,6 +55,9 @@ std::filesystem::path texture_pack_find(const std::string& root,const std::strin
                                         bool allow_unstyled=false);
 // The number of .dds files under <root>/textures/load (0: no pack).
 std::size_t texture_pack_file_count(const std::string& root);
+// The same without the controller prompt folders (Keyboard / Xbox / PlayStation /
+// Switch): 0 when only button prompts are installed (Settings > HD TEXTURES).
+std::size_t texture_pack_art_count(const std::string& root);
 
 // A decoded replacement: RGBA8 levels (R,G,B,A), level k = width>>k x height>>k.
 struct TexturePackImage {

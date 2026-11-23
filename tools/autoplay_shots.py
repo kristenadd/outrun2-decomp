@@ -80,7 +80,7 @@ try:
         shot = f"{out_dir}/{fr}.jpg"
         # The window's content starts 28 points under its top (title bar).
         subprocess.run(["screencapture", "-x", f"-R{X},68,800,600", "-t", "jpg", shot])
-        subprocess.run(["sips", "-Z", "480", shot], capture_output=True)
+        subprocess.run(["sips", "-Z", os.environ.get("SHOT_SIZE", "480"), shot], capture_output=True)
         print(fr, l, flush=True)
 finally:
     if EXIT:

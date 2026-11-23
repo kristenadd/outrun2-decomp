@@ -15,6 +15,7 @@
 #include "driving/pc_crash.hpp"
 #include "driving/pc_wall_rebound.hpp"
 #include "driving/pc_wrecker.hpp"
+#include "enhancements/video.hpp"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -73,6 +74,7 @@ struct Binding final : RaceManagerServices {
         w.mode_78026c=std::int32_t(c.mode_state.current);
         w.difficulty_7c24c0=std::int32_t(le32(c.event_function36.frontend_profiles.active.data()+0xe0)); // 7C23E0 license +E0
         w.time_decrement_637911=1;                                        // .data 637911, no writer in .text
+        if(!enhancements::race_timer_enabled())w.time_decrement_637911=0;  // port: Options > Settings > TIMER OFF
         // Testing only (OR2_HOST_HOLD_TIME=1): the race clock holds (long unattended runs).
         {static const bool hold=[]{const char* v=std::getenv("OR2_HOST_HOLD_TIME");return v&&*v&&*v!='0';}();if(hold)w.time_decrement_637911=0;}
         w.ranking_80fb14=c.race.car_world.gate_80fb14;

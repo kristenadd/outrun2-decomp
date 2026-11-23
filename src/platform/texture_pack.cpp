@@ -19,7 +19,7 @@ std::string lower(std::string s){for(auto& c:s)c=char(std::tolower(static_cast<u
 std::uint32_t rd32(const std::uint8_t* p){std::uint32_t v;std::memcpy(&v,p,4);return v;}
 bool style_folder(const std::string& l){return l=="keyboard"||l=="xbox"||l=="playstation"||l=="switch";}
 // The pack's files by lower-case file name, listed once per game folder.
-struct PackIndex { std::size_t files{};std::map<std::string,std::vector<std::filesystem::path>> by_name; };
+struct PackIndex { std::size_t files{},art_files{};std::map<std::string,std::vector<std::filesystem::path>> by_name; };
 const PackIndex& pack_index(const std::string& root){
     static std::mutex m;static std::map<std::string,PackIndex> cache;
     std::lock_guard<std::mutex> lock(m);
@@ -36,7 +36,9 @@ const PackIndex& pack_index(const std::string& root){
             for(auto r=std::filesystem::recursive_directory_iterator(base,std::filesystem::directory_options::skip_permission_denied,ec);
                 !ec&&r!=std::filesystem::recursive_directory_iterator();r.increment(ec))
                 if(r->is_regular_file(ec)&&lower(r->path().extension().string())==".dds"){
-                    it->second.by_name[lower(r->path().filename().string())].push_back(r->path());++it->second.files;}
+                    it->second.by_name[lower(r->path().filename().string())].push_back(r->path());++it->second.files;
+                    bool prompt=false;for(const auto& part:std::filesystem::relative(r->path(),base,ec))prompt|=style_folder(lower(part.string()));
+                    if(!prompt)++it->second.art_files;}
         if(texture_pack_trace())std::fprintf(stderr,"[tex] %zu pack textures under %s\n",it->second.files,
                                              base.empty()?"(no textures/load)":base.string().c_str());
     }
@@ -74,6 +76,7 @@ void texture_pack_set_root(const std::string& r){std::lock_guard<std::mutex> loc
 std::string texture_pack_root(){std::lock_guard<std::mutex> lock(g_root_mutex);return g_root;}
 bool texture_pack_trace(){static const bool on=std::getenv("OR2_TRACE")!=nullptr;return on;}
 std::size_t texture_pack_file_count(const std::string& root){return pack_index(root).files;}
+std::size_t texture_pack_art_count(const std::string& root){return pack_index(root).art_files;}
 std::filesystem::path texture_pack_find(const std::string& root,const std::string& stem,std::uint32_t hash,
                                         std::uint32_t width,std::uint32_t height,const std::string& style,bool allow_unstyled){
     if(root.empty())return {};

@@ -35,6 +35,14 @@ struct VideoSettings {
     bool fit_screen{};
     // Stereoscopic 3D depth (visionOS): 0 = off (mono), 1 .. VideoBackend::stereo_depths().
     std::uint32_t stereo_depth{};
+    // TIMER (gameplay, saved with these): false holds the race clock (no time
+    // out; checkpoints still add time). Port option timer=0/1.
+    bool race_timer{true};
+    // Picture effects (VideoBackend::effects_available): glare (bloom), the sun's lens
+    // flare, the car's reflection cube, the PC's DX/FOG table fog, and the hi-res
+    // texture pack scale cap (0 = off; applies at the next launch).
+    bool glare{true},lens_flare{true},reflections{true},pixel_fog{true};
+    std::uint32_t hd_textures{4};
 };
 
 class VideoBackend {
@@ -54,6 +62,14 @@ public:
     // The highest 3D DEPTH level where the platform shows stereoscopic 3D
     // (visionOS), the row offering OFF, 1 .. this; 0: no such row.
     virtual std::uint32_t stereo_depths()const{return 0;}
+    // true: Settings lists TIMER (VideoSettings::race_timer).
+    virtual bool race_timer_available()const{return false;}
+    // true: Settings lists GLARE, LENS FLARE, REFLECTIONS and PIXEL FOG; HD TEXTURES
+    // too when a texture pack is installed. The scale of this launch (a change
+    // shows "(Restart)").
+    virtual bool effects_available()const{return false;}
+    virtual bool hd_textures_available()const{return false;}
+    virtual std::uint32_t launch_hd_textures()const{return 0;}
     virtual VideoSettings current()const=0;
     // Applies (live when the platform can, else at the next launch) and saves.
     virtual void apply(const VideoSettings&)=0;
@@ -67,6 +83,8 @@ float video_aspect(const VideoSettings&,float screen_aspect);
 
 void set_video_backend(VideoBackend*);
 VideoBackend* video_backend();
+// The race clock counts down: true without a backend or with TIMER on.
+bool race_timer_enabled();
 
 std::string resolution_label(const Resolution&);   // "1920x1080"
 const char* antialiasing_label(Antialiasing);

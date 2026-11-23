@@ -15,6 +15,7 @@ std::string trim(std::string s){
 }
 void set_video_backend(VideoBackend* backend){g_backend=backend;}
 VideoBackend* video_backend(){return g_backend;}
+bool race_timer_enabled(){return !g_backend||!g_backend->race_timer_available()||g_backend->current().race_timer;}
 
 Resolution resolution_at(std::uint32_t height,bool widescreen){
     const std::uint32_t width=widescreen?(height*16u+8u)/9u:height*4u/3u;

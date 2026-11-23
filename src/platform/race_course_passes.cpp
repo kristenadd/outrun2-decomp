@@ -718,6 +718,7 @@ void sun_flare_40cbc0(CoursePass& p,std::uint32_t object){
                 if(n++%30u==0u)std::fprintf(stderr,"[sun] frame %u screen %.0f,%.0f samples %u/%u visible %.3f flare %.3f bright %.3f glow %.3f\n",
                     p.r.frames,sx,sy,samples,ss.visibility_73e2ac,visible,flare,bright,glow);
             }
+            if(g_pc_lens_flare){   // port: LENS FLARE off skips the sprites below
             sun.flare_40c9a0(0x57000eu,st(X(spread)*X(-1.7f)),st(X(size)*X(0.18f)),flare);
             const float small=st(X(size)*X(0.15f));
             sun.flare_40c9a0(0x570003u,st(X(spread)*X(-0.52f)),small,flare);
@@ -732,6 +733,7 @@ void sun_flare_40cbc0(CoursePass& p,std::uint32_t object){
             sun.flare_40c9a0(0x57000du,st(X(spread)*X(0.3f)),st(X(size)*X(0.03f)),flare);
             render_queue_flush_4052c0(p.fl,p.r.queue_context());
             sun.flare_40c9a0(0x570008u,fbits(0xbb449ba6u),1.5f,glow);
+            }else render_queue_flush_4052c0(p.fl,p.r.queue_context());
             render_pass_defaults_404540(g,p.r.frame().layer_7d25f0);
             sun.z_restore_406870();
             driving::pc_matrix_pop(s);

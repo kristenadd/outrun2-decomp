@@ -29,6 +29,15 @@ public:
     void set_stereo_depths(std::uint32_t levels,StereoPush push);
     std::uint32_t stereo_depths()const override{return stereo_levels_;}
     float screen_aspect()const override{return screen_aspect_;}
+    bool race_timer_available()const override{return true;}
+    // The platform call that applies the picture effects (glare, lens flare,
+    // reflections, pixel fog; HD textures only at launch) and whether a texture
+    // pack is installed (asked once, when Settings first lists its rows).
+    using EffectsPush=std::function<void(const VideoSettings&)>;
+    void set_effects(EffectsPush push,std::function<bool()> hd_present);
+    bool effects_available()const override{return bool(effects_push_);}
+    bool hd_textures_available()const override;
+    std::uint32_t launch_hd_textures()const override{return start_hd_;}
     // The renderer once initialized (an empty function detaches it): the
     // settings are applied to it from then on.
     void attach(Push);
@@ -41,7 +50,8 @@ public:
     bool needs_restart(const VideoSettings& s)const override{return !pace_&&s.frame_rate!=start_rate_;}
     VideoSettings supported(VideoSettings)const;   // a loaded setting made valid
     // options.ini keys: widescreen=0/1, fit_screen=0/1, resolution=WxH, antialiasing=off/msaa2/msaa4/fxaa, framerate=60/90/120,
-    // stereo_depth=0..5 (visionOS).
+    // stereo_depth=0..5 (visionOS), timer=0/1, glare / lens_flare / reflections / pixel_fog=0/1,
+    // hd_textures=0..16.
     static bool parse_option(const std::string& key,const std::string& value,VideoSettings&);
 private:
     void push()const;
@@ -55,5 +65,9 @@ private:
     RatePush pace_;
     std::uint32_t stereo_levels_{},saved_stereo_{};   // saved_stereo_: stereo_depth loaded from options.ini (kept until the levels are known)
     StereoPush stereo_push_;
+    EffectsPush effects_push_;
+    std::function<bool()> hd_present_;
+    mutable int hd_known_=-1;   // hd_present_ answered: 0 / 1
+    std::uint32_t start_hd_{};
 };
 }

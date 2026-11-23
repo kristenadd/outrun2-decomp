@@ -4,7 +4,14 @@
 #include <cstdlib>
 
 namespace outrun::enhancements {
-GpuVideoBackend::GpuVideoBackend(std::string path,const VideoSettings& start):path_(std::move(path)),saved_fit_(start.fit_screen),saved_rate_(start.frame_rate),saved_stereo_(start.stereo_depth){settings_=supported(start);}
+GpuVideoBackend::GpuVideoBackend(std::string path,const VideoSettings& start):path_(std::move(path)),saved_fit_(start.fit_screen),saved_rate_(start.frame_rate),saved_stereo_(start.stereo_depth),start_hd_(start.hd_textures){settings_=supported(start);}
+void GpuVideoBackend::set_effects(EffectsPush push,std::function<bool()> hd_present){
+    effects_push_=std::move(push);hd_present_=std::move(hd_present);hd_known_=-1;
+    if(effects_push_)effects_push_(settings_);}
+bool GpuVideoBackend::hd_textures_available()const{
+    if(!effects_push_||!hd_present_)return false;
+    if(hd_known_<0)hd_known_=hd_present_()?1:0;
+    return hd_known_==1;}
 void GpuVideoBackend::set_screen_aspect(float aspect){
     screen_aspect_=aspect>0?aspect:0;settings_.fit_screen=saved_fit_;settings_=supported(settings_);}
 void GpuVideoBackend::attach(Push push){push_=std::move(push);this->push();}
@@ -40,13 +47,25 @@ void GpuVideoBackend::apply(const VideoSettings& s){
     saved_fit_=settings_.fit_screen;saved_stereo_=settings_.stereo_depth;
     std::vector<std::pair<std::string,std::string>> values{{"widescreen",settings_.widescreen?"1":"0"},
         {"resolution",resolution_key(settings_.resolution)},{"antialiasing",antialiasing_key(settings_.antialiasing)},
-        {"framerate",std::to_string(settings_.frame_rate)}};
+        {"framerate",std::to_string(settings_.frame_rate)},{"timer",settings_.race_timer?"1":"0"}};
     if(screen_aspect_>0)values.push_back({"fit_screen",settings_.fit_screen?"1":"0"});
     if(stereo_levels_>0)values.push_back({"stereo_depth",std::to_string(settings_.stereo_depth)});
+    if(effects_push_){
+        effects_push_(settings_);
+        for(const auto& [k,v]:{std::pair<const char*,bool>{"glare",settings_.glare},{"lens_flare",settings_.lens_flare},
+                               {"reflections",settings_.reflections},{"pixel_fog",settings_.pixel_fog}})
+            values.push_back({k,v?"1":"0"});
+        values.push_back({"hd_textures",std::to_string(settings_.hd_textures)});
+    }
     if(!path_.empty())write_options(path_,values);
 }
 bool GpuVideoBackend::parse_option(const std::string& key,const std::string& value,VideoSettings& s){
     if(key=="widescreen"){s.widescreen=std::strtoul(value.c_str(),nullptr,10)!=0;return true;}
+    if(key=="glare"||key=="lens_flare"||key=="reflections"||key=="pixel_fog"){
+        const bool on=std::strtoul(value.c_str(),nullptr,10)!=0;
+        (key=="glare"?s.glare:key=="lens_flare"?s.lens_flare:key=="reflections"?s.reflections:s.pixel_fog)=on;return true;}
+    if(key=="hd_textures"){const auto v=std::strtoul(value.c_str(),nullptr,10);if(v>16)return false;s.hd_textures=std::uint32_t(v);return true;}
+    if(key=="timer"){s.race_timer=std::strtoul(value.c_str(),nullptr,10)!=0;return true;}
     if(key=="fit_screen"){s.fit_screen=std::strtoul(value.c_str(),nullptr,10)!=0;return true;}
     if(key=="resolution")return parse_resolution(value,s.resolution);
     if(key=="antialiasing")return parse_antialiasing(value,s.antialiasing);

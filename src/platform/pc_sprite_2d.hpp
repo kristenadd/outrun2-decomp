@@ -129,6 +129,10 @@ void pc_sprite_pool_display_428170(PcSprite2dState&,PcD3D9Device&,driving::PcMat
 // 42D280(token, x, y, flip mask, layer f32, colour) and
 // 42D5F0(token, x, y, layer f32, colour, flags).
 void pc_image_42d280(PcSprite2dState&,std::uint32_t token,std::int32_t x,std::int32_t y,std::uint32_t flip,float layer,std::uint32_t colour);
+// Port-only flip bit (no PC caller sets it): the image turned a quarter turn
+// clockwise about its centre, which (x, y) then gives (the Settings list's
+// scroll arrows: its left / right value arrows pointing up / down).
+constexpr std::uint32_t PcImageQuarterTurn=0x100;
 // 42D200: 42D280 with a horizontal scale (the GOAL stage bars of 4979E0).
 void pc_image_42d200(PcSprite2dState&,std::uint32_t token,std::int32_t x,std::int32_t y,float scale_x,std::uint32_t flip,float layer,std::uint32_t colour);
 void pc_image_group_42d5f0(PcSprite2dState&,std::uint32_t token,std::int32_t x,std::int32_t y,float layer,std::uint32_t colour,std::uint32_t flags);
