@@ -14,7 +14,7 @@ task_xr_min=2.0
 task_sources="$task_root/build/dependency-sources"
 task_archives="$task_root/build/downloads"
 task_host="$task_root/build/ios-dependencies/host"
-mkdir -p "$task_archives" "$task_sources"
+mkdir -p "$task_archives" "$task_sources" "$task_root/build/dependency-build"
 while IFS='|' read -r task_name task_url task_sha; do
     if [ ! -f "$task_archives/$task_name" ]; then
         curl --fail --location "$task_url" -o "$task_archives/$task_name"
