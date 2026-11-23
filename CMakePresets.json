@@ -69,7 +69,8 @@
         "CMAKE_PREFIX_PATH": "${sourceDir}/build/ios-dependencies/iphoneos",
         "CMAKE_FIND_ROOT_PATH": "${sourceDir}/build/ios-dependencies/iphoneos",
         "CMAKE_OSX_SYSROOT": "iphoneos",
-        "CMAKE_CONFIGURATION_TYPES": "Release"
+        "CMAKE_CONFIGURATION_TYPES": "Release",
+        "CMAKE_XCODE_ATTRIBUTE_SKIP_INSTALL": "YES"
       }
     },
     {

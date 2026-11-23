@@ -78,6 +78,10 @@ set_target_properties(OutRunIOS PROPERTIES
     XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${OR2_IOS_TEAM}"
     XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Apple Development"
     XCODE_ATTRIBUTE_ENABLE_BITCODE "NO"
+    # Archive (xcodebuild archive / -exportArchive, the CI's ad-hoc .ipa): only the app is
+    # installed; the libraries skip it (CMAKE_XCODE_ATTRIBUTE_SKIP_INSTALL in the preset).
+    XCODE_ATTRIBUTE_SKIP_INSTALL "NO"
+    XCODE_ATTRIBUTE_INSTALL_PATH "$(LOCAL_APPS_DIR)"
     # Xcode: the one scheme to run (the project's test and tool targets get none).
     XCODE_GENERATE_SCHEME ON
     # Run from Xcode at full speed: Metal API / shader validation and GPU frame

@@ -285,6 +285,15 @@ iOS presets (`CMakePresets.json`):
 Only the `OutRunIOS` target matters for iOS. The top-level CMake also defines
 many host test targets; don't build them for iOS.
 
+**Release builds on GitHub** (`.github/workflows/release-builds.yml`, by hand from Actions or on a
+`v*` tag): a Developer ID-signed, notarized Mac app and an ad-hoc iOS `.ipa`; a tag also makes a
+GitHub release. Before archiving, it registers Firebase App Distribution testers' UDIDs with
+Apple (fastlane `sync_devices`, project `outrun2006-c2c`), and it can upload the `.ipa` to Firebase
+tester groups. The secrets use the shared names set by `~/Projects/SigningSecrets` (its
+`CLAUDE.md` lists them). The `ios-device` preset's `SKIP_INSTALL` / `INSTALL_PATH` settings are
+what make `xcodebuild archive` produce an app archive (without them it's "generic" and can't be
+exported).
+
 ## Running on iOS
 
 The user's devices are an iPhone 15 Pro Max and an iPad mini 6 (both iOS 27).
