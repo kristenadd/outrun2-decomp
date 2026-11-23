@@ -1047,7 +1047,7 @@ a race. Don't chase them again unless the user reports one.
   folders; the bank's own XST / PMT folder wins, the `Keyboard/Xbox/PlayStation/Switch`
   folders are prompts only). The user's pack is the OR2006Sprites "HD GUI" pack (UI
   only: 289 files, 3 GB, mostly 4x DXT5 / A8B8G8R8; their copy is in
-  `~/Projects/OutRun 2006 Coast 2 Coast Hi-Res/textures`, whose EXE differs from the
+  `../OutRun 2006 Coast 2 Coast Hi-Res/textures` (next to this repo), whose EXE differs from the
   Steam one, so test with the normal game files plus that `textures` folder).
   - **How:** `PcD3D9Device::create_replacement_texture` keeps the big texels but
     GetLevelDesc (`texture_level_size`) reports the **original** size, so the 2D
