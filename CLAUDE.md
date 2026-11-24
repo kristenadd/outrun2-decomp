@@ -286,7 +286,8 @@ Only the `OutRunIOS` target matters for iOS. The top-level CMake also defines
 many host test targets; don't build them for iOS.
 
 **Release builds on GitHub** (`.github/workflows/release-builds.yml`): a Developer ID-signed,
-notarized Mac app and an ad-hoc iOS `.ipa`. **Every push to `main`** (unless only `.md` files
+notarized Mac app and ad-hoc iOS and visionOS `.ipa` files (one matrix job; Firebase sync and
+upload for iOS only). **Every push to `main`** (unless only `.md` files
 changed, or `[skip ci]`) releases the next version: newest `vX.Y.Z` tag, patch + 1 (a line `#minor` /
 `#major` on its own in the head commit's message), tagged on the pushed commit with a GitHub release; a
 pushed `v*` tag releases that version; a run by hand only builds. The version goes into the apps

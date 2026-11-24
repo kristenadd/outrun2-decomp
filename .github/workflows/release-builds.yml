@@ -1,4 +1,4 @@
-# Signed builds: the Mac app (Developer ID, notarized, stapled) and an ad-hoc iOS .ipa.
+# Signed builds: the Mac app (Developer ID, notarized, stapled) and ad-hoc iOS and visionOS .ipa files.
 #
 # Runs on every push to main (not for changes to Markdown files only), on a pushed tag v*, or by
 # hand (Actions ▸ Release builds ▸ Run workflow). The builds contain no game data.
@@ -27,7 +27,7 @@
 #   NOTARY_APPLE_ID                   instead of the API key, for the Mac notarization only:
 #   NOTARY_APP_PASSWORD               an Apple ID and an app-specific password
 # Variables:
-#   IOS_BUNDLE_ID                     the iOS app's bundle id (registered for the team)
+#   IOS_BUNDLE_ID                     the iOS and visionOS apps' bundle id (registered for the team)
 #   XCODE_VERSION                     optional, e.g. 27.2 (default: the newest Xcode on the runner)
 #
 # The ad-hoc profile holds every device registered for the team at build time.
@@ -228,10 +228,30 @@ jobs:
           [ -n "${KEYCHAIN:-}" ] && security delete-keychain "$KEYCHAIN" || true
 
   ios:
-    name: iOS ad-hoc .ipa
+    name: ${{ matrix.title }}
     needs: version
     runs-on: macos-latest
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - title: iOS ad-hoc .ipa
+            platform: ios
+            sdk: iphoneos
+            preset: ios-device
+            scheme: OutRunIOS
+            destination: generic/platform=iOS
+            team_variable: OR2_IOS_TEAM
+            bundle_variable: OR2_IOS_BUNDLE_ID
+          - title: visionOS ad-hoc .ipa
+            platform: visionos
+            sdk: xros
+            preset: visionos-device
+            scheme: OutRunVision
+            destination: generic/platform=visionOS
+            team_variable: OR2_VISIONOS_TEAM
+            bundle_variable: OR2_VISIONOS_BUNDLE_ID
     steps:
       - uses: actions/checkout@v4
 
@@ -259,11 +279,11 @@ jobs:
           path: |
             build/ios-dependencies
             build/downloads
-          key: ios-deps-${{ hashFiles('mac/tools/dependencies.lock', 'ios/tools/build-dependencies.sh') }}-${{ runner.os }}
+          key: ios-deps-${{ matrix.sdk }}-${{ hashFiles('mac/tools/dependencies.lock', 'ios/tools/build-dependencies.sh') }}-${{ runner.os }}
 
       - name: Build dependencies
         run: |
-          [ -d build/ios-dependencies/iphoneos/lib ] || sh ios/tools/build-dependencies.sh iphoneos
+          [ -d build/ios-dependencies/${{ matrix.sdk }}/lib ] || sh ios/tools/build-dependencies.sh ${{ matrix.sdk }}
 
       - name: Install the signing certificates and the API key
         env:
@@ -297,15 +317,17 @@ jobs:
           printf '%s\n' "$API_KEY_P8" > "$RUNNER_TEMP/AuthKey.p8"
           chmod 600 "$RUNNER_TEMP/AuthKey.p8"
 
+      # Firebase collects iPhone / iPad UDIDs only; a Vision Pro is registered by hand
+      # (developer.apple.com ▸ Devices). Both builds' profiles hold every registered device.
       - name: Set up fastlane
-        if: vars.FIREBASE_PROJECT_NUMBER != ''
+        if: matrix.platform == 'ios' && vars.FIREBASE_PROJECT_NUMBER != ''
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.3'
           bundler-cache: true
 
       - name: Register the Firebase testers' devices
-        if: vars.FIREBASE_PROJECT_NUMBER != '' && (github.event_name != 'workflow_dispatch' || inputs.sync_devices)
+        if: matrix.platform == 'ios' && vars.FIREBASE_PROJECT_NUMBER != '' && (github.event_name != 'workflow_dispatch' || inputs.sync_devices)
         env:
           FIREBASE_PROJECT_NUMBER: ${{ vars.FIREBASE_PROJECT_NUMBER }}
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
@@ -316,14 +338,15 @@ jobs:
 
       - name: Configure
         run: |
-          cmake --preset ios-device -DOR2_IOS_TEAM="$APPLE_TEAM_ID" -DOR2_IOS_BUNDLE_ID="${{ vars.IOS_BUNDLE_ID }}" \
+          cmake --preset ${{ matrix.preset }} -D${{ matrix.team_variable }}="$APPLE_TEAM_ID" \
+            -D${{ matrix.bundle_variable }}="${{ vars.IOS_BUNDLE_ID }}" \
             -DOR2_APP_VERSION="${{ needs.version.outputs.version }}" -DOR2_BUILD_NUMBER="${{ github.run_number }}"
 
       - name: Archive
         run: |
-          project=$(ls -d build/ios-device/*.xcodeproj | head -1)
-          xcodebuild -project "$project" -scheme OutRunIOS -configuration Release \
-            -destination generic/platform=iOS -archivePath "$RUNNER_TEMP/OutRun.xcarchive" \
+          project=$(ls -d build/${{ matrix.preset }}/*.xcodeproj | head -1)
+          xcodebuild -project "$project" -scheme ${{ matrix.scheme }} -configuration Release \
+            -destination ${{ matrix.destination }} -archivePath "$RUNNER_TEMP/OutRun.xcarchive" \
             -derivedDataPath "$RUNNER_TEMP/dd" -allowProvisioningUpdates \
             -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" \
             -authenticationKeyID "${{ secrets.NOTARY_API_KEY_ID }}" \
@@ -331,6 +354,8 @@ jobs:
             archive
 
       - name: Export the ad-hoc .ipa
+        env:
+          IPA: dist/OutRun-${{ matrix.platform }}-adhoc.ipa
         run: |
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
@@ -350,19 +375,19 @@ jobs:
             -authenticationKeyID "${{ secrets.NOTARY_API_KEY_ID }}" \
             -authenticationKeyIssuerID "${{ secrets.NOTARY_API_ISSUER_ID }}"
           mkdir -p dist
-          cp "$RUNNER_TEMP"/export/*.ipa dist/OutRun-ios-adhoc.ipa
+          cp "$RUNNER_TEMP"/export/*.ipa "$IPA"
           # Which devices the profile covers (the ones that can install this build).
-          unzip -o -q dist/OutRun-ios-adhoc.ipa 'Payload/*/embedded.mobileprovision' -d "$RUNNER_TEMP/ipa"
+          unzip -o -q "$IPA" 'Payload/*/embedded.mobileprovision' -d "$RUNNER_TEMP/ipa"
           security cms -D -i "$RUNNER_TEMP"/ipa/Payload/*/embedded.mobileprovision > "$RUNNER_TEMP/profile.plist"
           echo "Provisioned devices:"; /usr/libexec/PlistBuddy -c 'Print :ProvisionedDevices' "$RUNNER_TEMP/profile.plist" || true
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ios-ipa
-          path: dist/OutRun-ios-adhoc.ipa
+          name: ${{ matrix.platform }}-ipa
+          path: dist/OutRun-${{ matrix.platform }}-adhoc.ipa
 
       - name: Upload to Firebase App Distribution
-        if: inputs.firebase_groups != '' && vars.FIREBASE_IOS_APP_ID != ''
+        if: matrix.platform == 'ios' && inputs.firebase_groups != '' && vars.FIREBASE_IOS_APP_ID != ''
         env:
           FIREBASE_IOS_APP_ID: ${{ vars.FIREBASE_IOS_APP_ID }}
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}

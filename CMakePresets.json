@@ -132,7 +132,8 @@
         "CMAKE_PREFIX_PATH": "${sourceDir}/build/ios-dependencies/xros",
         "CMAKE_FIND_ROOT_PATH": "${sourceDir}/build/ios-dependencies/xros",
         "CMAKE_OSX_SYSROOT": "xros",
-        "CMAKE_CONFIGURATION_TYPES": "Release"
+        "CMAKE_CONFIGURATION_TYPES": "Release",
+        "CMAKE_XCODE_ATTRIBUTE_SKIP_INSTALL": "YES"
       }
     }
   ],
