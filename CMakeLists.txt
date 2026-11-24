@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
 project(OutRunSwitch_r155 LANGUAGES CXX)
 
+# App version in the Mac / iOS / visionOS Info.plists (CFBundleShortVersionString and
+# CFBundleVersion). The release workflow sets both (the tag's version, the run number).
+set(OR2_APP_VERSION "0.2" CACHE STRING "App version (CFBundleShortVersionString)")
+set(OR2_BUILD_NUMBER "${OR2_APP_VERSION}" CACHE STRING "Build number (CFBundleVersion)")
+
 # One portable in-memory decoder for Switch, Mac, PS5, Xbox and host tools.
 set(OR2_PECOMPACT_SOURCE src/ports/pecompact_memory.cpp)
 # Xbox port (xbox/, Windows only).

@@ -285,9 +285,12 @@ iOS presets (`CMakePresets.json`):
 Only the `OutRunIOS` target matters for iOS. The top-level CMake also defines
 many host test targets; don't build them for iOS.
 
-**Release builds on GitHub** (`.github/workflows/release-builds.yml`, by hand from Actions or on a
-`v*` tag): a Developer ID-signed, notarized Mac app and an ad-hoc iOS `.ipa`; a tag also makes a
-GitHub release. Before archiving, it registers Firebase App Distribution testers' UDIDs with
+**Release builds on GitHub** (`.github/workflows/release-builds.yml`): a Developer ID-signed,
+notarized Mac app and an ad-hoc iOS `.ipa`. **Every push to `main`** (unless only `.md` files
+changed, or `[skip ci]`) releases the next version: newest `vX.Y.Z` tag, patch + 1 (`#minor` /
+`#major` in the head commit's message), tagged on the pushed commit with a GitHub release; a
+pushed `v*` tag releases that version; a run by hand only builds. The version goes into the apps
+(`OR2_APP_VERSION`, build number `OR2_BUILD_NUMBER` = run number; local builds say 0.2). Before archiving, it registers Firebase App Distribution testers' UDIDs with
 Apple (fastlane `sync_devices`, project `outrun2006-c2c`), and it can upload the `.ipa` to Firebase
 tester groups. The secrets use the shared names set by `~/Projects/SigningSecrets` (its
 `CLAUDE.md` lists them). The `ios-device` preset's `SKIP_INSTALL` / `INSTALL_PATH` settings are

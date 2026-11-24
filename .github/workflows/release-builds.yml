@@ -1,7 +1,15 @@
 # Signed builds: the Mac app (Developer ID, notarized, stapled) and an ad-hoc iOS .ipa.
 #
-# Runs by hand (Actions ▸ Release builds ▸ Run workflow) or on a pushed tag v*; a tag also
-# attaches both files to a GitHub release. The builds contain no game data.
+# Runs on every push to main (not for changes to Markdown files only), on a pushed tag v*, or by
+# hand (Actions ▸ Release builds ▸ Run workflow). The builds contain no game data.
+#
+# Versions: a push to main releases the next version after the newest vX.Y.Z tag, patch + 1;
+# "#minor" or "#major" in the pushed head commit's message bumps that part instead. The release
+# job creates the tag (vX.Y.Z on the pushed commit) and a GitHub release with both files. A pushed
+# tag vX.Y.Z releases that version. A run by hand builds the next version but releases nothing.
+# "[skip ci]" in a commit message skips the run. The apps get the version as
+# CFBundleShortVersionString and the run number as CFBundleVersion (OR2_APP_VERSION /
+# OR2_BUILD_NUMBER). Runs on main wait for each other, so two pushes never get the same version.
 #
 # Secrets (Settings ▸ Secrets and variables ▸ Actions). The names are the same as in PairMagic and
 # SimulatorManager; ~/Projects/SigningSecrets exports them from the login keychain and sets them.
@@ -53,7 +61,13 @@ on:
         type: string
         default: ''
   push:
+    branches: [main]
     tags: ['v*']
+    paths-ignore: ['**.md']
+
+concurrency:
+  group: release-builds-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -63,8 +77,40 @@ env:
   NOTARY_PROFILE: OutRun-Notary
 
 jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      release: ${{ steps.v.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: v
+        env:
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version=${GITHUB_REF_NAME#v}; release=1
+          else
+            last=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
+            IFS=. read -r major minor patch <<< "${last:-v0.0.0}"; major=${major#v}
+            case "$MESSAGE" in
+              *'#major'*) major=$((major + 1)); minor=0; patch=0 ;;
+              *'#minor'*) minor=$((minor + 1)); patch=0 ;;
+              *) patch=$((patch + 1)) ;;
+            esac
+            version=$major.$minor.$patch
+            if [ "$GITHUB_EVENT_NAME" = push ]; then release=1; else release=0; fi
+          fi
+          echo "Version $version (release: $release, last tag: ${last:-none})"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+
   mac:
     name: Mac app (notarized)
+    needs: version
     if: github.event_name != 'workflow_dispatch' || inputs.mac
     runs-on: macos-latest
     timeout-minutes: 120
@@ -92,7 +138,8 @@ jobs:
 
       - name: Build
         run: |
-          cmake --preset mac-full
+          cmake --preset mac-full -DOR2_APP_VERSION="${{ needs.version.outputs.version }}" \
+            -DOR2_BUILD_NUMBER="${{ github.run_number }}"
           cmake --build --preset mac-full --target OutRunMacGame -j "$(sysctl -n hw.ncpu)"
 
       - name: Install the signing certificate
@@ -179,6 +226,7 @@ jobs:
 
   ios:
     name: iOS ad-hoc .ipa
+    needs: version
     runs-on: macos-latest
     timeout-minutes: 120
     steps:
@@ -265,7 +313,8 @@ jobs:
 
       - name: Configure
         run: |
-          cmake --preset ios-device -DOR2_IOS_TEAM="$APPLE_TEAM_ID" -DOR2_IOS_BUNDLE_ID="${{ vars.IOS_BUNDLE_ID }}"
+          cmake --preset ios-device -DOR2_IOS_TEAM="$APPLE_TEAM_ID" -DOR2_IOS_BUNDLE_ID="${{ vars.IOS_BUNDLE_ID }}" \
+            -DOR2_APP_VERSION="${{ needs.version.outputs.version }}" -DOR2_BUILD_NUMBER="${{ github.run_number }}"
 
       - name: Archive
         run: |
@@ -327,8 +376,8 @@ jobs:
 
   release:
     name: GitHub release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: [mac, ios]
+    if: needs.version.outputs.release == '1'
+    needs: [version, mac, ios]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -339,5 +388,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" dist/* --repo "${{ github.repository }}" \
-            --title "${{ github.ref_name }}" --generate-notes
+          tag="v${{ needs.version.outputs.version }}"
+          gh release create "$tag" dist/* --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" --title "$tag" --generate-notes
