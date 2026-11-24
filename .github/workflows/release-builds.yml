@@ -4,7 +4,7 @@
 # hand (Actions ▸ Release builds ▸ Run workflow). The builds contain no game data.
 #
 # Versions: a push to main releases the next version after the newest vX.Y.Z tag, patch + 1;
-# "#minor" or "#major" in the pushed head commit's message bumps that part instead. The release
+# a line "#minor" or "#major" on its own in the pushed head commit's message bumps that part. The release
 # job creates the tag (vX.Y.Z on the pushed commit) and a GitHub release with both files. A pushed
 # tag vX.Y.Z releases that version. A run by hand builds the next version but releases nothing.
 # "[skip ci]" in a commit message skips the run. The apps get the version as
@@ -96,11 +96,14 @@ jobs:
           else
             last=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
             IFS=. read -r major minor patch <<< "${last:-v0.0.0}"; major=${major#v}
-            case "$MESSAGE" in
-              *'#major'*) major=$((major + 1)); minor=0; patch=0 ;;
-              *'#minor'*) minor=$((minor + 1)); patch=0 ;;
-              *) patch=$((patch + 1)) ;;
-            esac
+            # "#major" / "#minor" count only as a line of their own (not mentioned in a sentence).
+            if printf '%s\n' "$MESSAGE" | grep -qx '[[:space:]]*#major[[:space:]]*'; then
+              major=$((major + 1)); minor=0; patch=0
+            elif printf '%s\n' "$MESSAGE" | grep -qx '[[:space:]]*#minor[[:space:]]*'; then
+              minor=$((minor + 1)); patch=0
+            else
+              patch=$((patch + 1))
+            fi
             version=$major.$minor.$patch
             if [ "$GITHUB_EVENT_NAME" = push ]; then release=1; else release=0; fi
           fi
