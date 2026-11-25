@@ -46,4 +46,6 @@
 <key>GCSupportedGameControllers</key><array><dict><key>ProfileName</key><string>ExtendedGamepad</string></dict></array>
 <key>NSLocalNetworkUsageDescription</key><string>OutRun looks for other players on your local network for LAN races.</string>
 <key>LSApplicationCategoryType</key><string>public.app-category.racing-games</string>
+<!-- Game Mode (iOS 18 / macOS 14): also implied by the game category, declared outright. -->
+<key>GCSupportsGameMode</key><true/>
 </dict></plist>

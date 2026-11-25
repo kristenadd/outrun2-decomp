@@ -11,5 +11,7 @@
 <key>CFBundleShortVersionString</key><string>${OR2_APP_VERSION}</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>LSApplicationCategoryType</key><string>public.app-category.racing-games</string>
+<!-- Game Mode (iOS 18 / macOS 14): also implied by the game category, declared outright. -->
+<key>GCSupportsGameMode</key><true/>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
