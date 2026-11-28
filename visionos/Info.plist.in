@@ -31,4 +31,6 @@
 <key>LSApplicationCategoryType</key><string>public.app-category.racing-games</string>
 <!-- Game Mode (iOS 18 / macOS 14): also implied by the game category, declared outright. -->
 <key>GCSupportsGameMode</key><true/>
+<!-- No non-exempt encryption (App Store Connect's export compliance question). -->
+<key>ITSAppUsesNonExemptEncryption</key><false/>
 </dict></plist>

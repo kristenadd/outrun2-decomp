@@ -298,6 +298,19 @@ tester groups. The secrets use the shared names set by `~/Projects/SigningSecret
 what make `xcodebuild archive` produce an app archive (without them it's "generic" and can't be
 exported).
 
+**App Store Connect** (same workflow, iOS and visionOS, added 2026-11-27): the `ios` job also exports
+an App Store `.ipa` from its archive, and the `app-store` job uploads it with the same API key
+(fastlane `testflight` / `app_store_review`; no new certificate). Pushes upload to TestFlight
+(`APP_STORE_ON_PUSH=none` turns that off; `TESTFLIGHT_GROUPS` gives builds to groups); a run by
+hand picks none / testflight / review. One app record for both platforms (`IOS_BUNDLE_ID`), which
+the user has to create in App Store Connect (an API key can't) and add visionOS to; until then the
+push uploads only warn. **No app record existed on 2026-11-27.** The iOS Xcode build now compiles
+an asset catalog (`AppIcon`, one 1024 px icon from `icon.png`, made at configure time), which App
+Store Connect requires; Makefile builds keep the loose PNGs. Both Info.plists declare
+`ITSAppUsesNonExemptEncryption` false. A local `app-store-connect` export of the iOS archive was
+checked (Apple Distribution, App Store profile, `Assets.car`); an upload / validation wasn't (no
+app record).
+
 ## Running on iOS
 
 The user's devices are an iPhone 15 Pro Max and an iPad mini 6 (both iOS 27).

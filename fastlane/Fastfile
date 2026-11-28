@@ -1,7 +1,9 @@
 # Lanes used by .github/workflows/release-builds.yml (not needed for local builds).
 #
 # Environment: FIREBASE_PROJECT_NUMBER, FIREBASE_IOS_APP_ID, FIREBASE_SERVICE_ACCOUNT_JSON,
-# NOTARY_API_KEY_ID, NOTARY_API_ISSUER_ID, NOTARY_API_KEY_P8 (the .p8 text).
+# NOTARY_API_KEY_ID, NOTARY_API_ISSUER_ID, NOTARY_API_KEY_P8 (the .p8 text). The App Store
+# Connect API key also uploads to TestFlight and submits for review (needs the App Manager role
+# or higher; the CI's key is Admin).
 
 default_platform(:ios)
 
@@ -13,6 +15,71 @@ platform :ios do
       key_content: ENV.fetch("NOTARY_API_KEY_P8"),
       is_key_content_base64: false,
       duration: 1200
+    )
+  end
+
+  PLATFORMS = { "ios" => Spaceship::ConnectAPI::Platform::IOS, "xros" => Spaceship::ConnectAPI::Platform::VISION_OS }.freeze
+
+  # The App Store Connect app for this bundle id and platform (ios / xros), or a message saying
+  # what's missing. The app record can't be made with an API key: App Store Connect ▸ Apps ▸ +.
+  def app_store_app(bundle_id, platform)
+    Spaceship::ConnectAPI.token = Spaceship::ConnectAPI::Token.from(hash: asc_key)
+    app = Spaceship::ConnectAPI::App.find(bundle_id)
+    return [nil, "No App Store Connect app has the bundle id #{bundle_id} (App Store Connect ▸ Apps ▸ + ▸ New App)"] unless app
+    versions = app.get_app_store_versions(filter: { platform: PLATFORMS.fetch(platform) }, includes: nil, limit: 1)
+    return [nil, "The App Store Connect app #{app.name} has no #{platform} platform yet (its page ▸ Add Platform)"] if versions.empty?
+    [app, nil]
+  end
+
+  # Checks the app record. soft: a missing record (or platform) is a warning and the lane stops
+  # (pushes to main); otherwise it's an error (runs by hand that asked for an upload).
+  def app_store_ready?(options)
+    _, problem = app_store_app(options.fetch(:bundle_id), options.fetch(:platform))
+    return true unless problem
+    UI.user_error!(problem) unless options[:soft].to_s == "true"
+    UI.important("#{problem}: not uploading.")
+    sh("echo '::warning::#{problem.gsub("'", "")}: not uploaded to App Store Connect'") if ENV["GITHUB_ACTIONS"]
+    false
+  end
+
+  # App Store .ipa -> TestFlight. Internal testers get the build once it's processed (their group's
+  # automatic distribution). With groups (comma-separated TestFlight group names), it waits for
+  # the processing and also gives the build to those groups, with the notes as "What to Test";
+  # external groups need Beta App Review (the first build of each version) and its contact info
+  # set once in App Store Connect ▸ TestFlight ▸ Test Information.
+  lane :testflight do |options|
+    next unless app_store_ready?(options)
+    groups = options[:groups].to_s.split(",").map(&:strip).reject(&:empty?)
+    upload_to_testflight(
+      api_key: asc_key,
+      ipa: options.fetch(:ipa),
+      app_platform: options.fetch(:platform),
+      skip_waiting_for_build_processing: groups.empty?,
+      changelog: groups.empty? ? nil : options[:notes],
+      groups: groups.empty? ? nil : groups,
+      distribute_external: !groups.empty?,
+      notify_external_testers: true,
+      wait_processing_timeout_duration: 3600
+    )
+  end
+
+  # App Store .ipa -> App Store Connect, then submitted for App Review as version `version`
+  # (made if missing). The version's metadata and screenshots are kept as they are in App Store
+  # Connect, so fill them there first. Not released automatically after approval.
+  lane :app_store_review do |options|
+    next unless app_store_ready?(options)
+    deliver(
+      api_key: asc_key,
+      ipa: options.fetch(:ipa),
+      platform: options.fetch(:platform),
+      app_version: options.fetch(:version),
+      submit_for_review: true,
+      automatic_release: false,
+      skip_metadata: true,
+      skip_screenshots: true,
+      run_precheck_before_submit: false,
+      force: true,
+      submission_information: { add_id_info_uses_idfa: false, export_compliance_uses_encryption: false }
     )
   end
 

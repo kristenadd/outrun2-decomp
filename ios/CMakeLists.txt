@@ -38,9 +38,27 @@ target_include_directories(outrun_ios_metal PRIVATE "${CMAKE_CURRENT_BINARY_DIR}
 target_compile_options(outrun_ios_metal PRIVATE -fobjc-arc -Wall -Wextra -Wpedantic)
 target_link_libraries(outrun_ios_metal PUBLIC outrun_native_runtime "-framework Metal" "-framework QuartzCore" "-framework UIKit" "-framework Foundation")
 
-# Application icon: icon.png at each size iOS asks for (CFBundleIcons in Info.plist.in).
+# Application icon. Xcode builds: an asset catalog with one 1024x1024 icon (App Store Connect
+# requires the 1024 px icon in an asset catalog; actool makes the device sizes and CFBundleIcons).
+# Makefile builds (the simulator, no actool): icon.png at each size iOS asks for (CFBundleIcons in
+# Info.plist.in).
 set(OR2_IOS_ICON_DIR "${CMAKE_CURRENT_BINARY_DIR}/icons")
 set(OR2_IOS_ICONS)
+if(CMAKE_GENERATOR STREQUAL "Xcode")
+    set(_catalog "${CMAKE_CURRENT_BINARY_DIR}/Assets.xcassets")
+    file(WRITE "${_catalog}/Contents.json" "{\"info\":{\"author\":\"xcode\",\"version\":1}}\n")
+    file(WRITE "${_catalog}/AppIcon.appiconset/Contents.json"
+        "{\"images\":[{\"filename\":\"icon-1024.png\",\"idiom\":\"universal\",\"platform\":\"ios\",\"size\":\"1024x1024\"}],\"info\":{\"author\":\"xcode\",\"version\":1}}\n")
+    # At configure time: the catalog must be complete when Xcode reads the project.
+    execute_process(COMMAND sips -z 1024 1024 "${PROJECT_SOURCE_DIR}/icon.png" --out "${_catalog}/AppIcon.appiconset/icon-1024.png"
+        OUTPUT_QUIET RESULT_VARIABLE _sips)
+    if(NOT _sips EQUAL 0)
+        message(FATAL_ERROR "sips couldn't make the 1024 px app icon from icon.png")
+    endif()
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/icon.png")
+    set_source_files_properties("${_catalog}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    list(APPEND OR2_IOS_ICONS "${_catalog}")
+else()
 foreach(_icon "AppIcon60x60@2x.png:120" "AppIcon60x60@3x.png:180" "AppIcon76x76@2x~ipad.png:152" "AppIcon83.5x83.5@2x~ipad.png:167")
     string(REPLACE ":" ";" _pair "${_icon}")
     list(GET _pair 0 _name)
@@ -52,6 +70,7 @@ foreach(_icon "AppIcon60x60@2x.png:120" "AppIcon60x60@3x.png:180" "AppIcon76x76@
     set_source_files_properties("${OR2_IOS_ICON_DIR}/${_name}" PROPERTIES GENERATED TRUE MACOSX_PACKAGE_LOCATION .)
     list(APPEND OR2_IOS_ICONS "${OR2_IOS_ICON_DIR}/${_name}")
 endforeach()
+endif()
 
 add_executable(OutRunIOS MACOSX_BUNDLE
     "${OR2_MAC_SOURCE}/main.cpp" "${OR2_MAC_SOURCE}/setup_display.cpp" "${PROJECT_SOURCE_DIR}/src/runtime/game_host.cpp"
@@ -71,6 +90,7 @@ set_target_properties(OutRunIOS PROPERTIES
     MACOSX_BUNDLE_GUI_IDENTIFIER "${OR2_IOS_BUNDLE_ID}"
     MACOSX_BUNDLE_BUNDLE_NAME "OutRun"
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
+    XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME "AppIcon"
     XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${OR2_IOS_BUNDLE_ID}"
     XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
     XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "${CMAKE_OSX_DEPLOYMENT_TARGET}"
@@ -89,6 +109,9 @@ set_target_properties(OutRunIOS PROPERTIES
     XCODE_SCHEME_ENABLE_GPU_API_VALIDATION OFF
     XCODE_SCHEME_ENABLE_GPU_SHADER_VALIDATION OFF
     XCODE_SCHEME_ENABLE_GPU_FRAME_CAPTURE_MODE Disabled)
+if(CMAKE_GENERATOR STREQUAL "Xcode")
+    set_target_properties(OutRunIOS PROPERTIES RESOURCE "${CMAKE_CURRENT_BINARY_DIR}/Assets.xcassets")
+endif()
 if(NOT CMAKE_GENERATOR STREQUAL "Xcode")
     # Makefile builds (the simulator): ad-hoc signature, as Xcode gives simulator apps.
     add_custom_command(TARGET OutRunIOS POST_BUILD

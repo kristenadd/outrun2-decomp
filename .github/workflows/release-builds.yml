@@ -1,4 +1,5 @@
-# Signed builds: the Mac app (Developer ID, notarized, stapled) and ad-hoc iOS and visionOS .ipa files.
+# Signed builds: the Mac app (Developer ID, notarized, stapled) and ad-hoc iOS and visionOS .ipa files,
+# and the iOS and visionOS apps uploaded to App Store Connect (TestFlight, App Review).
 #
 # Runs on every push to main (not for changes to Markdown files only), on a pushed tag v*, or by
 # hand (Actions ▸ Release builds ▸ Run workflow). The builds contain no game data.
@@ -42,6 +43,22 @@
 #              FIREBASE_IOS_APP_ID             the iOS app's App ID there (1:…:ios:…)
 # Apple allows 100 iPhones / iPads per membership year; a registered device keeps its slot until
 # the year ends, even if removed.
+#
+# App Store Connect (TestFlight / App Store): the iOS and visionOS jobs also export an App Store
+# .ipa from the same archive, and the "App Store Connect" job uploads it with the same API key
+# (fastlane `testflight` / `app_store_review`; no other certificate needed). Both platforms use
+# IOS_BUNDLE_ID, i.e. one App Store Connect app with an iOS and a visionOS platform; it has to be
+# made once by hand (App Store Connect ▸ Apps ▸ +; the API can't), and visionOS added on its page.
+#   Pushes (main, tags) upload to TestFlight unless APP_STORE_ON_PUSH is "none"; without the app
+#   record (or its visionOS platform) they only warn. A run by hand chooses with "App Store
+#   Connect": none, testflight, or review (upload, then submit that version for App Review with
+#   the metadata already in App Store Connect; not released automatically).
+#   variables: APP_STORE_ON_PUSH            optional: "none" turns the push uploads off
+#              TESTFLIGHT_GROUPS            optional: TestFlight groups (comma-separated) that
+#                                           pushes give the build to (internal testers get every
+#                                           build anyway); the run-by-hand input overrides it
+# Build numbers are the run number, so a re-run of the same run can't upload again (re-run the
+# workflow instead).
 
 name: Release builds
 
@@ -58,6 +75,15 @@ on:
         default: true
       firebase_groups:
         description: Upload the .ipa to these Firebase tester groups (comma-separated, empty = no upload)
+        type: string
+        default: ''
+      app_store:
+        description: App Store Connect (iOS and visionOS)
+        type: choice
+        options: [none, testflight, review]
+        default: none
+      testflight_groups:
+        description: TestFlight groups to give the build to (comma-separated; empty = internal testers only)
         type: string
         default: ''
   push:
@@ -83,6 +109,7 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
       release: ${{ steps.v.outputs.release }}
+      app_store: ${{ steps.v.outputs.app_store }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -90,6 +117,8 @@ jobs:
       - id: v
         env:
           MESSAGE: ${{ github.event.head_commit.message }}
+          APP_STORE_INPUT: ${{ inputs.app_store }}
+          APP_STORE_ON_PUSH: ${{ vars.APP_STORE_ON_PUSH }}
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             version=${GITHUB_REF_NAME#v}; release=1
@@ -107,9 +136,15 @@ jobs:
             version=$major.$minor.$patch
             if [ "$GITHUB_EVENT_NAME" = push ]; then release=1; else release=0; fi
           fi
-          echo "Version $version (release: $release, last tag: ${last:-none})"
+          # App Store Connect: what a run by hand asked for; pushes upload to TestFlight unless
+          # APP_STORE_ON_PUSH is "none" ("soft": a missing app record only warns).
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then app_store=${APP_STORE_INPUT:-none}
+          elif [ "$APP_STORE_ON_PUSH" = none ]; then app_store=none
+          else app_store=testflight-soft; fi
+          echo "Version $version (release: $release, last tag: ${last:-none}, App Store Connect: $app_store)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "app_store=$app_store" >> "$GITHUB_OUTPUT"
 
   mac:
     name: Mac app (notarized)
@@ -386,14 +421,47 @@ jobs:
           name: ${{ matrix.platform }}-ipa
           path: dist/OutRun-${{ matrix.platform }}-adhoc.ipa
 
+      # The same archive signed for App Store Connect (Apple Distribution, an App Store profile
+      # Xcode makes); the "App Store Connect" job uploads it. Not part of the GitHub release.
+      - name: Export the App Store .ipa
+        if: needs.version.outputs.app_store != 'none'
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptionsAppStore.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>export</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict></plist>
+          EOF
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/OutRun.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptionsAppStore.plist" -exportPath "$RUNNER_TEMP/export-appstore" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" \
+            -authenticationKeyID "${{ secrets.NOTARY_API_KEY_ID }}" \
+            -authenticationKeyIssuerID "${{ secrets.NOTARY_API_ISSUER_ID }}"
+          mkdir -p appstore
+          cp "$RUNNER_TEMP"/export-appstore/*.ipa appstore/OutRun-${{ matrix.platform }}-appstore.ipa
+
+      - uses: actions/upload-artifact@v4
+        if: needs.version.outputs.app_store != 'none'
+        with:
+          name: appstore-${{ matrix.platform }}
+          path: appstore/OutRun-${{ matrix.platform }}-appstore.ipa
+          retention-days: 7
+
       - name: Upload to Firebase App Distribution
         if: matrix.platform == 'ios' && inputs.firebase_groups != '' && vars.FIREBASE_IOS_APP_ID != ''
         env:
           FIREBASE_IOS_APP_ID: ${{ vars.FIREBASE_IOS_APP_ID }}
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
-          GROUPS: ${{ inputs.firebase_groups }}
+          TESTER_GROUPS: ${{ inputs.firebase_groups }}
         run: |
-          bundle exec fastlane ios distribute ipa:"$PWD/dist/OutRun-ios-adhoc.ipa" groups:"$GROUPS" \
+          bundle exec fastlane ios distribute ipa:"$PWD/dist/OutRun-ios-adhoc.ipa" groups:"$TESTER_GROUPS" \
             notes:"$(git log -1 --format='%h %s')"
 
       - name: Remove the keychain and the API key
@@ -402,15 +470,67 @@ jobs:
           [ -n "${KEYCHAIN:-}" ] && security delete-keychain "$KEYCHAIN" || true
           rm -fP "$RUNNER_TEMP/AuthKey.p8"
 
+  app-store:
+    name: App Store Connect (${{ matrix.platform }})
+    needs: [version, ios]
+    if: needs.version.outputs.app_store != 'none'
+    runs-on: macos-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ios
+            fastlane_platform: ios
+          - platform: visionos
+            fastlane_platform: xros
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: appstore-${{ matrix.platform }}
+          path: appstore
+
+      - name: Upload
+        env:
+          MODE: ${{ needs.version.outputs.app_store }}
+          VERSION: ${{ needs.version.outputs.version }}
+          BUNDLE_ID: ${{ vars.IOS_BUNDLE_ID }}
+          TESTER_GROUPS: ${{ github.event_name == 'workflow_dispatch' && inputs.testflight_groups || vars.TESTFLIGHT_GROUPS }}
+          NOTARY_API_KEY_ID: ${{ secrets.NOTARY_API_KEY_ID }}
+          NOTARY_API_ISSUER_ID: ${{ secrets.NOTARY_API_ISSUER_ID }}
+          NOTARY_API_KEY_P8: ${{ secrets.NOTARY_API_KEY_P8 }}
+        run: |
+          ipa="$PWD/appstore/OutRun-${{ matrix.platform }}-appstore.ipa"
+          case $MODE in
+            testflight|testflight-soft)
+              soft=false; [ "$MODE" = testflight-soft ] && soft=true
+              bundle exec fastlane ios testflight ipa:"$ipa" platform:${{ matrix.fastlane_platform }} \
+                bundle_id:"$BUNDLE_ID" groups:"$TESTER_GROUPS" soft:$soft \
+                notes:"$VERSION ($(git log -1 --format='%h %s'))" ;;
+            review)
+              bundle exec fastlane ios app_store_review ipa:"$ipa" platform:${{ matrix.fastlane_platform }} \
+                bundle_id:"$BUNDLE_ID" version:"$VERSION" ;;
+            *) echo "::error::Unknown App Store Connect mode $MODE"; exit 1 ;;
+          esac
+
   release:
     name: GitHub release
     if: needs.version.outputs.release == '1'
     needs: [version, mac, ios]
     runs-on: ubuntu-latest
     steps:
+      # The Mac zip and the ad-hoc .ipa files (not the App Store ones, appstore-*).
       - uses: actions/download-artifact@v4
         with:
           path: dist
+          pattern: '*-{app,ipa}'
           merge-multiple: true
       - name: Create the release
         env:
